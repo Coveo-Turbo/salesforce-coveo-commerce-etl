@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+  <types>
+    <members>*</members>
+    <name>ApexClass</name>
+  </types>
+
+  <!-- Custom Metadata TYPE definition (the __mdt object) -->
+  <types>
+    <members>CatalogJsonBuilderMapping__mdt</members>
+    <name>CustomObject</name>
+  </types>
+
+  <!-- Custom Metadata records -->
+  <types>
+    <members>CatalogJsonBuilderMapping.Default</members>
+    <members>CatalogJsonBuilderMapping.Active</members>
+    <name>CustomMetadata</name>
+  </types>
+
+  <!-- Data model for sample category tree + junction -->
+  <types>
+    <members>Category__c</members>
+    <members>ProductCategory__c</members>
+    <name>CustomObject</name>
+  </types>
+
+  <types>
+    <members>Coveo_Push</members>
+    <name>NamedCredential</name>
+  </types>
+
+  <types>
+    <members>CoveoApi</members>
+    <members>S3Uploads</members>
+    <name>RemoteSiteSetting</name>
+  </types>
+
+  <types>
+    <members>CoveoETL_Admin</members>
+    <name>PermissionSet</name>
+  </types>
+
+  <version>60.0</version>
+</Package>
