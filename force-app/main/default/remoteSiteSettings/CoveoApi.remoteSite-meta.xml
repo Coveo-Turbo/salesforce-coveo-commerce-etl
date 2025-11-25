@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RemoteSiteSetting xmlns="http://soap.sforce.com/2006/04/metadata">
+  <disableProtocolSecurity>false</disableProtocolSecurity>
+  <isActive>true</isActive>
+  <description>Access to Coveo Push and Stream API endpoints</description>
+  <url>https://api.cloud.coveo.com</url>
+  <label>Coveo API</label>
+</RemoteSiteSetting>
