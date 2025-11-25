@@ -1,0 +1,22 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "referenceId": "Coveo Cordless Drill 12V",
+        "type": "Product2"
+      }
+    },
+    {
+      "attributes": {
+        "referenceId": "Coveo Cordless Drill 18V",
+        "type": "Product2"
+      }
+    },
+    {
+      "attributes": {
+        "referenceId": "Coveo Hammer Drill",
+        "type": "Product2"
+      }
+    }
+  ]
+}

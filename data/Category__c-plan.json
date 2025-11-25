@@ -1,0 +1,28 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "referenceId": "Tools",
+        "type": "Category__c"
+      }
+    },
+    {
+      "attributes": {
+        "referenceId": "Power Tools",
+        "type": "Category__c"
+      }
+    },
+    {
+      "attributes": {
+        "referenceId": "Drills",
+        "type": "Category__c"
+      }
+    },
+    {
+      "attributes": {
+        "referenceId": "Cordless",
+        "type": "Category__c"
+      }
+    }
+  ]
+}

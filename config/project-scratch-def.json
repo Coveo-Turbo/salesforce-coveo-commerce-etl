@@ -1,1 +1,13 @@
-{"orgName": "Coveo Commerce ETL","edition": "Developer"}
+{
+  "orgName": "Coveo Commerce ETL (B2B)",
+  "edition": "Enterprise",
+  "features": [
+    "Communities",
+    "B2BCommerce"
+  ],
+  "settings": {
+    "communitiesSettings": {
+      "enableNetworksEnabled": true
+    }
+  }
+}

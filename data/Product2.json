@@ -1,0 +1,41 @@
+[
+  {
+    "attributes": {
+      "type": "Product2"
+    },
+    "Name": "Coveo Cordless Drill 12V",
+    "ProductCode": "SKU-DRL-12V",
+    "Family": "Drills",
+    "Brand__c": "Coveo Tools",
+    "Image_URL__c": "https://example.com/images/drill12v.jpg",
+    "Product_URL__c": "https://example.com/products/drill12v",
+    "In_Stock__c": true,
+    "IsActive": true
+  },
+  {
+    "attributes": {
+      "type": "Product2"
+    },
+    "Name": "Coveo Cordless Drill 18V",
+    "ProductCode": "SKU-DRL-18V",
+    "Family": "Drills",
+    "Brand__c": "Coveo Tools",
+    "Image_URL__c": "https://example.com/images/drill18v.jpg",
+    "Product_URL__c": "https://example.com/products/drill18v",
+    "In_Stock__c": true,
+    "IsActive": true
+  },
+  {
+    "attributes": {
+      "type": "Product2"
+    },
+    "Name": "Coveo Hammer Drill",
+    "ProductCode": "SKU-HDRL-20V",
+    "Family": "Drills",
+    "Brand__c": "Coveo Tools",
+    "Image_URL__c": "https://example.com/images/hammerdrill.jpg",
+    "Product_URL__c": "https://example.com/products/hammerdrill",
+    "In_Stock__c": true,
+    "IsActive": true
+  }
+]

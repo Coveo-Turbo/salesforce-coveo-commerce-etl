@@ -1,0 +1,29 @@
+[
+  {
+    "attributes": {
+      "type": "Category__c"
+    },
+    "Name": "Tools"
+  },
+  {
+    "attributes": {
+      "type": "Category__c"
+    },
+    "Name": "Power Tools",
+    "Parent__c": "@Tools"
+  },
+  {
+    "attributes": {
+      "type": "Category__c"
+    },
+    "Name": "Drills",
+    "Parent__c": "@Power Tools"
+  },
+  {
+    "attributes": {
+      "type": "Category__c"
+    },
+    "Name": "Cordless",
+    "Parent__c": "@Drills"
+  }
+]
