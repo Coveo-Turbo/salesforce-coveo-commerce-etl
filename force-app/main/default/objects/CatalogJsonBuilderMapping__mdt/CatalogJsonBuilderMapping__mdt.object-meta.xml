@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+  <actionOverrides />
+  <deploymentStatus>Deployed</deploymentStatus>
+  <description>Selects which builder class implements ICatalogJsonBuilder at runtime.</description>
+  <enableActivities>false</enableActivities>
+  <label>Catalog Json Builder Mapping</label>
+  <pluralLabel>Catalog Json Builder Mappings</pluralLabel>
+  <sharingModel>ReadWrite</sharingModel>
+  <visibility>PackageProtected</visibility>
+  <fields>
+    <fullName>ClassName__c</fullName>
+    <description>Fully-qualified Apex class name implementing
+    ICatalogJsonBuilder</description>
+    <externalId>false</externalId>
+    <fieldManageability>
+    DeveloperControlled</fieldManageability>
+    <label>Class Name</label>
+    <length>255</length>
+    <required>
+    true</required>
+    <type>Text</type>
+    <unique>false</unique>
+  </fields>
+</CustomObject>
