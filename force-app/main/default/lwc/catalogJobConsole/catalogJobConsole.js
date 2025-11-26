@@ -1,0 +1,93 @@
+import { LightningElement, wire, track } from 'lwc';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+
+import listConfigs from '@salesforce/apex/CatalogJobRunner.listConfigs';
+import runSingle from '@salesforce/apex/CatalogJobRunner.runSingle';
+import runAllActive from '@salesforce/apex/CatalogJobRunner.runAllActive';
+
+const ACTIONS_COL = {
+  label: 'Actions',
+  type: 'button',
+  typeAttributes: {
+    label: 'Run',
+    name: 'run',
+    variant: 'brand-outline'
+  }
+};
+
+export default class CatalogJobConsole extends LightningElement {
+  @track configs;
+  @track error;
+
+  columns = [
+    ACTIONS_COL,
+    { label: 'Label', fieldName: 'Label' },
+    { label: 'Developer Name', fieldName: 'DeveloperName' },
+    { label: 'Locale', fieldName: 'Locale__c' },
+    { label: 'Coveo Org Id', fieldName: 'CoveoOrgId__c' },
+    { label: 'Source Id', fieldName: 'SourceId__c' },
+    { label: 'Active', fieldName: 'IsActive__c', type: 'boolean' },
+    { label: 'Product Filter', fieldName: 'ProductFilter__c' }
+  ];
+
+  @wire(listConfigs)
+  wiredConfigs({ data, error }) {
+    if (data) {
+      this.configs = data;
+      this.error = undefined;
+    } else if (error) {
+      this.error = error;
+      this.configs = undefined;
+    }
+  }
+
+  handleRunAll() {
+    runAllActive()
+      .then(() => {
+        this.showToast('Success', 'Started all active catalog jobs', 'success');
+      })
+      .catch(err => {
+        this.showToast('Error', this.reduceError(err), 'error');
+      });
+  }
+
+  // lightning-datatable action handler
+  handleRowAction(event) {
+    const actionName = event.detail.action.name;
+    const row = event.detail.row;
+
+    if (actionName === 'run') {
+      this.handleRunSingle(row.DeveloperName);
+    }
+  }
+
+  handleRunSingle(devName) {
+    runSingle({ jobConfigDeveloperName: devName })
+      .then(() => {
+        this.showToast('Success', `Started catalog job: ${devName}`, 'success');
+      })
+      .catch(err => {
+        this.showToast('Error', this.reduceError(err), 'error');
+      });
+  }
+
+  showToast(title, message, variant) {
+    this.dispatchEvent(
+      new ShowToastEvent({
+        title,
+        message,
+        variant
+      })
+    );
+  }
+
+  reduceError(err) {
+    let message = 'Unknown error';
+    if (Array.isArray(err?.body)) {
+      message = err.body.map(e => e.message).join(', ');
+    } else if (err?.body?.message) {
+      message = err.body.message;
+    }
+    return message;
+  }
+}

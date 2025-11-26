@@ -1,0 +1,34 @@
+<template>
+  <lightning-card title="Coveo Catalog Jobs" icon-name="standard:product">
+    <div class="slds-m-around_medium">
+      <template if:true={configs}>
+        <lightning-button
+          label="Run All Active"
+          variant="brand"
+          onclick={handleRunAll}
+          class="slds-m-bottom_small"
+        >
+        </lightning-button>
+
+        <lightning-datatable
+          key-field="DeveloperName"
+          data={configs}
+          columns={columns}
+          hide-checkbox-column
+        >
+        </lightning-datatable>
+      </template>
+
+      <template if:true={error}>
+        <!-- <c-error-panel errors={error}></c-error-panel> -->
+        <div class="slds-text-color_error slds-m-around_medium">{error}</div>
+      </template>
+
+      <template if:false={configs}>
+        <lightning-spinner
+          alternative-text="Loading configurations"
+        ></lightning-spinner>
+      </template>
+    </div>
+  </lightning-card>
+</template>
