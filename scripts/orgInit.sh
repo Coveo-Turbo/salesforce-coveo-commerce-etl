@@ -1,18 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
-alias=ccetl
 
+alias="${1:-ccetl}"
 
-sfdx force:org:create -f config/project-scratch-def.json -s -a $alias
-sfdx force:source:push -u $alias
-# Enable Standard Pricebook (required by PricebookEntry)
-sfdx force:data:record:update -s Pricebook2 -w "IsStandard=true" -v "IsActive=true" -u $alias || true
-# Import sample data
-# sfdx force:data:tree:import -p data/Category__c-plan.json -u $alias
-# sfdx force:data:tree:import -p data/Product2-plan.json -u $alias
-# Seed B2B Commerce category tree & links (ProductCategory/ProductCategoryProduct)
-sfdx force:apex:execute -u $alias -f scripts/seedB2BCategories.apex
-# Assign permission set
-sfdx force:user:permset:assign -n CoveoETL_Admin -u $alias
-# Open org
-sfdx force:org:open -u $alias
+echo "➡️  Creating scratch org: $alias"
+sf org create scratch \
+  --definition-file config/project-scratch-def.json \
+  --alias "$alias" \
+  --set-default \
+  --wait 10
+
+echo "➡️  Deploying project source"
+sf project deploy start --target-org "$alias" --ignore-conflicts
+
+echo "➡️  Activating Standard Pricebook (required by PricebookEntry)"
+# Ignore failure if already active
+sf data update record \
+  --sobject Pricebook2 \
+  --where "IsStandard=true" \
+  --values "IsActive=true" \
+  --target-org "$alias" || true
+
+echo "➡️  Importing sample Product2 data"
+sf data import tree \
+  --plan data/Product2-plan.json \
+  --target-org "$alias" || true
+
+echo "➡️  Seeding B2B Commerce categories and product links"
+sf apex run \
+  --file scripts/seedB2BCategories.apex \
+  --target-org "$alias"
+
+echo "➡️  Assigning permission set"
+sf org assign permset \
+  --name CoveoETL_Admin \
+  --target-org "$alias"
+
+echo "➡️  Opening org"
+sf org open --target-org "$alias"

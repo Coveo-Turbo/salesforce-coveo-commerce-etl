@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-alias=ccetl
-# Replace with your Coveo org/source IDs in the class call below
-sfdx force:apex:execute -u $alias -f - <<'APEX'
-Database.executeBatch(new ProductCatalogExportBatch('YOUR_COVEO_ORG_ID','YOUR_SOURCE_ID'), 100);
-APEX
+set -euo pipefail
+
+alias="${1:-ccetl}"
+
+# Replace the placeholders with your real Coveo Org ID and Source ID
+COVEO_ORG_ID="coveoprofessionalservicesbi4l69nl"
+COVEO_SOURCE_ID="coveoprofessionalservicesbi4l69nl-vkfjrttjfkrvln7d7jcaxz2mqm"
+
+echo "➡️  Running ETL batch against $alias"
+sf apex run --file scripts/batchDemo.apex --target-org "$alias"
