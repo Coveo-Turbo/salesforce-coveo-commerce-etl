@@ -1,7 +1,8 @@
 public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuilder {
   public String buildFullUpdateNdjson(
     List<Product2> products,
-    Map<Id, PricebookEntry> pbesByProduct
+    Map<Id, PricebookEntry> pbesByProduct,
+    List<String> extraFieldNames
   ) {
     if (products.isEmpty()) {
       return JSON.serialize(
@@ -103,6 +104,23 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
       }
       if (imageUrl != null) {
         item.put('ec_images', new List<String>{ imageUrl });
+      }
+
+      // 🔹 Attach extra Product2 fields as metadata
+      if (extraFieldNames != null && !extraFieldNames.isEmpty()) {
+        for (String apiName : extraFieldNames) {
+          String trimmed = apiName != null ? apiName.trim() : null;
+          if (String.isBlank(trimmed)) {
+            continue;
+          }
+          Object val = SafeFieldUtil.safeGet(p, trimmed);
+          if (val == null) {
+            continue;
+          }
+          // Prefix with sf_ to avoid collisions, keep lowercase for consistency
+          String metaKey = 'sf_' + trimmed.toLowerCase();
+          item.put(metaKey, val);
+        }
       }
 
       addOrUpdate.add(item);

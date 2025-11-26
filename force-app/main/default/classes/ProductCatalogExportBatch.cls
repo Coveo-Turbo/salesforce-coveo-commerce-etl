@@ -1,16 +1,36 @@
 global with sharing class ProductCatalogExportBatch implements Database.Batchable<SObject>, Database.Stateful, Database.AllowsCallouts {
-  private final String orgId;
-  private final String sourceId;
+  private final CatalogJobConfig__mdt jobConfig;
+  private final List<String> extraFieldNames = new List<String>();
   private final Id stdPricebookId;
 
   // Track highest orderingId across execute() calls
   public Long latestOrderingId;
-
   public List<Coveo_Payload_Log__c> payloadLogs = new List<Coveo_Payload_Log__c>();
 
-  public ProductCatalogExportBatch(String orgId, String sourceId) {
-    this.orgId = orgId;
-    this.sourceId = sourceId;
+  public ProductCatalogExportBatch(String jobConfigDeveloperName) {
+    this.jobConfig = [
+      SELECT
+        DeveloperName,
+        Label,
+        CoveoOrgId__c,
+        SourceId__c,
+        Locale__c,
+        IsActive__c,
+        ProductFilter__c,
+        AdditionalProductFields__c
+      FROM CatalogJobConfig__mdt
+      WHERE DeveloperName = :jobConfigDeveloperName
+      LIMIT 1
+    ];
+
+    if (!String.isBlank(jobConfig.AdditionalProductFields__c)) {
+      for (String f : jobConfig.AdditionalProductFields__c.split(',')) {
+        String trimmed = f.trim();
+        if (String.isNotBlank(trimmed) && !extraFieldNames.contains(trimmed)) {
+          extraFieldNames.add(trimmed);
+        }
+      }
+    }
     this.stdPricebookId = [
       SELECT Id
       FROM Pricebook2
@@ -21,21 +41,38 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   }
 
   global Database.QueryLocator start(Database.BatchableContext bc) {
-    return Database.getQueryLocator(
-      [
-        SELECT
-          Id,
-          Name,
-          StockKeepingUnit,
-          Family,
-          Description,
-          Type,
-          QuantityUnitOfMeasure,
-          ProductCode
-        FROM Product2
-        WHERE IsActive = TRUE
-      ]
-    );
+    // Base fields required for catalog
+    List<String> fields = new List<String>{
+      'Id',
+      'Name',
+      'StockKeepingUnit',
+      'Family',
+      'Brand__c',
+      'Image_URL__c',
+      'Product_URL__c',
+      'In_Stock__c'
+    };
+
+    // Add extra fields from config
+    for (String apiName : extraFieldNames) {
+      if (!fields.contains(apiName)) {
+        fields.add(apiName);
+      }
+    }
+
+    String selectClause = String.join(fields, ', ');
+
+    String baseQuery =
+      'SELECT ' +
+      selectClause +
+      ' FROM Product2 WHERE IsActive = true';
+
+    if (!String.isBlank(jobConfig.ProductFilter__c)) {
+      baseQuery += ' AND (' + jobConfig.ProductFilter__c + ')';
+    }
+
+    System.debug('ProductCatalogExportBatch.start SOQL: ' + baseQuery);
+    return Database.getQueryLocator(baseQuery);
   }
 
   global void execute(Database.BatchableContext bc, List<Product2> scope) {
@@ -47,7 +84,12 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       ]
     );
     ICatalogJsonBuilder builder = CatalogJsonBuilderFactory.get();
-    String ndjsonPayload = builder.buildFullUpdateNdjson(scope, pbes);
+    String ndjsonPayload = builder.buildFullUpdateNdjson(
+      scope,
+      pbes,
+      extraFieldNames
+    );
+
     System.debug(
       LoggingLevel.INFO,
       'CatalogExport NDJSON payload: ' + ndjsonPayload
@@ -71,7 +113,10 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
 
     Blob ndjson = Blob.valueOf(ndjsonPayload);
 
-    CoveoStreamClient client = new CoveoStreamClient(orgId, sourceId);
+    CoveoStreamClient client = new CoveoStreamClient(
+      jobConfig.CoveoOrgId__c,
+      jobConfig.SourceId__c
+    );
     Map<String, Object> container = client.createFileContainer();
     System.debug(
       LoggingLevel.DEBUG,
@@ -105,9 +150,14 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       'ProductCatalogExportBatch.finish: latestOrderingId=' + latestOrderingId
     );
 
-    // Delete older items in Coveo (callout FIRST, no DML before it)
-    CoveoDeleteOlderThan.deleteOlderThan(orgId, sourceId, latestOrderingId);
-    // insert logs (DML AFTER callout is allowed)
+    // Delete older items for this specific source
+    CoveoDeleteOlderThan.deleteOlderThan(
+      jobConfig.CoveoOrgId__c,
+      jobConfig.SourceId__c,
+      latestOrderingId
+    );
+
+    // Insert logs if any
     if (!payloadLogs.isEmpty()) {
       try {
         insert payloadLogs;
