@@ -5,6 +5,10 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>CatalogJobRunner</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>CatalogJsonBuilderFactory</apexClass>
         <enabled>true</enabled>
     </classAccesses>
@@ -27,6 +31,10 @@
     <customMetadataTypeAccesses>
         <enabled>true</enabled>
         <name>CatalogJsonBuilderMapping__mdt</name>
+    </customMetadataTypeAccesses>
+    <customMetadataTypeAccesses>
+        <enabled>true</enabled>
+        <name>CatalogJobConfig__mdt</name>
     </customMetadataTypeAccesses>
     <externalCredentialPrincipalAccesses>
         <enabled>true</enabled>
