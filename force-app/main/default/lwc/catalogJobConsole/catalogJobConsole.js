@@ -27,7 +27,8 @@ export default class CatalogJobConsole extends LightningElement {
     { label: 'Coveo Org Id', fieldName: 'CoveoOrgId__c' },
     { label: 'Source Id', fieldName: 'SourceId__c' },
     { label: 'Active', fieldName: 'IsActive__c', type: 'boolean' },
-    { label: 'Product Filter', fieldName: 'ProductFilter__c' }
+    { label: 'Product Filter', fieldName: 'ProductFilter__c' },
+    { label: 'Extra Fields', fieldName: 'AdditionalProductFields__c' }
   ];
 
   @wire(listConfigs)
@@ -41,20 +42,35 @@ export default class CatalogJobConsole extends LightningElement {
     }
   }
 
+  get errorMessage() {
+    if (!this.error) return '';
+    if (Array.isArray(this.error.body)) {
+      return this.error.body.map(e => e.message).join(', ');
+    }
+    if (this.error.body && this.error.body.message) {
+      return this.error.body.message;
+    }
+    return 'Unknown error';
+  }
+
   handleRunAll() {
     runAllActive()
       .then(() => {
         this.showToast('Success', 'Started all active catalog jobs', 'success');
       })
       .catch(err => {
-        this.showToast('Error', this.reduceError(err), 'error');
+        const msg = this.reduceError(err);
+        this.showToast('Error', msg, 'error');
+        // eslint-disable-next-line no-console
+        console.error('runAllActive error', err);
       });
   }
 
-  // lightning-datatable action handler
   handleRowAction(event) {
     const actionName = event.detail.action.name;
     const row = event.detail.row;
+    // eslint-disable-next-line no-console
+    console.log('Row action fired', actionName, row);
 
     if (actionName === 'run') {
       this.handleRunSingle(row.DeveloperName);
@@ -67,7 +83,10 @@ export default class CatalogJobConsole extends LightningElement {
         this.showToast('Success', `Started catalog job: ${devName}`, 'success');
       })
       .catch(err => {
-        this.showToast('Error', this.reduceError(err), 'error');
+        const msg = this.reduceError(err);
+        this.showToast('Error', msg, 'error');
+        // eslint-disable-next-line no-console
+        console.error('runSingle error', err);
       });
   }
 
