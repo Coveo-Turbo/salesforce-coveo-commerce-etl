@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+  <label>Coveo Payload Log</label>
+  <pluralLabel>Coveo Payload Logs</pluralLabel>
+  <deploymentStatus>Deployed</deploymentStatus>
+  <sharingModel>ReadWrite</sharingModel>
+  <nameField>
+    <label>Log Number</label>
+    <type>AutoNumber</type>
+    <displayFormat>PL-{0000}</displayFormat>
+  </nameField>
+  <fields>
+    <fullName>ScopeSize__c</fullName>
+    <label>Scope Size</label>
+    <type>Number</type>
+    <precision>8</precision>
+    <scale>0</scale>
+  </fields>
+  <fields>
+    <fullName>OperationCount__c</fullName>
+    <label>Operation Count</label>
+    <type>Number</type>
+    <precision>10</precision>
+    <scale>0</scale>
+  </fields>
+  <fields>
+    <fullName>IsValid__c</fullName>
+    <label>Is Valid</label>
+    <type>Checkbox</type>
+    <defaultValue>false</defaultValue>
+  </fields>
+  <fields>
+    <fullName>Reason__c</fullName>
+    <label>Validation Reason</label>
+    <type>LongTextArea</type>
+    <length>32768</length>
+    <visibleLines>5</visibleLines>
+  </fields>
+  <fields>
+    <fullName>Payload__c</fullName>
+    <label>Payload</label>
+    <type>LongTextArea</type>
+    <length>32768</length>
+    <visibleLines>15</visibleLines>
+  </fields>
+</CustomObject>

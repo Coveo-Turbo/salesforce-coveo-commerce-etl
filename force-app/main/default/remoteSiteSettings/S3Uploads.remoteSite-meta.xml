@@ -4,5 +4,4 @@
   <isActive>true</isActive>
   <description>Temporary presigned S3 upload endpoint used by Coveo file containers</description>
   <url>https://s3.amazonaws.com</url>
-  <label>S3Uploads</label>
 </RemoteSiteSetting>

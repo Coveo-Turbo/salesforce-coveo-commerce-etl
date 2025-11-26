@@ -4,5 +4,4 @@
   <isActive>true</isActive>
   <description>Access to Coveo Push and Stream API endpoints</description>
   <url>https://api.cloud.coveo.com</url>
-  <label>Coveo API</label>
 </RemoteSiteSetting>

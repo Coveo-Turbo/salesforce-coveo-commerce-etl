@@ -6,6 +6,6 @@
     <field>ClassName__c</field>
 <value xsi:type="xsd:string"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xmlns:xsd="http://www.w3.org/2001/XMLSchema">CatalogJsonBuilderDefault</value>
+      xmlns:xsd="http://www.w3.org/2001/XMLSchema">CatalogJsonBuilderCommerce</value>
   </values>
 </CustomMetadata>
