@@ -1,7 +1,12 @@
-global with sharing class ProductCatalogExportBatch implements Database.Batchable<SObject>, Database.AllowsCallouts {
+global with sharing class ProductCatalogExportBatch implements Database.Batchable<SObject>, Database.Stateful, Database.AllowsCallouts {
   private final String orgId;
   private final String sourceId;
   private final Id stdPricebookId;
+
+  // Track highest orderingId across execute() calls
+  public Long latestOrderingId;
+
+  public List<Coveo_Payload_Log__c> payloadLogs = new List<Coveo_Payload_Log__c>();
 
   public ProductCatalogExportBatch(String orgId, String sourceId) {
     this.orgId = orgId;
@@ -23,10 +28,10 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
           Name,
           StockKeepingUnit,
           Family,
-          Brand__c,
-          Image_URL__c,
-          Product_URL__c,
-          In_Stock__c
+          Description,
+          Type,
+          QuantityUnitOfMeasure,
+          ProductCode
         FROM Product2
         WHERE IsActive = TRUE
       ]
@@ -42,19 +47,76 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       ]
     );
     ICatalogJsonBuilder builder = CatalogJsonBuilderFactory.get();
-    Blob ndjson = Blob.valueOf(builder.buildFullUpdateNdjson(scope, pbes));
+    String ndjsonPayload = builder.buildFullUpdateNdjson(scope, pbes);
+    System.debug(
+      LoggingLevel.INFO,
+      'CatalogExport NDJSON payload: ' + ndjsonPayload
+    );
+
+    // Validate locally
+    CoveoPayloadValidator.Result vr = CoveoPayloadValidator.validate(
+      ndjsonPayload
+    );
+    System.debug('Coveo payload validation: ' + JSON.serialize(vr));
+
+    // Log to custom object (optional but super helpful)
+    Coveo_Payload_Log__c log = new Coveo_Payload_Log__c(
+      ScopeSize__c = scope.size(),
+      OperationCount__c = vr.operationCount,
+      IsValid__c = vr.isValid,
+      Reason__c = vr.reason,
+      Payload__c = ndjsonPayload.left(32000) // guard against LT max
+    );
+    payloadLogs.add(log);
+
+    Blob ndjson = Blob.valueOf(ndjsonPayload);
 
     CoveoStreamClient client = new CoveoStreamClient(orgId, sourceId);
     Map<String, Object> container = client.createFileContainer();
+    System.debug(
+      LoggingLevel.DEBUG,
+      'Coveo file container response: ' + JSON.serialize(container)
+    );
     client.uploadNdjson(
       (String) container.get('uploadUri'),
       (Map<String, Object>) container.get('requiredHeaders'),
       ndjson
     );
-    client.streamUpdate((String) container.get('fileId'));
+
+    String updateResponse = client.streamUpdate(
+      (String) container.get('fileId')
+    );
+
+    // Parse orderingId from response body
+    Map<String, Object> resMap = (Map<String, Object>) JSON.deserializeUntyped(
+      updateResponse
+    );
+
+    if (resMap.containsKey('orderingId')) {
+      Long oid = Long.valueOf(String.valueOf(resMap.get('orderingId')));
+      if (latestOrderingId == null || oid > latestOrderingId) {
+        latestOrderingId = oid;
+      }
+    }
   }
 
   global void finish(Database.BatchableContext bc) {
-    // Optional: log/publish a Platform Event
+    System.debug(
+      'ProductCatalogExportBatch.finish: latestOrderingId=' + latestOrderingId
+    );
+
+    // Delete older items in Coveo (callout FIRST, no DML before it)
+    CoveoDeleteOlderThan.deleteOlderThan(orgId, sourceId, latestOrderingId);
+    // insert logs (DML AFTER callout is allowed)
+    if (!payloadLogs.isEmpty()) {
+      try {
+        insert payloadLogs;
+      } catch (DmlException e) {
+        System.debug(
+          LoggingLevel.WARN,
+          'Failed to insert payload logs: ' + e.getMessage()
+        );
+      }
+    }
   }
 }

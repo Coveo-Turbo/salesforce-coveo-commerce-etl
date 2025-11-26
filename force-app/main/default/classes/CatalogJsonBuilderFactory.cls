@@ -11,11 +11,12 @@ public with sharing class CatalogJsonBuilderFactory {
       ];
       className = m.ClassName__c;
     } catch (Exception e) {
-      className = 'CatalogJsonBuilderDefault';
+      className = 'CatalogJsonBuilderCommerce'; // default
     }
     Type t = Type.forName(className);
-    if (t == null)
+    if (t == null) {
       throw new AuraHandledException('Unknown builder class: ' + className);
+    }
     return (ICatalogJsonBuilder) t.newInstance();
   }
 }
