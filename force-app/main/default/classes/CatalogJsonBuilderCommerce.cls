@@ -24,6 +24,7 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
     ];
 
     System.debug(
+      LoggingLevel.FINE,
       'Loaded ' +
         links.size() +
         ' ProductCategoryProduct links for ' +
@@ -230,23 +231,24 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
     List<ProductCategoryProduct> links,
     Map<Id, ProductCategory> catById
   ) {
-    System.debug('buildCategoryPathsForProduct: START productId=' + productId);
-    System.debug('  links.size=' + (links == null ? 0 : links.size()));
-    System.debug('  catById.size=' + (catById == null ? 0 : catById.size()));
+    System.debug(LoggingLevel.FINE, 'buildCategoryPathsForProduct: START productId=' + productId);
+    System.debug(LoggingLevel.FINE, '  links.size=' + (links == null ? 0 : links.size()));
+    System.debug(LoggingLevel.FINE, '  catById.size=' + (catById == null ? 0 : catById.size()));
 
     Set<String> pathsSet = new Set<String>();
 
     if (links == null || links.isEmpty()) {
-      System.debug('  No ProductCategoryProduct links provided.');
+      System.debug(LoggingLevel.FINE, '  No ProductCategoryProduct links provided.');
       return new List<String>();
     }
     if (catById == null || catById.isEmpty()) {
-      System.debug('  No ProductCategory records provided.');
+      System.debug(LoggingLevel.FINE, '  No ProductCategory records provided.');
       return new List<String>();
     }
 
     for (ProductCategoryProduct l : links) {
       System.debug(
+        LoggingLevel.FINE,
         '  link: ProductId=' +
           l.ProductId +
           ' / CategoryId=' +
@@ -269,7 +271,7 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
       while (cur != null && guard++ < 10) {
         ProductCategory c = catById.get(cur);
         if (c == null) {
-          System.debug('  Category not found in map for Id=' + cur);
+          System.debug(LoggingLevel.FINE, '  Category not found in map for Id=' + cur);
           break;
         }
         chain.add(c.Name); // leaf -> root
@@ -279,7 +281,7 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
         continue;
       }
 
-      System.debug('  chain (leaf->root)=' + chain);
+      System.debug(LoggingLevel.FINE, '  chain (leaf->root)=' + chain);
 
       // Reverse manually: root -> ... -> leaf
       List<String> reversed = new List<String>();
@@ -296,6 +298,7 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
     }
 
     System.debug(
+      LoggingLevel.FINE,
       'buildCategoryPathsForProduct: productId=' +
         productId +
         ' => paths=' +
