@@ -1,5 +1,4 @@
-# salesforce-coveo-commerce-etl
-
+# **salesforce-coveo-commerce-etl**
 
 [![Salesforce](https://img.shields.io/badge/Salesforce-Apex-blue.svg)](https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/)
 [![SFDX](https://img.shields.io/badge/CLI-SFDX-informational.svg)](https://developer.salesforce.com/tools/sfdxcli)
@@ -7,52 +6,357 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-
-A Salesforce **SFDX** starter kit to extract & transform **Product** data and push it to **Coveo Commerce** via the **Stream API**. It includes Batch Apex, an extensible JSON builder (interface + factory), scratch org setup, and 4‑level category sample data for quick testing. Ships as an **unmanaged package** for easy customer adoption.
-
-
-> **Docs & Schema**
-> • Push & update your catalog data: https://docs.coveo.com/en/p48b0322/coveo-for-commerce/push-and-update-your-catalog-data
-> • Full catalog data updates: https://docs.coveo.com/en/p4eb0129/coveo-for-commerce/full-catalog-data-updates#update-operations
-> • Stream/Push API schema (local copy in repo): [/assets/schema/PushApi.json](/mnt/data/PushApi.json)
-
+> **A Salesforce SFDX starter kit for exporting enriched commerce catalog data to Coveo using the Stream API.**
+> Supports multiple catalogs, dynamic product filters, dynamic Product2 fields, B2B Commerce category hierarchies, and a sleek Salesforce LWC admin console.
 
 ---
 
+# 📦 Overview
 
-## Contents
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Run the Export](#run-the-export)
-- [Extending the JSON Builder](#extending-the-json-builder)
-- [Packaging (Unmanaged)](#packaging-unmanaged)
-- [Project Structure](#project-structure)
-- [License](#license)
+This project provides an **unmanaged Salesforce package** that extracts product data from Salesforce and pushes it to **Coveo Commerce Catalog sources** using the **Stream API** (`addOrUpdate` / `addOrMerge`).
 
+It includes:
 
-## Features
-- **Batch Apex + Scheduler** to export Product2 (+ PricebookEntry) in chunks
-- **Stream API file-container flow** (create file → S3 PUT → stream update)
-- **Pluggable mapping** via `ICatalogJsonBuilder` and Custom Metadata–driven factory
-- **Scratch org** with **4-level** category tree + sample products
-- **Named Credential** & **Remote Site Settings** templates
-- **Permission Set** for admin/setup
+* A flexible **Catalog Export Batch** implementation
+* Support for **multiple Coveo catalog sources** (one per locale or market)
+* Dynamic **Product2 filtering** (SOQL WHERE clause per catalog)
+* Dynamic **field enrichment** via Product2 fields configured in CMDT
+* Correct **Commerce payload format** (flat items, objecttype, ec_* fields)
+* **Category hierarchy resolution** using B2B Commerce’s ProductCategory model
+* Full **delete-older-than** cleanup via Stream API
+* A modern **LWC Admin Console** for triggering jobs
+* SafeFieldUtil for fault-tolerant dynamic field access
+* Scratch-org scripts + seeded sample data
 
+---
 
-## Prerequisites
-- Salesforce CLI (SFDX)
-- Dev Hub enabled (for scratch orgs)
-- A Coveo **API key** with Push/Stream permissions
+# 🚀 Features
 
+### 🗂️ Multi-Catalog Config
 
-## Quick Start
+Use Custom Metadata (`CatalogJobConfig__mdt`) to define multiple catalogs:
+
+* Coveo Org ID
+* Source ID
+* Locale
+* Product filters (`ProductFilter__c`)
+* Additional Product2 fields (`AdditionalProductFields__c`)
+* (Optional) catalog root category
+
+### 🔎 Dynamic Product Selection
+
+Each catalog can define its own **SOQL WHERE** clause (without the WHERE keyword):
+
+```txt
+Family = 'Generators' AND Locale__c = 'en_US'
+```
+
+### ➕ Dynamic Field Enrichment
+
+Customers can specify which Product2 fields should be exported:
+
+```
+Brand__c, Color__c, Gender__c
+```
+
+These become flat metadata fields in the payload:
+
+```json
+"sf_brand__c": "Acme",
+"sf_color__c": "Blue"
+```
+
+### 🏷️ Correct Commerce Payload Format
+
+Each item sent to Coveo looks like:
+
+```json
+{
+  "objecttype": "Product",
+  "documentId": "product://SKU123",
+  "ec_name": "GenWatt 200kW",
+  "ec_product_id": "SKU123",
+  "ec_category": ["Generators", "Generators|Diesel", "Generators|Diesel|200kW"],
+  "ec_price": 12999.99,
+  "sf_brand__c": "Coveo Power"
+}
+```
+
+### 🧠 Safe Field Access
+
+`SafeFieldUtil` prevents Apex errors:
+
+* Missing fields → safe `null`
+* Unqueried fields → safe `null`
+* Dynamic enrichment support
+* Org-agnostic and customer-safe
+
+### 🌳 Full Category Hierarchy
+
+We resolve B2B Commerce category chains:
+
+* `ProductCategoryProduct`
+* `ProductCategory`
+* Parent categories up to root
+* Producing arrays like:
+
+```json
+[
+  "Tools",
+  "Tools|Power Tools",
+  "Tools|Power Tools|Drills",
+  "Tools|Power Tools|Drills|Cordless"
+]
+```
+
+### 🔁 Stream API Support
+
+Supports:
+
+* `addOrUpdate` — full updates
+* `addOrMerge` — incremental updates
+* `stream/deleteolderthan` — full replacement cleanup
+* File container upload (S3 PUT)
+* OrderingId extraction
+
+### 🧰 LWC Admin Console
+
+A modern Experience-enabled admin UI that:
+
+* Lists catalog configurations
+* Shows stats (# active, # inactive)
+* Provides “Run All Active” and “Run” per job
+* Displays dynamic fields & filters
+* Styled with SLDS + custom enhancements
+
+---
+
+# 📁 Project Structure
+
+```
+salesforce-coveo-commerce-etl/
+├── force-app/
+│   ├── main/default/
+│   │   ├── classes/
+│   │   │   ├── ProductCatalogExportBatch.cls
+│   │   │   ├── CatalogJsonBuilderCommerce.cls
+│   │   │   ├── CatalogJsonBuilderDefault.cls
+│   │   │   ├── ICatalogJsonBuilder.cls
+│   │   │   ├── CatalogJsonBuilderFactory.cls
+│   │   │   ├── SafeFieldUtil.cls
+│   │   │   ├── CoveoStreamClient.cls
+│   │   │   ├── CoveoDeleteOlderThan.cls
+│   │   │   └── CatalogJobRunner.cls
+│   │   ├── lwc/
+│   │   │   └── catalogJobConsole/
+│   │   ├── objects/
+│   │   │   └── CatalogJobConfig__mdt/
+│   │   ├── namedCredentials/
+│   │   ├── remoteSiteSettings/
+│   │   ├── permissionsets/
+│   │   └── customMetadata/
+├── data/
+│   ├── Product2.json
+│   ├── Product2-plan.json
+│   └── (custom seed script for B2B categories)
+├── scripts/
+│   ├── orgInit.sh
+│   └── seedB2BCategories.apex
+└── README.md
+```
+
+---
+
+# 🔧 Setup
+
+## 1. Create Scratch Org
+
 ```bash
-# Clone
-git clone https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl.git
-cd salesforce-coveo-commerce-etl
+sf org create scratch \
+  --alias ccetl \
+  --set-default \
+  --definition-file config/project-scratch-def.json
+```
 
+## 2. Push Source
 
-# Create scratch org, push source, import sample data
-bash scripts/orgInit.sh
+```bash
+sf project deploy start --target-org ccetl
+```
+
+## 3. Activate Standard Pricebook
+
+```bash
+sf data update record \
+  --sobject Pricebook2 \
+  --where "IsStandard=true" \
+  --values "IsActive=true" \
+  --target-org ccetl
+```
+
+## 4. Import Sample Products
+
+```bash
+sf data import tree --plan data/Product2-plan.json --target-org ccetl
+```
+
+## 5. Seed B2B Commerce Categories
+
+```bash
+sf apex run --file scripts/seedB2BCategories.apex --target-org ccetl
+```
+
+## 6. Assign Permission Set
+
+```bash
+sf org assign permset --name CoveoETL_Admin --target-org ccetl
+```
+
+## 7. Open Org
+
+```bash
+sf org open
+```
+
+---
+
+# ⚙️ Configuration
+
+## Create Catalog Job Configs
+
+Go to:
+
+**Setup → Custom Metadata Types → Catalog Job Configurations**
+
+For each catalog, create something like:
+
+| Field                      | Example                      |
+| -------------------------- | ---------------------------- |
+| Developer Name             | `EN_US_Catalog`              |
+| CoveoOrgId__c              | `mycoveoorg123`              |
+| SourceId__c                | `mycoveoorg123-en-us-source` |
+| Locale__c                  | `en-US`                      |
+| IsActive__c                | ✔                           |
+| ProductFilter__c           | `Family = 'Generators'`      |
+| AdditionalProductFields__c | `Brand__c, Color__c`         |
+
+---
+
+# ▶️ Running Jobs
+
+## Run one catalog
+
+```apex
+Database.executeBatch(new ProductCatalogExportBatch('EN_US_Catalog'), 100);
+```
+
+## Run all active catalogs
+
+```apex
+CatalogJobRunner.runAllActive();
+```
+
+## From LWC Console
+
+Open the “Catalog Job Console” app page → click **Run** or **Run All Active**.
+
+---
+
+# 📤 Payload Format
+
+Each export produces a **Stream API** payload:
+
+```json
+{
+  "addOrUpdate": [
+    {
+      "objecttype": "Product",
+      "documentId": "product://SKU123",
+      "ec_name": "GenWatt 200kW",
+      "ec_product_id": "SKU123",
+      "ec_category": [
+        "Tools",
+        "Tools|Power Tools",
+        "Tools|Power Tools|Drills",
+        "Tools|Power Tools|Drills|Cordless"
+      ],
+      "ec_price": 1999.99,
+      "sf_brand__c": "Coveo Power"
+    }
+  ]
+}
+```
+
+---
+
+# 🧹 Cleanup Using Stream API
+
+After processing all batches, `finish()` calls:
+
+```
+DELETE /stream/deleteolderthan?orderingId=XYZ
+```
+
+This ensures removed Salesforce products are also removed from the catalog.
+
+---
+
+# 🔒 Safe Field Access
+
+`SafeFieldUtil` ensures field access never throws:
+
+```apex
+String url     = SafeFieldUtil.safeGetString(p, 'Product_URL__c');
+String brand   = SafeFieldUtil.safeGetString(p, 'Brand__c');
+Boolean stock  = SafeFieldUtil.safeGetBoolean(p, 'In_Stock__c');
+String color   = SafeFieldUtil.safeGetString(p, 'Color__c');
+```
+
+---
+
+# 🧪 Testing
+
+Includes:
+
+* Mocked callouts for file container / S3 / stream update
+* Tests for SafeFieldUtil
+* Batch test with fake Product2 + PricebookEntry
+* Category hierarchy test
+
+---
+
+# 🎨 LWC Catalog Job Console
+
+Located in `/force-app/main/default/lwc/catalogJobConsole`.
+
+Features:
+
+* Modern SLDS layout
+* Stats bar (total jobs, active jobs, inactive jobs)
+* Run All Active
+* Row-level Run
+* Display of filters, extra fields, locale, source Id
+* Error panel + loading state
+
+---
+
+# 🛠 Extending
+
+You can extend this starter kit by adding:
+
+* Variant support (`objecttype=Variant`)
+* Availability support
+* Per-locale pricebooks
+* Field mapping UI (CMDT → ec_* target mapping)
+* Apex Scheduler for nightly runs
+
+---
+
+# ✨ Conclusion
+
+This project gives you everything needed to build a **robust, flexible, enterprise-ready** Salesforce → Coveo Commerce ETL pipeline, fully aligned with:
+
+* Coveo Stream API best practices
+* Proper commerce catalog payloads
+* Salesforce multi-catalog patterns
+* Clean LWC UX for administrators
