@@ -207,7 +207,7 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
    * layer of protection against malformed queries and potential injection patterns.
    *
    * @param filter The raw filter string from CatalogJobConfig__mdt.ProductFilter__c
-   * @return The sanitized filter string safe for use in SOQL
+   * @return The validated filter string safe for use in SOQL
    * @throws CatalogJobException if the filter contains potentially dangerous patterns
    */
   @TestVisible
@@ -217,36 +217,38 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     }
 
     String trimmedFilter = filter.trim();
+    String upperFilter = trimmedFilter.toUpperCase();
 
-    // Check for potentially dangerous SOQL patterns that shouldn't appear in a WHERE clause filter
-    // These patterns could indicate an attempt to inject malicious SOQL
-    List<String> dangerousPatterns = new List<String>{
+    // Check for DML keywords that shouldn't appear in a WHERE clause filter
+    // These patterns are already uppercase for efficient comparison
+    List<String> dmlPatterns = new List<String>{
       'INSERT ',
       'UPDATE ',
       'DELETE ',
       'UPSERT ',
       'MERGE ',
-      'UNDELETE ',
-      ' FROM ', // Subquery pattern - should not have standalone FROM in a filter
-      'Database.',
-      'System.'
+      'UNDELETE '
     };
 
-    String upperFilter = trimmedFilter.toUpperCase();
-    for (String pattern : dangerousPatterns) {
-      if (upperFilter.contains(pattern.toUpperCase())) {
+    for (String pattern : dmlPatterns) {
+      if (upperFilter.contains(pattern)) {
         throw new CatalogJobException(
-          'Invalid ProductFilter__c value: contains potentially dangerous pattern "' +
+          'Invalid ProductFilter__c value: contains DML keyword "' +
             pattern.trim() +
             '". Only valid SOQL WHERE clause fragments are allowed.'
         );
       }
     }
 
-    // Apply String.escapeSingleQuotes for any dynamic string values that might
-    // have been included. This is an additional safeguard even though the field
-    // is Custom Metadata (developer-controlled).
-    // Note: This escapes single quotes within the filter string itself
-    return String.escapeSingleQuotes(trimmedFilter);
+    // Check for subqueries by looking for SELECT...FROM pattern outside of string literals
+    // This is a simplified check - subqueries in WHERE clauses are generally unexpected
+    if (upperFilter.contains('SELECT ') && upperFilter.contains(' FROM ')) {
+      throw new CatalogJobException(
+        'Invalid ProductFilter__c value: contains subquery pattern. ' +
+          'Only simple SOQL WHERE clause fragments are allowed.'
+      );
+    }
+
+    return trimmedFilter;
   }
 }
