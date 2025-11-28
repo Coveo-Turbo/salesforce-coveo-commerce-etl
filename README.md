@@ -156,12 +156,12 @@ salesforce-coveo-commerce-etl/
 │   │   ├── permissionsets/
 │   │   └── customMetadata/
 ├── data/
-│   ├── Product2.json
-│   ├── Product2-plan.json
-│   └── (custom seed script for B2B categories)
+│   ├── commerce-plan.json
+│   ├── (Other data files...).json
+│   └── seedPrices.apex
 ├── scripts/
 │   ├── orgInit.sh
-│   └── seedB2BCategories.apex
+│   └── reset-commerce-data.sh
 └── README.md
 ```
 
@@ -169,53 +169,10 @@ salesforce-coveo-commerce-etl/
 
 # 🔧 Setup
 
-## 1. Create Scratch Org
+## Create scratch org, push source, import sample data
 
-```bash
-sf org create scratch \
-  --alias ccetl \
-  --set-default \
-  --definition-file config/project-scratch-def.json
 ```
-
-## 2. Push Source
-
-```bash
-sf project deploy start --target-org ccetl
-```
-
-## 3. Activate Standard Pricebook
-
-```bash
-sf data update record \
-  --sobject Pricebook2 \
-  --where "IsStandard=true" \
-  --values "IsActive=true" \
-  --target-org ccetl
-```
-
-## 4. Import Sample Products
-
-```bash
-sf data import tree --plan data/Product2-plan.json --target-org ccetl
-```
-
-## 5. Seed B2B Commerce Categories
-
-```bash
-sf apex run --file scripts/seedB2BCategories.apex --target-org ccetl
-```
-
-## 6. Assign Permission Set
-
-```bash
-sf org assign permset --name CoveoETL_Admin --target-org ccetl
-```
-
-## 7. Open Org
-
-```bash
-sf org open
+bash scripts/orgInit.sh
 ```
 
 ---
