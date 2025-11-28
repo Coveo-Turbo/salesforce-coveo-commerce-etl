@@ -217,10 +217,12 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     }
 
     String trimmedFilter = filter.trim();
-    String upperFilter = trimmedFilter.toUpperCase();
+
+    // Normalize whitespace for pattern detection (replace tabs/newlines with spaces)
+    String normalizedFilter = trimmedFilter.replaceAll('[\\t\\n\\r]+', ' ')
+      .toUpperCase();
 
     // Check for DML keywords that shouldn't appear in a WHERE clause filter
-    // These patterns are already uppercase for efficient comparison
     List<String> dmlPatterns = new List<String>{
       'INSERT ',
       'UPDATE ',
@@ -231,7 +233,7 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     };
 
     for (String pattern : dmlPatterns) {
-      if (upperFilter.contains(pattern)) {
+      if (normalizedFilter.contains(pattern)) {
         throw new CatalogJobException(
           'Invalid ProductFilter__c value: contains DML keyword "' +
             pattern.trim() +
@@ -240,9 +242,9 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       }
     }
 
-    // Check for subqueries by looking for SELECT...FROM pattern outside of string literals
+    // Check for subqueries by looking for SELECT...FROM pattern
     // This is a simplified check - subqueries in WHERE clauses are generally unexpected
-    if (upperFilter.contains('SELECT ') && upperFilter.contains(' FROM ')) {
+    if (normalizedFilter.contains('SELECT ') && normalizedFilter.contains(' FROM ')) {
       throw new CatalogJobException(
         'Invalid ProductFilter__c value: contains subquery pattern. ' +
           'Only simple SOQL WHERE clause fragments are allowed.'
