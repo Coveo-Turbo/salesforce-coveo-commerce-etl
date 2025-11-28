@@ -48,9 +48,11 @@ yarn.lock
 # Data and sandbox/test exports
 /data/*.csv
 /data/*.json
-!data/Category__c*.json
+!data/commerce*.json
 !data/Product2*.json
-!data/ProductCategory__c*.json
+!data/ProductCatalog*.json
+!data/Pricebook*.json
+!data/ProductCategory*.json
 
 # Credentials / tokens / API keys
 .env

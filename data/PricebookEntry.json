@@ -1,0 +1,114 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "PricebookEntry",
+        "referenceId": "PBE_Drill_001"
+      },
+      "Pricebook2Id": "@PB_Demo",
+      "Product2Id": "@Prod_Drill_001",
+      "UnitPrice": 129.99,
+      "IsActive": true,
+      "UseStandardPrice": false
+    },
+    {
+      "attributes": {
+        "type": "PricebookEntry",
+        "referenceId": "PBE_Drill_002"
+      },
+      "Pricebook2Id": "@PB_Demo",
+      "Product2Id": "@Prod_Drill_002",
+      "UnitPrice": 149.99,
+      "IsActive": true,
+      "UseStandardPrice": false
+    },
+    {
+      "attributes": {
+        "type": "PricebookEntry",
+        "referenceId": "PBE_Drill_003"
+      },
+      "Pricebook2Id": "@PB_Demo",
+      "Product2Id": "@Prod_Drill_003",
+      "UnitPrice": 179.99,
+      "IsActive": true,
+      "UseStandardPrice": false
+    },
+    {
+      "attributes": {
+        "type": "PricebookEntry",
+        "referenceId": "PBE_Saw_001"
+      },
+      "Pricebook2Id": "@PB_Demo",
+      "Product2Id": "@Prod_Saw_001",
+      "UnitPrice": 159.99,
+      "IsActive": true,
+      "UseStandardPrice": false
+    },
+    {
+      "attributes": {
+        "type": "PricebookEntry",
+        "referenceId": "PBE_Saw_002"
+      },
+      "Pricebook2Id": "@PB_Demo",
+      "Product2Id": "@Prod_Saw_002",
+      "UnitPrice": 139.99,
+      "IsActive": true,
+      "UseStandardPrice": false
+    },
+    {
+      "attributes": {
+        "type": "PricebookEntry",
+        "referenceId": "PBE_Sander_001"
+      },
+      "Pricebook2Id": "@PB_Demo",
+      "Product2Id": "@Prod_Sander_001",
+      "UnitPrice": 99.99,
+      "IsActive": true,
+      "UseStandardPrice": false
+    },
+    {
+      "attributes": {
+        "type": "PricebookEntry",
+        "referenceId": "PBE_Wrench_001"
+      },
+      "Pricebook2Id": "@PB_Demo",
+      "Product2Id": "@Prod_Wrench_001",
+      "UnitPrice": 49.99,
+      "IsActive": true,
+      "UseStandardPrice": false
+    },
+    {
+      "attributes": {
+        "type": "PricebookEntry",
+        "referenceId": "PBE_Screwdriver_001"
+      },
+      "Pricebook2Id": "@PB_Demo",
+      "Product2Id": "@Prod_Screwdriver_001",
+      "UnitPrice": 39.99,
+      "IsActive": true,
+      "UseStandardPrice": false
+    },
+    {
+      "attributes": {
+        "type": "PricebookEntry",
+        "referenceId": "PBE_Hammer_001"
+      },
+      "Pricebook2Id": "@PB_Demo",
+      "Product2Id": "@Prod_Hammer_001",
+      "UnitPrice": 29.99,
+      "IsActive": true,
+      "UseStandardPrice": false
+    },
+    {
+      "attributes": {
+        "type": "PricebookEntry",
+        "referenceId": "PBE_Chainsaw_001"
+      },
+      "Pricebook2Id": "@PB_Demo",
+      "Product2Id": "@Prod_Chainsaw_001",
+      "UnitPrice": 249.99,
+      "IsActive": true,
+      "UseStandardPrice": false
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Power_Tools"
+      },
+      "Name": "Power Tools",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Tools"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Hand_Tools"
+      },
+      "Name": "Hand Tools",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Tools"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Outdoor_Tools"
+      },
+      "Name": "Outdoor Tools",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Tools"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Drill_Accessories"
+      },
+      "Name": "Drill Accessories",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Accessories"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Saw_Accessories"
+      },
+      "Name": "Saw Accessories",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Accessories"
+    }
+  ]
+}

@@ -1,41 +1,114 @@
-[
-  {
-    "attributes": {
-      "type": "Product2"
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Drill_001"
+      },
+      "Name": "Coveo Cordless Drill 12V",
+      "ProductCode": "SKU-DRL-001",
+      "Family": "Drills",
+      "Description": "Compact 12V cordless drill for light-duty tasks.",
+      "IsActive": true
     },
-    "Name": "Coveo Cordless Drill 12V",
-    "ProductCode": "SKU-DRL-12V",
-    "Family": "Drills",
-    "Brand__c": "Coveo Tools",
-    "Image_URL__c": "https://example.com/images/drill12v.jpg",
-    "Product_URL__c": "https://example.com/products/drill12v",
-    "In_Stock__c": true,
-    "IsActive": true
-  },
-  {
-    "attributes": {
-      "type": "Product2"
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Drill_002"
+      },
+      "Name": "Coveo Cordless Drill 18V",
+      "ProductCode": "SKU-DRL-002",
+      "Family": "Drills",
+      "Description": "High-torque 18V cordless drill for professional use.",
+      "IsActive": true
     },
-    "Name": "Coveo Cordless Drill 18V",
-    "ProductCode": "SKU-DRL-18V",
-    "Family": "Drills",
-    "Brand__c": "Coveo Tools",
-    "Image_URL__c": "https://example.com/images/drill18v.jpg",
-    "Product_URL__c": "https://example.com/products/drill18v",
-    "In_Stock__c": true,
-    "IsActive": true
-  },
-  {
-    "attributes": {
-      "type": "Product2"
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Drill_003"
+      },
+      "Name": "Coveo Hammer Drill 20V",
+      "ProductCode": "SKU-DRL-003",
+      "Family": "Drills",
+      "Description": "20V hammer drill for masonry and heavy-duty applications.",
+      "IsActive": true
     },
-    "Name": "Coveo Hammer Drill",
-    "ProductCode": "SKU-HDRL-20V",
-    "Family": "Drills",
-    "Brand__c": "Coveo Tools",
-    "Image_URL__c": "https://example.com/images/hammerdrill.jpg",
-    "Product_URL__c": "https://example.com/products/hammerdrill",
-    "In_Stock__c": true,
-    "IsActive": true
-  }
-]
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Saw_001"
+      },
+      "Name": "Coveo Circular Saw 7-1/4\"",
+      "ProductCode": "SKU-SAW-001",
+      "Family": "Saws",
+      "Description": "Circular saw for fast, straight cuts in wood.",
+      "IsActive": true
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Saw_002"
+      },
+      "Name": "Coveo Jigsaw Variable Speed",
+      "ProductCode": "SKU-SAW-002",
+      "Family": "Saws",
+      "Description": "Variable-speed jigsaw for curved and detailed cuts.",
+      "IsActive": true
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Sander_001"
+      },
+      "Name": "Coveo Finishing Sander",
+      "ProductCode": "SKU-SND-001",
+      "Family": "Sanders",
+      "Description": "Finishing sander for smooth surface preparation.",
+      "IsActive": true
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Wrench_001"
+      },
+      "Name": "Coveo Metric Wrench Set",
+      "ProductCode": "SKU-WRH-001",
+      "Family": "Hand Tools",
+      "Description": "Metric wrench set for tightening and loosening bolts.",
+      "IsActive": true
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Screwdriver_001"
+      },
+      "Name": "Coveo Precision Screwdriver Set",
+      "ProductCode": "SKU-SCR-001",
+      "Family": "Hand Tools",
+      "Description": "Precision screwdrivers for electronics and detailed work.",
+      "IsActive": true
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Hammer_001"
+      },
+      "Name": "Coveo Claw Hammer",
+      "ProductCode": "SKU-HAM-001",
+      "Family": "Hand Tools",
+      "Description": "Claw hammer for framing, nailing, and prying.",
+      "IsActive": true
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Chainsaw_001"
+      },
+      "Name": "Coveo Gas Chainsaw 16\"",
+      "ProductCode": "SKU-CHN-001",
+      "Family": "Outdoor Tools",
+      "Description": "Gas chainsaw for cutting logs and branches.",
+      "IsActive": true
+    }
+  ]
+}
