@@ -72,7 +72,7 @@
       </template>
 
       <!-- Loading -->
-      <template if:false={configs}>
+      <template if:true={isLoading}>
         <div class="slds-m-vertical_medium slds-text-align_center">
           <lightning-spinner
             alternative-text="Loading configurations"
