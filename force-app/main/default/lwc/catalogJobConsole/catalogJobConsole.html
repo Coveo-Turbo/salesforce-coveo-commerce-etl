@@ -1,14 +1,59 @@
 <template>
   <lightning-card title="Coveo Catalog Jobs" icon-name="standard:product">
-    <div class="slds-m-around_medium">
-      <lightning-button
-        label="Run All Active"
-        variant="brand"
-        onclick={handleRunAll}
-        class="slds-m-bottom_small"
-      >
-      </lightning-button>
+    <div class="cc-container slds-p-around_medium">
+      <!-- Header row -->
+      <div class="cc-header slds-grid slds-wrap slds-m-bottom_small">
+        <div class="slds-col slds-size_1-of-2 slds-p-right_small">
+          <p class="cc-subtitle">
+            Manage and trigger catalog exports from Salesforce to Coveo.
+          </p>
+        </div>
+        <div class="slds-col slds-size_1-of-2 slds-text-align_right">
+          <lightning-button
+            label="Run All Active"
+            variant="brand"
+            onclick={handleRunAll}
+            class="slds-m-left_x-small"
+          >
+          </lightning-button>
+        </div>
+      </div>
 
+      <!-- Stats row -->
+      <template if:true={configs}>
+        <div class="cc-stats slds-grid slds-wrap slds-m-bottom_small">
+          <div class="slds-col slds-size_1-of-3 slds-p-right_small">
+            <div
+              class="cc-stat-card slds-p-around_small slds-box slds-box_xx-small"
+            >
+              <div class="cc-stat-label">Total Jobs</div>
+              <div class="cc-stat-value">{totalJobs}</div>
+            </div>
+          </div>
+          <div class="slds-col slds-size_1-of-3 slds-p-horizontal_small">
+            <div
+              class="cc-stat-card slds-p-around_small slds-box slds-box_xx-small"
+            >
+              <div class="cc-stat-label">Active Jobs</div>
+              <div class="cc-stat-value cc-pill cc-pill--green">
+                {activeJobs}
+              </div>
+            </div>
+          </div>
+          <div class="slds-col slds-size_1-of-3 slds-p-left_small">
+            <div
+              class="cc-stat-card slds-p-around_small slds-box slds-box_xx-small"
+            >
+              <div class="cc-stat-label">Inactive Jobs</div>
+              <div class="cc-stat-value cc-pill cc-pill--grey">
+                {inactiveJobs}
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Table -->
       <template if:true={configs}>
         <lightning-datatable
           key-field="DeveloperName"
@@ -16,18 +61,23 @@
           columns={columns}
           hide-checkbox-column
           onrowaction={handleRowAction}
+          class="cc-table"
         >
         </lightning-datatable>
       </template>
 
+      <!-- Errors -->
       <template if:true={error}>
         <p class="slds-text-color_error slds-m-top_small">{errorMessage}</p>
       </template>
 
+      <!-- Loading -->
       <template if:false={configs}>
-        <lightning-spinner
-          alternative-text="Loading configurations"
-        ></lightning-spinner>
+        <div class="slds-m-vertical_medium slds-text-align_center">
+          <lightning-spinner
+            alternative-text="Loading configurations"
+          ></lightning-spinner>
+        </div>
       </template>
     </div>
   </lightning-card>

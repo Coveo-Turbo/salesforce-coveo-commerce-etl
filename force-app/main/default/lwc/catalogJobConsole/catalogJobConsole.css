@@ -1,0 +1,55 @@
+.cc-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.cc-subtitle {
+  font-size: 0.85rem;
+  color: var(--lwc-colorTextWeak, #706e6b);
+}
+
+.cc-stats {
+  margin-top: 0.5rem;
+}
+
+.cc-stat-card {
+  border-radius: 0.5rem;
+  background-color: var(--lwc-colorBackgroundAlt, #fafaf9);
+}
+
+.cc-stat-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--lwc-colorTextWeak, #706e6b);
+}
+
+.cc-stat-value {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
+.cc-table {
+  margin-top: 0.5rem;
+}
+
+/* Pills for active/inactive numbers */
+.cc-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.5rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.cc-pill--green {
+  background-color: #e3f9e5;
+  color: #027a48;
+}
+
+.cc-pill--grey {
+  background-color: #f3f4f6;
+  color: #4b5563;
+}
