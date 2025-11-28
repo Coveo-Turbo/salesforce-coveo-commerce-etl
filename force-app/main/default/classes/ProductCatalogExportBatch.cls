@@ -1,3 +1,17 @@
+/**
+ * Batch job that exports Product2 records to Coveo catalog source.
+ *
+ * SECURITY NOTE: The ProductFilter__c field in CatalogJobConfig__mdt is used to build
+ * dynamic SOQL queries. This field should only contain valid SOQL WHERE clause fragments
+ * (e.g., "Family = 'Electronics'" or "ProductCode LIKE 'SKU-%'").
+ *
+ * Since CatalogJobConfig__mdt is Custom Metadata, only users with the appropriate
+ * permissions (typically admins/developers) can modify it. However, administrators
+ * should ensure that ProductFilter__c values:
+ * - Contain only valid SOQL field references and operators
+ * - Do not include DML operations or subqueries that could cause security issues
+ * - Are tested before deployment to production
+ */
 global with sharing class ProductCatalogExportBatch implements Database.Batchable<SObject>, Database.Stateful, Database.AllowsCallouts {
   private final CatalogJobConfig__mdt jobConfig;
   private final List<String> extraFieldNames = new List<String>();
@@ -8,7 +22,7 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   public List<Coveo_Payload_Log__c> payloadLogs = new List<Coveo_Payload_Log__c>();
 
   public ProductCatalogExportBatch(String jobConfigDeveloperName) {
-    this.jobConfig = [
+    List<CatalogJobConfig__mdt> configs = [
       SELECT
         DeveloperName,
         Label,
@@ -22,6 +36,14 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       WHERE DeveloperName = :jobConfigDeveloperName
       LIMIT 1
     ];
+
+    if (configs.isEmpty()) {
+      throw new CatalogJobException(
+        'No CatalogJobConfig__mdt record found with DeveloperName: ' +
+          jobConfigDeveloperName
+      );
+    }
+    this.jobConfig = configs[0];
 
     if (!String.isBlank(jobConfig.AdditionalProductFields__c)) {
       for (String f : jobConfig.AdditionalProductFields__c.split(',')) {
@@ -70,7 +92,10 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       ' FROM Product2 WHERE IsActive = true';
 
     if (!String.isBlank(jobConfig.ProductFilter__c)) {
-      baseQuery += ' AND (' + jobConfig.ProductFilter__c + ')';
+      String sanitizedFilter = validateAndSanitizeFilter(
+        jobConfig.ProductFilter__c
+      );
+      baseQuery += ' AND (' + sanitizedFilter + ')';
     }
 
     System.debug('ProductCatalogExportBatch.start SOQL: ' + baseQuery);
@@ -174,5 +199,54 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
         );
       }
     }
+  }
+
+  /**
+   * Validates and sanitizes the ProductFilter__c value before using it in dynamic SOQL.
+   * While Custom Metadata is developer-controlled, this method provides an additional
+   * layer of protection against malformed queries and potential injection patterns.
+   *
+   * @param filter The raw filter string from CatalogJobConfig__mdt.ProductFilter__c
+   * @return The sanitized filter string safe for use in SOQL
+   * @throws CatalogJobException if the filter contains potentially dangerous patterns
+   */
+  @TestVisible
+  private static String validateAndSanitizeFilter(String filter) {
+    if (String.isBlank(filter)) {
+      return filter;
+    }
+
+    String trimmedFilter = filter.trim();
+
+    // Check for potentially dangerous SOQL patterns that shouldn't appear in a WHERE clause filter
+    // These patterns could indicate an attempt to inject malicious SOQL
+    List<String> dangerousPatterns = new List<String>{
+      'INSERT ',
+      'UPDATE ',
+      'DELETE ',
+      'UPSERT ',
+      'MERGE ',
+      'UNDELETE ',
+      ' FROM ', // Subquery pattern - should not have standalone FROM in a filter
+      'Database.',
+      'System.'
+    };
+
+    String upperFilter = trimmedFilter.toUpperCase();
+    for (String pattern : dangerousPatterns) {
+      if (upperFilter.contains(pattern.toUpperCase())) {
+        throw new CatalogJobException(
+          'Invalid ProductFilter__c value: contains potentially dangerous pattern "' +
+            pattern.trim() +
+            '". Only valid SOQL WHERE clause fragments are allowed.'
+        );
+      }
+    }
+
+    // Apply String.escapeSingleQuotes for any dynamic string values that might
+    // have been included. This is an additional safeguard even though the field
+    // is Custom Metadata (developer-controlled).
+    // Note: This escapes single quotes within the filter string itself
+    return String.escapeSingleQuotes(trimmedFilter);
   }
 }
