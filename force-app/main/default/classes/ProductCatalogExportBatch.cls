@@ -1,3 +1,17 @@
+/**
+ * Batch job that exports Product2 records to Coveo catalog source.
+ *
+ * SECURITY NOTE: The ProductFilter__c field in CatalogJobConfig__mdt is used to build
+ * dynamic SOQL queries. This field should only contain valid SOQL WHERE clause fragments
+ * (e.g., "Family = 'Electronics'" or "ProductCode LIKE 'SKU-%'").
+ *
+ * Since CatalogJobConfig__mdt is Custom Metadata, only users with the appropriate
+ * permissions (typically admins/developers) can modify it. However, administrators
+ * should ensure that ProductFilter__c values:
+ * - Contain only valid SOQL field references and operators
+ * - Do not include DML operations or subqueries that could cause security issues
+ * - Are tested before deployment to production
+ */
 global with sharing class ProductCatalogExportBatch implements Database.Batchable<SObject>, Database.Stateful, Database.AllowsCallouts {
   private final CatalogJobConfig__mdt jobConfig;
   private final List<String> extraFieldNames = new List<String>();
@@ -24,7 +38,7 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     ];
 
     if (configs.isEmpty()) {
-      throw new CatalogJobConfigException(
+      throw new CatalogJobException(
         'No CatalogJobConfig__mdt record found with DeveloperName: ' +
           jobConfigDeveloperName
       );
@@ -78,7 +92,10 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       ' FROM Product2 WHERE IsActive = true';
 
     if (!String.isBlank(jobConfig.ProductFilter__c)) {
-      baseQuery += ' AND (' + jobConfig.ProductFilter__c + ')';
+      String sanitizedFilter = validateAndSanitizeFilter(
+        jobConfig.ProductFilter__c
+      );
+      baseQuery += ' AND (' + sanitizedFilter + ')';
     }
 
     System.debug('ProductCatalogExportBatch.start SOQL: ' + baseQuery);
@@ -182,5 +199,58 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
         );
       }
     }
+  }
+
+  /**
+   * Validates and sanitizes the ProductFilter__c value before using it in dynamic SOQL.
+   * While Custom Metadata is developer-controlled, this method provides an additional
+   * layer of protection against malformed queries and potential injection patterns.
+   *
+   * @param filter The raw filter string from CatalogJobConfig__mdt.ProductFilter__c
+   * @return The validated filter string safe for use in SOQL
+   * @throws CatalogJobException if the filter contains potentially dangerous patterns
+   */
+  @TestVisible
+  private static String validateAndSanitizeFilter(String filter) {
+    if (String.isBlank(filter)) {
+      return filter;
+    }
+
+    String trimmedFilter = filter.trim();
+
+    // Normalize whitespace for pattern detection (replace tabs/newlines with spaces)
+    String normalizedFilter = trimmedFilter.replaceAll('[\\t\\n\\r]+', ' ')
+      .toUpperCase();
+
+    // Check for DML keywords that shouldn't appear in a WHERE clause filter
+    List<String> dmlPatterns = new List<String>{
+      'INSERT ',
+      'UPDATE ',
+      'DELETE ',
+      'UPSERT ',
+      'MERGE ',
+      'UNDELETE '
+    };
+
+    for (String pattern : dmlPatterns) {
+      if (normalizedFilter.contains(pattern)) {
+        throw new CatalogJobException(
+          'Invalid ProductFilter__c value: contains DML keyword "' +
+            pattern.trim() +
+            '". Only valid SOQL WHERE clause fragments are allowed.'
+        );
+      }
+    }
+
+    // Check for subqueries by looking for SELECT...FROM pattern
+    // This is a simplified check - subqueries in WHERE clauses are generally unexpected
+    if (normalizedFilter.contains('SELECT ') && normalizedFilter.contains(' FROM ')) {
+      throw new CatalogJobException(
+        'Invalid ProductFilter__c value: contains subquery pattern. ' +
+          'Only simple SOQL WHERE clause fragments are allowed.'
+      );
+    }
+
+    return trimmedFilter;
   }
 }
