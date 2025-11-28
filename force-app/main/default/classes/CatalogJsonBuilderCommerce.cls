@@ -1,7 +1,8 @@
 public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuilder {
   public String buildFullUpdateNdjson(
     List<Product2> products,
-    Map<Id, PricebookEntry> pbesByProduct
+    Map<Id, PricebookEntry> pbesByProduct,
+    List<String> extraFieldNames
   ) {
     if (products.isEmpty()) {
       return JSON.serialize(
@@ -22,17 +23,61 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
       WHERE ProductId IN :pids
     ];
 
-    Set<Id> catIds = new Set<Id>();
+    System.debug(
+      LoggingLevel.FINE,
+      'Loaded ' +
+        links.size() +
+        ' ProductCategoryProduct links for ' +
+        pids.size() +
+        ' products'
+    );
+
+    // Collect all leaf category ids
+    Set<Id> allCategoryIds = new Set<Id>();
     for (ProductCategoryProduct l : links) {
-      catIds.add(l.ProductCategoryId);
+      if (l.ProductCategoryId != null) {
+        allCategoryIds.add(l.ProductCategoryId);
+      }
     }
 
-    // Load categories (name + parent chain)
+    // Walk up parents to collect full chain of ancestors
+    // We'll iteratively add ParentCategoryIds until no new ones appear
+    Boolean changed = true;
+    Integer guard = 0;
+    while (changed && guard++ < 10 && !allCategoryIds.isEmpty()) {
+      changed = false;
+
+      // Load current batch of categories
+      Map<Id, ProductCategory> batch = new Map<Id, ProductCategory>(
+        [
+          SELECT Id, ParentCategoryId
+          FROM ProductCategory
+          WHERE Id IN :allCategoryIds
+        ]
+      );
+
+      Set<Id> newParents = new Set<Id>();
+      for (ProductCategory c : batch.values()) {
+        if (
+          c.ParentCategoryId != null &&
+          !allCategoryIds.contains(c.ParentCategoryId)
+        ) {
+          newParents.add(c.ParentCategoryId);
+        }
+      }
+
+      if (!newParents.isEmpty()) {
+        allCategoryIds.addAll(newParents);
+        changed = true;
+      }
+    }
+
+    // Finally load the full map of categories (all leaves + all ancestors)
     Map<Id, ProductCategory> catById = new Map<Id, ProductCategory>(
       [
         SELECT Id, Name, ParentCategoryId
         FROM ProductCategory
-        WHERE Id IN :catIds
+        WHERE Id IN :allCategoryIds
       ]
     );
 
@@ -52,6 +97,9 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
 
       // ---- ec_name ----
       String ecName = p.Name;
+
+      // ---- ec_description ----
+      String ecDescription = p.Description;
 
       // ---- ec_category as array of strings ----
       List<String> ecCategories = buildCategoryPathsForProduct(
@@ -86,6 +134,7 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
 
       // Core commerce fields
       item.put('ec_name', ecName);
+      item.put('ec_description', ecDescription);
       item.put('ec_product_id', productIdForEc);
       item.put('ec_category', ecCategories); // <-- LIST of category/hierarchy strings
       item.put('ec_brand', customBrand);
@@ -103,6 +152,23 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
       }
       if (imageUrl != null) {
         item.put('ec_images', new List<String>{ imageUrl });
+      }
+
+      // Attach extra Product2 fields as metadata
+      if (extraFieldNames != null && !extraFieldNames.isEmpty()) {
+        for (String apiName : extraFieldNames) {
+          String trimmed = apiName != null ? apiName.trim() : null;
+          if (String.isBlank(trimmed)) {
+            continue;
+          }
+          Object val = SafeFieldUtil.safeGet(p, trimmed);
+          if (val == null) {
+            continue;
+          }
+          // Prefix with sf_ to avoid collisions, keep lowercase for consistency
+          String metaKey = 'sf_' + trimmed.toLowerCase();
+          item.put(metaKey, val);
+        }
       }
 
       addOrUpdate.add(item);
@@ -165,7 +231,30 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
     List<ProductCategoryProduct> links,
     Map<Id, ProductCategory> catById
   ) {
+    System.debug(LoggingLevel.FINE, 'buildCategoryPathsForProduct: START productId=' + productId);
+    System.debug(LoggingLevel.FINE, '  links.size=' + (links == null ? 0 : links.size()));
+    System.debug(LoggingLevel.FINE, '  catById.size=' + (catById == null ? 0 : catById.size()));
+
     Set<String> pathsSet = new Set<String>();
+
+    if (links == null || links.isEmpty()) {
+      System.debug(LoggingLevel.FINE, '  No ProductCategoryProduct links provided.');
+      return new List<String>();
+    }
+    if (catById == null || catById.isEmpty()) {
+      System.debug(LoggingLevel.FINE, '  No ProductCategory records provided.');
+      return new List<String>();
+    }
+
+    for (ProductCategoryProduct l : links) {
+      System.debug(
+        LoggingLevel.FINE,
+        '  link: ProductId=' +
+          l.ProductId +
+          ' / CategoryId=' +
+          l.ProductCategoryId
+      );
+    }
 
     for (ProductCategoryProduct l : links) {
       if (l.ProductId != productId) {
@@ -182,6 +271,7 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
       while (cur != null && guard++ < 10) {
         ProductCategory c = catById.get(cur);
         if (c == null) {
+          System.debug(LoggingLevel.FINE, '  Category not found in map for Id=' + cur);
           break;
         }
         chain.add(c.Name); // leaf -> root
@@ -190,6 +280,8 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
       if (chain.isEmpty()) {
         continue;
       }
+
+      System.debug(LoggingLevel.FINE, '  chain (leaf->root)=' + chain);
 
       // Reverse manually: root -> ... -> leaf
       List<String> reversed = new List<String>();
@@ -204,6 +296,14 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
         pathsSet.add(String.join(acc, '|'));
       }
     }
+
+    System.debug(
+      LoggingLevel.FINE,
+      'buildCategoryPathsForProduct: productId=' +
+        productId +
+        ' => paths=' +
+        pathsSet
+    );
 
     return new List<String>(pathsSet);
   }

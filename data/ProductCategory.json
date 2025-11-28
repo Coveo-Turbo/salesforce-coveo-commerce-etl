@@ -1,0 +1,20 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Tools"
+      },
+      "Name": "Tools",
+      "CatalogId": "@Catalog_Main"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Accessories"
+      },
+      "Name": "Accessories",
+      "CatalogId": "@Catalog_Main"
+    }
+  ]
+}

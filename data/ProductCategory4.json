@@ -1,0 +1,121 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Drills_Cordless"
+      },
+      "Name": "Cordless",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Drills"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Saws_Cordless"
+      },
+      "Name": "Cordless",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Saws"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Sanders_Finish"
+      },
+      "Name": "Finish",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Sanders"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Wrenches_Metric"
+      },
+      "Name": "Metric",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Wrenches"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Screwdrivers_Precision"
+      },
+      "Name": "Precision",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Screwdrivers"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Hammers_Claw"
+      },
+      "Name": "Claw Hammers",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Hammers"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Chainsaws_Gas"
+      },
+      "Name": "Gas Chainsaws",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Chainsaws"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Trimmers_Electric"
+      },
+      "Name": "Electric Trimmers",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Trimmers"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_LeafBlowers_Battery"
+      },
+      "Name": "Battery Leaf Blowers",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Leaf_Blowers"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Drill_Bits_Set"
+      },
+      "Name": "Bit Sets",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Drill_Bits"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Drill_Extensions_Long"
+      },
+      "Name": "Long Extensions",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Drill_Extensions"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Saw_Blades_Carbide"
+      },
+      "Name": "Carbide Blades",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Saw_Blades"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Saw_Guides_Precision"
+      },
+      "Name": "Precision Guides",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Saw_Guides"
+    }
+  ]
+}

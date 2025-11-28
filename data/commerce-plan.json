@@ -1,0 +1,61 @@
+[
+  {
+    "sobject": "ProductCatalog",
+    "saveRefs": true,
+    "files": [
+      "ProductCatalog.json"
+    ]
+  },
+  {
+    "sobject": "ProductCategory",
+    "saveRefs": true,
+    "files": [
+      "ProductCategory.json"
+    ]
+  },
+  {
+    "sobject": "ProductCategory",
+    "saveRefs": true,
+    "resolveRefs": true,
+    "files": [
+      "ProductCategory2.json"
+    ]
+  },
+  {
+    "sobject": "ProductCategory",
+    "saveRefs": true,
+    "resolveRefs": true,
+    "files": [
+      "ProductCategory3.json"
+    ]
+  },
+  {
+    "sobject": "ProductCategory",
+    "saveRefs": true,
+    "resolveRefs": true,
+    "files": [
+      "ProductCategory4.json"
+    ]
+  },
+  {
+    "sobject": "Product2",
+    "saveRefs": true,
+    "files": [
+      "Product2.json"
+    ]
+  },
+  {
+    "sobject": "Pricebook2",
+    "saveRefs": true,
+    "files": [
+      "Pricebook2.json"
+    ]
+  },
+  {
+    "sobject": "ProductCategoryProduct",
+    "resolveRefs": true,
+    "files": [
+      "ProductCategoryProduct.json"
+    ]
+  }
+]

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Configuration for running ProductCatalogExportBatch against Coveo catalog sources.</description>
+    <label>Catalog Job Configuration</label>
+    <pluralLabel>Catalog Job Configurations</pluralLabel>
+    <visibility>Public</visibility>
+</CustomObject>

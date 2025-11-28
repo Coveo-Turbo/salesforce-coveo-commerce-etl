@@ -21,15 +21,8 @@ sf data update record \
   --values "IsActive=true" \
   --target-org "$alias" || true
 
-echo "➡️  Importing sample Product2 data"
-sf data import tree \
-  --plan data/Product2-plan.json \
-  --target-org "$alias" || true
-
-echo "➡️  Seeding B2B Commerce categories and product links"
-sf apex run \
-  --file scripts/seedB2BCategories.apex \
-  --target-org "$alias"
+echo "➡️  Importing Commerce sample data"
+sf data import tree --target-org "$alias" --plan data/commerce-plan.json || true
 
 echo "➡️  Assigning permission set"
 sf org assign permset \

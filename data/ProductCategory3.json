@@ -1,0 +1,121 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Drills"
+      },
+      "Name": "Drills",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Power_Tools"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Saws"
+      },
+      "Name": "Saws",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Power_Tools"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Sanders"
+      },
+      "Name": "Sanders",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Power_Tools"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Wrenches"
+      },
+      "Name": "Wrenches",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Hand_Tools"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Screwdrivers"
+      },
+      "Name": "Screwdrivers",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Hand_Tools"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Hammers"
+      },
+      "Name": "Hammers",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Hand_Tools"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Chainsaws"
+      },
+      "Name": "Chainsaws",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Outdoor_Tools"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Trimmers"
+      },
+      "Name": "Trimmers",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Outdoor_Tools"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Leaf_Blowers"
+      },
+      "Name": "Leaf Blowers",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Outdoor_Tools"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Drill_Bits"
+      },
+      "Name": "Bits",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Drill_Accessories"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Drill_Extensions"
+      },
+      "Name": "Extensions",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Drill_Accessories"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Saw_Blades"
+      },
+      "Name": "Blades",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Saw_Accessories"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Saw_Guides"
+      },
+      "Name": "Guides",
+      "CatalogId": "@Catalog_Main",
+      "ParentCategoryId": "@Cat_Saw_Accessories"
+    }
+  ]
+}

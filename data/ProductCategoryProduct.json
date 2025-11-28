@@ -1,0 +1,84 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "ProductCategoryProduct",
+        "referenceId": "Link_Drill_001"
+      },
+      "ProductId": "@Prod_Drill_001",
+      "ProductCategoryId": "@Cat_Drills_Cordless"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategoryProduct",
+        "referenceId": "Link_Drill_002"
+      },
+      "ProductId": "@Prod_Drill_002",
+      "ProductCategoryId": "@Cat_Drills_Cordless"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategoryProduct",
+        "referenceId": "Link_Drill_003"
+      },
+      "ProductId": "@Prod_Drill_003",
+      "ProductCategoryId": "@Cat_Drills_Cordless"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategoryProduct",
+        "referenceId": "Link_Saw_001"
+      },
+      "ProductId": "@Prod_Saw_001",
+      "ProductCategoryId": "@Cat_Saws_Cordless"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategoryProduct",
+        "referenceId": "Link_Saw_002"
+      },
+      "ProductId": "@Prod_Saw_002",
+      "ProductCategoryId": "@Cat_Saws_Cordless"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategoryProduct",
+        "referenceId": "Link_Sander_001"
+      },
+      "ProductId": "@Prod_Sander_001",
+      "ProductCategoryId": "@Cat_Sanders_Finish"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategoryProduct",
+        "referenceId": "Link_Wrench_001"
+      },
+      "ProductId": "@Prod_Wrench_001",
+      "ProductCategoryId": "@Cat_Wrenches_Metric"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategoryProduct",
+        "referenceId": "Link_Screwdriver_001"
+      },
+      "ProductId": "@Prod_Screwdriver_001",
+      "ProductCategoryId": "@Cat_Screwdrivers_Precision"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategoryProduct",
+        "referenceId": "Link_Hammer_001"
+      },
+      "ProductId": "@Prod_Hammer_001",
+      "ProductCategoryId": "@Cat_Hammers_Claw"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategoryProduct",
+        "referenceId": "Link_Chainsaw_001"
+      },
+      "ProductId": "@Prod_Chainsaw_001",
+      "ProductCategoryId": "@Cat_Chainsaws_Gas"
+    }
+  ]
+}
