@@ -47,10 +47,12 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       'Name',
       'StockKeepingUnit',
       'Family',
-      'Brand__c',
-      'Image_URL__c',
-      'Product_URL__c',
-      'In_Stock__c'
+      'ProductCode',
+      'Description',
+      'QuantityUnitOfMeasure',
+      'IsActive',
+      'Type',
+      'DisplayUrl'
     };
 
     // Add extra fields from config
