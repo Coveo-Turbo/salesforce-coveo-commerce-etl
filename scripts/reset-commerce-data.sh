@@ -109,17 +109,17 @@ echo "✅ Tree import completed."
 echo
 
 ########################################
-# 9) Optional: seed prices (if using Apex script)
+# 8) Optional: seed prices (if using Apex script)
 ########################################
 if [ -f "$DATA_DIR/seedPrices.apex" ]; then
-  echo "9) Running seedPrices.apex..."
+  echo "8) Running seedPrices.apex..."
   sf apex run \
     --target-org "$ORG_ALIAS" \
     --file "$DATA_DIR/seedPrices.apex" || true
   echo "✅ Price seeding script executed."
   echo
 else
-  echo "9) Skipping seedPrices.apex (file not found)."
+  echo "8) Skipping seedPrices.apex (file not found)."
   echo
 fi
 
