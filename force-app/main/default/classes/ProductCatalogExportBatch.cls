@@ -78,17 +78,21 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   }
 
   global void execute(Database.BatchableContext bc, List<Product2> scope) {
-    Map<Id, PricebookEntry> pbes = new Map<Id, PricebookEntry>(
-      [
-        SELECT Id, Product2Id, UnitPrice
-        FROM PricebookEntry
-        WHERE Pricebook2Id = :stdPricebookId AND Product2Id IN :scope
-      ]
-    );
+    Map<Id, PricebookEntry> pbesByProduct = new Map<Id, PricebookEntry>();
+
+    for (PricebookEntry pbe : [
+      SELECT Id, Product2Id, UnitPrice
+      FROM PricebookEntry
+      WHERE Pricebook2Id = :stdPricebookId AND Product2Id IN :scope
+    ]) {
+      if (pbe.Product2Id != null) {
+        pbesByProduct.put(pbe.Product2Id, pbe);
+      }
+    }
     ICatalogJsonBuilder builder = CatalogJsonBuilderFactory.get();
     String ndjsonPayload = builder.buildFullUpdateNdjson(
       scope,
-      pbes,
+      pbesByProduct,
       extraFieldNames
     );
 
