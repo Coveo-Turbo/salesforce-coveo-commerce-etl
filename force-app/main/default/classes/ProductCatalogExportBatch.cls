@@ -8,7 +8,7 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   public List<Coveo_Payload_Log__c> payloadLogs = new List<Coveo_Payload_Log__c>();
 
   public ProductCatalogExportBatch(String jobConfigDeveloperName) {
-    this.jobConfig = [
+    List<CatalogJobConfig__mdt> configs = [
       SELECT
         DeveloperName,
         Label,
@@ -22,6 +22,14 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       WHERE DeveloperName = :jobConfigDeveloperName
       LIMIT 1
     ];
+
+    if (configs.isEmpty()) {
+      throw new CatalogJobConfigException(
+        'No CatalogJobConfig__mdt record found with DeveloperName: ' +
+          jobConfigDeveloperName
+      );
+    }
+    this.jobConfig = configs[0];
 
     if (!String.isBlank(jobConfig.AdditionalProductFields__c)) {
       for (String f : jobConfig.AdditionalProductFields__c.split(',')) {
