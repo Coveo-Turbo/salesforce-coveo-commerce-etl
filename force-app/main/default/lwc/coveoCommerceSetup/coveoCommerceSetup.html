@@ -1,9 +1,9 @@
 <template>
   <div class="setup-container slds-p-around_medium">
     <!-- Header -->
-    <div class="setup-header slds-m-bottom_large">
-      <div class="slds-grid slds-wrap">
-        <div class="slds-col slds-size_1-of-1">
+    <div class="setup-header slds-m-bottom_medium">
+      <div class="slds-grid slds-wrap slds-grid_vertical-align-center">
+        <div class="slds-col slds-size_1-of-1 slds-medium-size_2-of-3">
           <h1 class="slds-text-heading_large slds-m-bottom_x-small">
             <lightning-icon
               icon-name="standard:settings"
@@ -13,207 +13,213 @@
             Coveo Commerce ETL Setup
           </h1>
           <p class="setup-subtitle">
-            Configure your Coveo Commerce integration in three simple steps.
-            Complete each section to enable catalog exports.
+            Configure your Coveo Commerce integration. Complete each section to
+            enable catalog exports.
           </p>
+        </div>
+        <div
+          class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-text-align_right slds-m-top_small"
+        >
+          <lightning-button
+            label="Open Catalog Job Console"
+            variant="brand"
+            onclick={handleOpenJobConsole}
+            icon-name="utility:right"
+            icon-position="right"
+          ></lightning-button>
         </div>
       </div>
     </div>
 
-    <!-- Progress Indicator -->
-    <div class="slds-m-bottom_large">
-      <lightning-progress-indicator
-        current-step={currentStep}
-        type="base"
-        variant="base"
-      >
-        <lightning-progress-step
-          label="Connect to Coveo"
-          value="step1"
-        ></lightning-progress-step>
-        <lightning-progress-step
-          label="Configure Catalog Jobs"
-          value="step2"
-        ></lightning-progress-step>
-        <lightning-progress-step
-          label="Advanced Settings"
-          value="step3"
-        ></lightning-progress-step>
-      </lightning-progress-indicator>
-    </div>
-
-    <!-- Step 1: Connect to Coveo -->
-    <lightning-card
-      title="Step 1 – Connect to Coveo"
-      icon-name="utility:connected_apps"
+    <!-- Accordion Sections -->
+    <lightning-accordion
+      allow-multiple-sections-open
+      active-section-name="step1"
     >
-      <div class="slds-p-horizontal_medium slds-p-bottom_medium">
-        <div class="slds-grid slds-wrap slds-gutters">
-          <!-- Status Section -->
-          <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
-            <div
-              class="status-card slds-box slds-box_x-small slds-m-bottom_medium"
-            >
-              <h3 class="slds-text-heading_small slds-m-bottom_small">
-                Named Credential Status
-              </h3>
-              <template if:true={isLoadingCredential}>
-                <lightning-spinner
-                  alternative-text="Loading"
-                  size="small"
-                ></lightning-spinner>
-              </template>
-              <template if:false={isLoadingCredential}>
-                <div class="slds-grid slds-wrap">
-                  <div class="slds-col slds-size_1-of-2">
-                    <p class="slds-text-title_caps slds-m-bottom_xx-small">
-                      Status
-                    </p>
-                    <lightning-badge
-                      label={credentialStatusLabel}
-                      class={credentialStatusClass}
-                    ></lightning-badge>
+      <!-- Step 1: Connect to Coveo -->
+      <lightning-accordion-section
+        name="step1"
+        label="Step 1 – Connect to Coveo"
+      >
+        <div class="slds-p-horizontal_medium slds-p-bottom_medium">
+          <div class="slds-grid slds-wrap slds-gutters">
+            <!-- Status Section -->
+            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
+              <div
+                class="status-card slds-box slds-box_x-small slds-m-bottom_medium"
+              >
+                <h3 class="slds-text-heading_small slds-m-bottom_small">
+                  Named Credential Status
+                </h3>
+                <template if:true={isLoadingCredential}>
+                  <lightning-spinner
+                    alternative-text="Loading"
+                    size="small"
+                  ></lightning-spinner>
+                </template>
+                <template if:false={isLoadingCredential}>
+                  <div class="slds-grid slds-wrap">
+                    <div class="slds-col slds-size_1-of-2">
+                      <p class="slds-text-title_caps slds-m-bottom_xx-small">
+                        Status
+                      </p>
+                      <lightning-badge
+                        label={credentialStatusLabel}
+                        class={credentialStatusClass}
+                      ></lightning-badge>
+                    </div>
+                    <div class="slds-col slds-size_1-of-2">
+                      <p class="slds-text-title_caps slds-m-bottom_xx-small">
+                        Endpoint
+                      </p>
+                      <p
+                        class="slds-text-body_regular slds-truncate"
+                        title={credentialEndpoint}
+                      >
+                        {credentialEndpoint}
+                      </p>
+                    </div>
                   </div>
-                  <div class="slds-col slds-size_1-of-2">
-                    <p class="slds-text-title_caps slds-m-bottom_xx-small">
-                      Endpoint
-                    </p>
-                    <p class="slds-text-body_regular">{credentialEndpoint}</p>
-                  </div>
+                </template>
+              </div>
+
+              <div class="slds-m-top_medium">
+                <lightning-button
+                  label="Test Connection"
+                  variant="neutral"
+                  onclick={handleTestConnection}
+                  disabled={isTestingConnection}
+                  class="slds-m-right_small"
+                ></lightning-button>
+                <lightning-button
+                  label="Open Named Credentials Setup"
+                  variant="brand-outline"
+                  onclick={handleOpenNamedCredentials}
+                  icon-name="utility:new_window"
+                  icon-position="right"
+                ></lightning-button>
+              </div>
+
+              <template if:true={connectionTestResult}>
+                <div class={connectionTestClass}>
+                  <lightning-icon
+                    icon-name={connectionTestIcon}
+                    size="x-small"
+                    class="slds-m-right_x-small"
+                  ></lightning-icon>
+                  {connectionTestMessage}
                 </div>
               </template>
             </div>
 
-            <div class="slds-m-top_medium">
+            <!-- Help Section -->
+            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
+              <div class="help-card slds-box slds-box_x-small slds-theme_shade">
+                <h3 class="slds-text-heading_small slds-m-bottom_small">
+                  <lightning-icon
+                    icon-name="utility:info"
+                    size="x-small"
+                    class="slds-m-right_x-small"
+                  ></lightning-icon>
+                  Setup Instructions
+                </h3>
+                <ol class="slds-list_ordered">
+                  <li class="slds-m-bottom_x-small">
+                    Go to <strong>Setup → Named Credentials</strong>
+                  </li>
+                  <li class="slds-m-bottom_x-small">
+                    Find or create the <code>Coveo_Push</code> Named Credential
+                  </li>
+                  <li class="slds-m-bottom_x-small">
+                    Set the <strong>URL</strong> to your Coveo Push API endpoint
+                    (e.g., <code>https://api.cloud.coveo.com/push/v1</code>)
+                  </li>
+                  <li class="slds-m-bottom_x-small">
+                    Configure the <strong>External Credential</strong> with your
+                    Coveo API Key
+                  </li>
+                  <li>
+                    Assign the permission set
+                    <code>CoveoETL_Admin</code> to grant access
+                  </li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      </lightning-accordion-section>
+
+      <!-- Step 2: Configure Catalog Jobs -->
+      <lightning-accordion-section
+        name="step2"
+        label="Step 2 – Configure Catalog Jobs"
+      >
+        <div class="slds-p-horizontal_medium slds-p-bottom_medium">
+          <!-- Header with button -->
+          <div
+            class="slds-grid slds-wrap slds-grid_vertical-align-center slds-m-bottom_medium"
+          >
+            <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+              <!-- Stats -->
+              <template if:true={catalogConfigs}>
+                <div class="slds-grid slds-wrap">
+                  <div class="slds-col slds-size_1-of-3 slds-p-right_small">
+                    <div class="stat-card slds-box slds-box_x-small">
+                      <p class="stat-label">Total Jobs</p>
+                      <p class="stat-value">{totalConfigs}</p>
+                    </div>
+                  </div>
+                  <div
+                    class="slds-col slds-size_1-of-3 slds-p-horizontal_small"
+                  >
+                    <div class="stat-card slds-box slds-box_x-small">
+                      <p class="stat-label">Active</p>
+                      <p class="stat-value stat-active">{activeConfigs}</p>
+                    </div>
+                  </div>
+                  <div class="slds-col slds-size_1-of-3 slds-p-left_small">
+                    <div class="stat-card slds-box slds-box_x-small">
+                      <p class="stat-label">Inactive</p>
+                      <p class="stat-value stat-inactive">{inactiveConfigs}</p>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div
+              class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2 slds-text-align_right slds-m-top_small"
+            >
               <lightning-button
-                label="Test Connection"
-                variant="neutral"
-                onclick={handleTestConnection}
-                disabled={isTestingConnection}
-                class="slds-m-right_small"
-              ></lightning-button>
-              <lightning-button
-                label="Open Named Credentials Setup"
+                label="Open Custom Metadata Setup"
                 variant="brand-outline"
-                onclick={handleOpenNamedCredentials}
+                onclick={handleOpenCustomMetadata}
                 icon-name="utility:new_window"
                 icon-position="right"
               ></lightning-button>
             </div>
-
-            <template if:true={connectionTestResult}>
-              <div class={connectionTestClass}>
-                <lightning-icon
-                  icon-name={connectionTestIcon}
-                  size="x-small"
-                  class="slds-m-right_x-small"
-                ></lightning-icon>
-                {connectionTestMessage}
-              </div>
-            </template>
           </div>
 
-          <!-- Help Section -->
-          <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
-            <div class="help-card slds-box slds-box_x-small slds-theme_shade">
-              <h3 class="slds-text-heading_small slds-m-bottom_small">
-                <lightning-icon
-                  icon-name="utility:info"
-                  size="x-small"
-                  class="slds-m-right_x-small"
-                ></lightning-icon>
-                Setup Instructions
-              </h3>
-              <ol class="slds-list_ordered">
-                <li class="slds-m-bottom_x-small">
-                  Go to <strong>Setup → Named Credentials</strong>
-                </li>
-                <li class="slds-m-bottom_x-small">
-                  Find or create the <code>Coveo_Push</code> Named Credential
-                </li>
-                <li class="slds-m-bottom_x-small">
-                  Set the <strong>URL</strong> to your Coveo Push API endpoint
-                  (e.g., <code>https://api.cloud.coveo.com/push/v1</code>)
-                </li>
-                <li class="slds-m-bottom_x-small">
-                  Configure the <strong>External Credential</strong> with your
-                  Coveo API Key
-                </li>
-                <li>
-                  Assign the permission set
-                  <code>CoveoETL_Admin</code> to grant access
-                </li>
-              </ol>
+          <!-- Config Table -->
+          <template if:true={isLoadingConfigs}>
+            <div class="slds-text-align_center slds-m-vertical_large">
+              <lightning-spinner
+                alternative-text="Loading configurations"
+              ></lightning-spinner>
             </div>
-          </div>
-        </div>
-      </div>
-    </lightning-card>
+          </template>
 
-    <!-- Step 2: Configure Catalog Jobs -->
-    <lightning-card
-      title="Step 2 – Configure Catalog Jobs"
-      icon-name="standard:record"
-      class="slds-m-top_medium"
-    >
-      <div slot="actions">
-        <lightning-button
-          label="Open Custom Metadata Setup"
-          variant="brand-outline"
-          onclick={handleOpenCustomMetadata}
-          icon-name="utility:new_window"
-          icon-position="right"
-        ></lightning-button>
-      </div>
-      <div class="slds-p-horizontal_medium slds-p-bottom_medium">
-        <!-- Stats -->
-        <template if:true={catalogConfigs}>
-          <div class="slds-grid slds-wrap slds-m-bottom_medium">
-            <div class="slds-col slds-size_1-of-3 slds-p-right_small">
-              <div class="stat-card slds-box slds-box_x-small">
-                <p class="stat-label">Total Configs</p>
-                <p class="stat-value">{totalConfigs}</p>
-              </div>
-            </div>
-            <div class="slds-col slds-size_1-of-3 slds-p-horizontal_small">
-              <div class="stat-card slds-box slds-box_x-small">
-                <p class="stat-label">Active</p>
-                <p class="stat-value stat-active">{activeConfigs}</p>
-              </div>
-            </div>
-            <div class="slds-col slds-size_1-of-3 slds-p-left_small">
-              <div class="stat-card slds-box slds-box_x-small">
-                <p class="stat-label">Inactive</p>
-                <p class="stat-value stat-inactive">{inactiveConfigs}</p>
-              </div>
-            </div>
-          </div>
-        </template>
+          <template if:true={hasConfigs}>
+            <lightning-datatable
+              key-field="id"
+              data={catalogConfigs}
+              columns={configColumns}
+              hide-checkbox-column
+              class="config-table"
+            ></lightning-datatable>
+          </template>
 
-        <!-- Config Table -->
-        <template if:true={isLoadingConfigs}>
-          <div class="slds-text-align_center slds-m-vertical_large">
-            <lightning-spinner
-              alternative-text="Loading configurations"
-            ></lightning-spinner>
-          </div>
-        </template>
-
-        <template if:true={hasConfigs}>
-          <lightning-datatable
-            key-field="id"
-            data={catalogConfigs}
-            columns={configColumns}
-            hide-checkbox-column
-            class="config-table"
-          ></lightning-datatable>
-        </template>
-
-        <template if:true={noConfigs}>
-          <div
-            class="slds-illustration slds-illustration_small slds-m-vertical_large"
-          >
-            <div class="slds-text-align_center">
+          <template if:true={noConfigs}>
+            <div class="slds-text-align_center slds-m-vertical_large">
               <lightning-icon
                 icon-name="utility:add"
                 size="large"
@@ -227,208 +233,190 @@
                 products to Coveo.
               </p>
             </div>
-          </div>
-        </template>
+          </template>
 
-        <!-- Help Text -->
-        <div
-          class="help-card slds-box slds-box_x-small slds-theme_shade slds-m-top_medium"
-        >
-          <h3 class="slds-text-heading_small slds-m-bottom_small">
-            <lightning-icon
-              icon-name="utility:info"
-              size="x-small"
-              class="slds-m-right_x-small"
-            ></lightning-icon>
-            Configuration Fields
-          </h3>
-          <div class="slds-grid slds-wrap">
-            <div class="slds-col slds-size_1-of-2 slds-p-right_small">
-              <ul class="slds-list_dotted">
-                <li>
-                  <strong>Coveo Org Id</strong> – Your Coveo organization
-                  identifier
-                </li>
-                <li>
-                  <strong>Source Id</strong> – The Coveo catalog source ID
-                </li>
-                <li>
-                  <strong>Locale</strong> – Language/region code (e.g., en-US)
-                </li>
-              </ul>
-            </div>
-            <div class="slds-col slds-size_1-of-2 slds-p-left_small">
-              <ul class="slds-list_dotted">
-                <li>
-                  <strong>Product Filter</strong> – SOQL WHERE clause (optional)
-                </li>
-                <li>
-                  <strong>Additional Fields</strong> – Extra Product2 fields to
-                  export
-                </li>
-                <li><strong>Active</strong> – Enable/disable the job</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
-    </lightning-card>
-
-    <!-- Step 3: Advanced Settings -->
-    <lightning-card
-      title="Step 3 – Advanced Builder Settings"
-      icon-name="utility:apex"
-      class="slds-m-top_medium"
-    >
-      <div class="slds-p-horizontal_medium slds-p-bottom_medium">
-        <div class="slds-grid slds-wrap slds-gutters">
-          <!-- Current Builder -->
-          <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
+          <!-- Collapsible Help Text -->
+          <details class="slds-m-top_medium">
+            <summary class="slds-text-link help-toggle">
+              <lightning-icon
+                icon-name="utility:info"
+                size="x-small"
+                class="slds-m-right_x-small"
+              ></lightning-icon>
+              Configuration Fields Reference
+            </summary>
             <div
-              class="status-card slds-box slds-box_x-small slds-m-bottom_medium"
+              class="help-card slds-box slds-box_x-small slds-theme_shade slds-m-top_small"
             >
-              <h3 class="slds-text-heading_small slds-m-bottom_small">
-                Active Builder Class
-              </h3>
-              <template if:true={isLoadingBuilder}>
-                <lightning-spinner
-                  alternative-text="Loading"
-                  size="small"
-                ></lightning-spinner>
-              </template>
-              <template if:false={isLoadingBuilder}>
-                <div class="slds-m-bottom_small">
-                  <p class="slds-text-title_caps slds-m-bottom_xx-small">
-                    Current Builder
-                  </p>
-                  <p class="slds-text-heading_small">
-                    <code>{builderClassName}</code>
-                  </p>
+              <div class="slds-grid slds-wrap">
+                <div class="slds-col slds-size_1-of-2 slds-p-right_small">
+                  <ul class="slds-list_dotted">
+                    <li>
+                      <strong>Coveo Org Id</strong> – Your Coveo organization
+                      identifier
+                    </li>
+                    <li>
+                      <strong>Source Id</strong> – The Coveo catalog source ID
+                    </li>
+                    <li>
+                      <strong>Locale</strong> – Language/region code (e.g.,
+                      en-US)
+                    </li>
+                  </ul>
                 </div>
-                <template if:true={isDefaultBuilder}>
-                  <lightning-badge
-                    label="Default"
-                    class="slds-theme_success"
-                  ></lightning-badge>
+                <div class="slds-col slds-size_1-of-2 slds-p-left_small">
+                  <ul class="slds-list_dotted">
+                    <li>
+                      <strong>Product Filter</strong> – SOQL WHERE clause
+                      (optional)
+                    </li>
+                    <li>
+                      <strong>Additional Fields</strong> – Extra Product2 fields
+                      to export
+                    </li>
+                    <li><strong>Active</strong> – Enable/disable the job</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </details>
+        </div>
+      </lightning-accordion-section>
+
+      <!-- Step 3: Advanced Settings -->
+      <lightning-accordion-section
+        name="step3"
+        label="Step 3 – Advanced Builder Settings"
+      >
+        <div class="slds-p-horizontal_medium slds-p-bottom_medium">
+          <div class="slds-grid slds-wrap slds-gutters">
+            <!-- Current Builder -->
+            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
+              <div
+                class="status-card slds-box slds-box_x-small slds-m-bottom_medium"
+              >
+                <h3 class="slds-text-heading_small slds-m-bottom_small">
+                  Active Builder Class
+                </h3>
+                <template if:true={isLoadingBuilder}>
+                  <lightning-spinner
+                    alternative-text="Loading"
+                    size="small"
+                  ></lightning-spinner>
                 </template>
-                <template if:false={isDefaultBuilder}>
-                  <lightning-badge
-                    label="Custom"
-                    class="slds-theme_warning"
-                  ></lightning-badge>
+                <template if:false={isLoadingBuilder}>
+                  <div class="slds-m-bottom_small">
+                    <p class="slds-text-title_caps slds-m-bottom_xx-small">
+                      Current Builder
+                    </p>
+                    <p class="slds-text-heading_small">
+                      <code>{builderClassName}</code>
+                    </p>
+                  </div>
+                  <template if:true={isDefaultBuilder}>
+                    <lightning-badge
+                      label="Default"
+                      class="slds-theme_success"
+                    ></lightning-badge>
+                  </template>
+                  <template if:false={isDefaultBuilder}>
+                    <lightning-badge
+                      label="Custom"
+                      class="slds-theme_warning"
+                    ></lightning-badge>
+                  </template>
                 </template>
-              </template>
+              </div>
+
+              <!-- Validate Custom Builder -->
+              <div class="slds-m-top_medium">
+                <lightning-input
+                  type="text"
+                  label="Validate Custom Builder Class"
+                  placeholder="Enter Apex class name"
+                  value={customBuilderInput}
+                  onchange={handleCustomBuilderInputChange}
+                  class="slds-m-bottom_small"
+                ></lightning-input>
+                <lightning-button
+                  label="Validate Class"
+                  variant="neutral"
+                  onclick={handleValidateBuilder}
+                  disabled={isValidatingBuilder}
+                ></lightning-button>
+                <template if:true={builderValidationResult}>
+                  <div class={builderValidationClass}>
+                    <lightning-icon
+                      icon-name={builderValidationIcon}
+                      size="x-small"
+                      class="slds-m-right_x-small"
+                    ></lightning-icon>
+                    {builderValidationMessage}
+                  </div>
+                </template>
+              </div>
             </div>
 
-            <!-- Validate Custom Builder -->
-            <div class="slds-m-top_medium">
-              <lightning-input
-                type="text"
-                label="Validate Custom Builder Class"
-                placeholder="Enter Apex class name"
-                value={customBuilderInput}
-                onchange={handleCustomBuilderInputChange}
-                class="slds-m-bottom_small"
-              ></lightning-input>
-              <lightning-button
-                label="Validate Class"
-                variant="neutral"
-                onclick={handleValidateBuilder}
-                disabled={isValidatingBuilder}
-              ></lightning-button>
-              <template if:true={builderValidationResult}>
-                <div class={builderValidationClass}>
+            <!-- Help Section -->
+            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
+              <div class="help-card slds-box slds-box_x-small slds-theme_shade">
+                <h3 class="slds-text-heading_small slds-m-bottom_small">
                   <lightning-icon
-                    icon-name={builderValidationIcon}
+                    icon-name="utility:warning"
                     size="x-small"
                     class="slds-m-right_x-small"
                   ></lightning-icon>
-                  {builderValidationMessage}
+                  Custom Builder Requirements
+                </h3>
+                <p class="slds-m-bottom_small">
+                  To use a custom builder, your Apex class must:
+                </p>
+                <ul class="slds-list_dotted">
+                  <li>
+                    Implement the <code>ICatalogJsonBuilder</code> interface
+                  </li>
+                  <li>Be deployed to your org before selecting it</li>
+                  <li>Handle all required catalog JSON formatting</li>
+                </ul>
+                <p class="slds-m-top_small slds-text-color_weak">
+                  To change the active builder, update the
+                  <code>CatalogJsonBuilderMapping__mdt.Active</code> record in
+                  Custom Metadata Setup.
+                </p>
+              </div>
+
+              <!-- Available Builders -->
+              <details class="slds-m-top_medium">
+                <summary class="slds-text-link help-toggle">
+                  <lightning-icon
+                    icon-name="utility:apex"
+                    size="x-small"
+                    class="slds-m-right_x-small"
+                  ></lightning-icon>
+                  Available Builder Options
+                </summary>
+                <div class="slds-box slds-box_x-small slds-m-top_small">
+                  <template if:true={builderOptions}>
+                    <template for:each={builderOptions} for:item="option">
+                      <div
+                        key={option.value}
+                        class="slds-p-around_x-small slds-border_bottom"
+                      >
+                        <p class="slds-text-body_regular">
+                          <strong>{option.label}</strong>
+                        </p>
+                        <p class="slds-text-body_small slds-text-color_weak">
+                          {option.description}
+                        </p>
+                      </div>
+                    </template>
+                  </template>
                 </div>
-              </template>
-            </div>
-          </div>
-
-          <!-- Help Section -->
-          <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
-            <div class="help-card slds-box slds-box_x-small slds-theme_shade">
-              <h3 class="slds-text-heading_small slds-m-bottom_small">
-                <lightning-icon
-                  icon-name="utility:warning"
-                  size="x-small"
-                  class="slds-m-right_x-small"
-                ></lightning-icon>
-                Custom Builder Requirements
-              </h3>
-              <p class="slds-m-bottom_small">
-                To use a custom builder, your Apex class must:
-              </p>
-              <ul class="slds-list_dotted">
-                <li>
-                  Implement the <code>ICatalogJsonBuilder</code> interface
-                </li>
-                <li>Be deployed to your org before selecting it</li>
-                <li>Handle all required catalog JSON formatting</li>
-              </ul>
-              <p class="slds-m-top_small slds-text-color_weak">
-                To change the active builder, update the
-                <code>CatalogJsonBuilderMapping__mdt.Active</code> record in
-                Custom Metadata Setup.
-              </p>
-            </div>
-
-            <!-- Available Builders -->
-            <div class="slds-box slds-box_x-small slds-m-top_medium">
-              <h3 class="slds-text-heading_small slds-m-bottom_small">
-                Available Builder Options
-              </h3>
-              <template if:true={builderOptions}>
-                <template for:each={builderOptions} for:item="option">
-                  <div
-                    key={option.value}
-                    class="slds-p-around_x-small slds-border_bottom"
-                  >
-                    <p class="slds-text-body_regular">
-                      <strong>{option.label}</strong>
-                    </p>
-                    <p class="slds-text-body_small slds-text-color_weak">
-                      {option.description}
-                    </p>
-                  </div>
-                </template>
-              </template>
+              </details>
             </div>
           </div>
         </div>
-      </div>
-    </lightning-card>
-
-    <!-- Next Steps -->
-    <div
-      class="slds-box slds-box_small slds-theme_default slds-m-top_large next-steps-card"
-    >
-      <div class="slds-grid slds-wrap slds-grid_vertical-align-center">
-        <div class="slds-col slds-size_1-of-1 slds-large-size_2-of-3">
-          <h2 class="slds-text-heading_medium slds-m-bottom_x-small">
-            Ready to Run Catalog Jobs?
-          </h2>
-          <p class="slds-text-body_regular">
-            Once you've completed the setup steps above, navigate to the Catalog
-            Job Console to run your first export.
-          </p>
-        </div>
-        <div
-          class="slds-col slds-size_1-of-1 slds-large-size_1-of-3 slds-text-align_right"
-        >
-          <lightning-button
-            label="Open Catalog Job Console"
-            variant="brand"
-            onclick={handleOpenJobConsole}
-            icon-name="utility:right"
-            icon-position="right"
-          ></lightning-button>
-        </div>
-      </div>
-    </div>
+      </lightning-accordion-section>
+    </lightning-accordion>
   </div>
 </template>

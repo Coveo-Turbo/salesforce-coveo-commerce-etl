@@ -5,6 +5,7 @@
  */
 public with sharing class CoveoCommerceSetupController {
   private static final String NAMED_CREDENTIAL_NAME = 'Coveo_Push';
+  private static final Integer MAX_ERROR_MESSAGE_LENGTH = 200;
 
   /**
    * Gets the status of the Coveo_Push Named Credential.
@@ -200,7 +201,9 @@ public with sharing class CoveoCommerceSetupController {
   }
 
   /**
-   * Tests the Named Credential connection by making a lightweight call.
+   * Tests the Named Credential connection by creating a file container via Push API.
+   * This validates both the Named Credential and the API key configuration.
+   * Uses the organizationId from the first available CatalogJobConfig__mdt record.
    */
   @AuraEnabled
   public static Map<String, Object> testNamedCredentialConnection() {
@@ -209,28 +212,69 @@ public with sharing class CoveoCommerceSetupController {
     result.put('message', '');
 
     try {
+      // Get organizationId from the first available catalog job config
+      List<CatalogJobConfig__mdt> configs = [
+        SELECT CoveoOrgId__c
+        FROM CatalogJobConfig__mdt
+        WHERE CoveoOrgId__c != NULL
+        LIMIT 1
+      ];
+
+      if (configs.isEmpty()) {
+        result.put(
+          'message',
+          'No catalog job configuration found with a Coveo Org ID. Please configure at least one catalog job first.'
+        );
+        return result;
+      }
+
+      String orgId = configs[0].CoveoOrgId__c;
+
+      // Test connection by creating a file container (POST to /organizations/{orgId}/files)
       HttpRequest req = new HttpRequest();
-      req.setEndpoint('callout:' + NAMED_CREDENTIAL_NAME);
-      req.setMethod('GET');
-      req.setTimeout(10000);
+      req.setEndpoint(
+        'callout:' +
+          NAMED_CREDENTIAL_NAME +
+          '/organizations/' +
+          orgId +
+          '/files'
+      );
+      req.setMethod('POST');
+      req.setTimeout(15000);
 
       Http http = new Http();
       HttpResponse res = http.send(req);
 
       Integer statusCode = res.getStatusCode();
-      if (statusCode >= 200 && statusCode < 400) {
+      if (statusCode >= 200 && statusCode < 300) {
         result.put('success', true);
         result.put(
           'message',
-          'Connection successful (HTTP ' + statusCode + ')'
+          'Connection successful! API key and credentials are valid.'
         );
       } else if (statusCode == 401 || statusCode == 403) {
         result.put(
           'message',
-          'Authentication failed. Please verify your API key.'
+          'Authentication failed (HTTP ' +
+            statusCode +
+            '). Please verify your API key in the External Credential.'
+        );
+      } else if (statusCode == 404) {
+        result.put(
+          'message',
+          'Organization not found (HTTP 404). Please verify the Coveo Org ID in your catalog configuration.'
         );
       } else {
-        result.put('message', 'Connection test returned HTTP ' + statusCode);
+        String responseBody = res.getBody();
+        result.put(
+          'message',
+          'Connection test returned HTTP ' +
+            statusCode +
+            '. ' +
+            (String.isNotBlank(responseBody)
+              ? responseBody.left(MAX_ERROR_MESSAGE_LENGTH)
+              : res.getStatus())
+        );
       }
     } catch (Exception e) {
       result.put('message', 'Connection failed: ' + e.getMessage());

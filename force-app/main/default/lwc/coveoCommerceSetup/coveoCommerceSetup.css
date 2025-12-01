@@ -105,13 +105,6 @@
   overflow: hidden;
 }
 
-/* Next Steps Card */
-.next-steps-card {
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-  border: 1px solid #bae6fd;
-  border-radius: 0.75rem;
-}
-
 /* Badge overrides for colored status */
 .slds-theme_success {
   background-color: #ecfdf3;
@@ -126,4 +119,32 @@
 .slds-theme_warning {
   background-color: #fffaeb;
   color: #b54708;
+}
+
+/* Collapsible details/summary */
+.help-toggle {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  font-weight: 500;
+}
+
+.help-toggle:hover {
+  text-decoration: underline;
+}
+
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+details summary::before {
+  content: "▶";
+  display: inline-block;
+  margin-right: 0.5rem;
+  font-size: 0.75rem;
+  transition: transform 0.2s ease;
+}
+
+details[open] summary::before {
+  transform: rotate(90deg);
 }

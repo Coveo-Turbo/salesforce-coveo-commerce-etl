@@ -54,17 +54,6 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   namedCredentialSetupUrl = "/lightning/setup/NamedCredential/home";
   customMetadataSetupUrl = "/lightning/setup/CustomMetadata/home";
 
-  // Progress step
-  get currentStep() {
-    if (!this.credentialStatus?.exists) {
-      return "step1";
-    }
-    if (!this.hasConfigs) {
-      return "step2";
-    }
-    return "step3";
-  }
-
   // Credential getters
   get credentialStatusLabel() {
     return this.credentialStatus?.status || "Unknown";
