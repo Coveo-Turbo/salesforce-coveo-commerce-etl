@@ -177,6 +177,47 @@ bash scripts/orgInit.sh
 
 ---
 
+# 🔧 Configuration Landing Page
+
+After installing the package, use the **Coveo Commerce ETL Setup** page to configure your integration in three simple steps:
+
+## Access the Configuration Page
+
+Navigate to one of the following URLs in your Salesforce org:
+
+* **Tab URL:** `/lightning/n/Coveo_ETL_Setup`
+* **App Page URL:** `/lightning/page/setup/Coveo_Commerce_ETL_Setup`
+
+Or search for "Coveo ETL Setup" in the App Launcher.
+
+## Configuration Steps
+
+### Step 1 – Connect to Coveo (Named Credential)
+
+The setup page displays the status of the `Coveo_Push` Named Credential and provides guidance on configuring it:
+
+1. Go to **Setup → Named Credentials**
+2. Find or create the `Coveo_Push` Named Credential
+3. Set the **URL** to your Coveo Push API endpoint (e.g., `https://api.cloud.coveo.com/push/v1`)
+4. Configure the **External Credential** with your Coveo API Key
+5. Assign the permission set `CoveoETL_Admin` to grant access
+
+Use the **Test Connection** button to verify your configuration.
+
+### Step 2 – Configure Catalog Jobs
+
+The setup page lists all existing `CatalogJobConfig__mdt` records and provides quick access to create or edit them via Custom Metadata Setup.
+
+### Step 3 – Advanced Builder Settings
+
+Select which `ICatalogJsonBuilder` implementation is active. The default is `CatalogJsonBuilderCommerce`. To use a custom builder:
+
+1. Create an Apex class implementing `ICatalogJsonBuilder`
+2. Deploy it to your org
+3. Update the `CatalogJsonBuilderMapping__mdt.Active` record with your class name
+
+---
+
 # ⚙️ Configuration
 
 ## Create Catalog Job Configs

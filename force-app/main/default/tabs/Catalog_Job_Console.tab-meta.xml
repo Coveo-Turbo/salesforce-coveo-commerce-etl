@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomTab xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Admin console for managing and running Coveo catalog export jobs</description>
+    <flexiPage>Catalog_Job_Console</flexiPage>
+    <label>Catalog Job Console</label>
+    <motif>Custom57: Handsaw</motif>
+</CustomTab>

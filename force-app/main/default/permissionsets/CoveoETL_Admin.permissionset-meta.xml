@@ -9,6 +9,10 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>CoveoCommerceSetupController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>CatalogJsonBuilderFactory</apexClass>
         <enabled>true</enabled>
     </classAccesses>
@@ -42,6 +46,14 @@
     </externalCredentialPrincipalAccesses>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Coveo ETL Admin</label>
+    <tabSettings>
+        <tab>Catalog_Job_Console</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>Coveo_ETL_Setup</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
     <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>true</allowDelete>
