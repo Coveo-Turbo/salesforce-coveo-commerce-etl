@@ -8,8 +8,6 @@ import getActiveBuilderMapping from "@salesforce/apex/CoveoCommerceSetupControll
 import getBuilderClassOptions from "@salesforce/apex/CoveoCommerceSetupController.getBuilderClassOptions";
 import testNamedCredentialConnection from "@salesforce/apex/CoveoCommerceSetupController.testNamedCredentialConnection";
 import validateBuilderClass from "@salesforce/apex/CoveoCommerceSetupController.validateBuilderClass";
-import getNamedCredentialSetupUrl from "@salesforce/apex/CoveoCommerceSetupController.getNamedCredentialSetupUrl";
-import getCustomMetadataSetupUrl from "@salesforce/apex/CoveoCommerceSetupController.getCustomMetadataSetupUrl";
 
 const CONFIG_COLUMNS = [
   { label: "Label", fieldName: "label", wrapText: true },
@@ -52,9 +50,9 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   @track isValidatingBuilder = false;
   @track builderValidationResult = null;
 
-  // Setup URLs
-  @track namedCredentialSetupUrl = "/lightning/setup/NamedCredential/home";
-  @track customMetadataSetupUrl = "/lightning/setup/CustomMetadata/home";
+  // Setup URLs (static Lightning Setup paths)
+  namedCredentialSetupUrl = "/lightning/setup/NamedCredential/home";
+  customMetadataSetupUrl = "/lightning/setup/CustomMetadata/home";
 
   // Progress step
   get currentStep() {
@@ -211,20 +209,6 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       this.builderOptions = [];
       // eslint-disable-next-line no-console
       console.error("Error loading builder options:", error);
-    }
-  }
-
-  @wire(getNamedCredentialSetupUrl)
-  wiredNamedCredentialUrl({ data }) {
-    if (data) {
-      this.namedCredentialSetupUrl = data;
-    }
-  }
-
-  @wire(getCustomMetadataSetupUrl)
-  wiredCustomMetadataUrl({ data }) {
-    if (data) {
-      this.customMetadataSetupUrl = data;
     }
   }
 

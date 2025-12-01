@@ -18,8 +18,7 @@ public with sharing class CoveoCommerceSetupController {
     result.put('status', 'Not Configured');
 
     try {
-      // Query for Named Credential using Tooling API metadata
-      // We use a simple HTTP callout test to check configuration
+      // Query Named Credential metadata to check if it exists
       List<NamedCredential> creds = [
         SELECT Id, DeveloperName, Endpoint
         FROM NamedCredential
@@ -223,21 +222,5 @@ public with sharing class CoveoCommerceSetupController {
     }
 
     return result;
-  }
-
-  /**
-   * Gets the URL for the Setup page to manage Named Credentials.
-   */
-  @AuraEnabled(cacheable=true)
-  public static String getNamedCredentialSetupUrl() {
-    return '/lightning/setup/NamedCredential/home';
-  }
-
-  /**
-   * Gets the URL for the Custom Metadata Type management page.
-   */
-  @AuraEnabled(cacheable=true)
-  public static String getCustomMetadataSetupUrl() {
-    return '/lightning/setup/CustomMetadata/home';
   }
 }
