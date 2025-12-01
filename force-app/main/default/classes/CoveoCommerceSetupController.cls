@@ -19,17 +19,13 @@ public with sharing class CoveoCommerceSetupController {
     result.put('status', 'Not Configured');
 
     try {
-      // Query Named Credential metadata to check if it exists
-      List<NamedCredential> creds = [
-        SELECT Id, DeveloperName, Endpoint
-        FROM NamedCredential
-        WHERE DeveloperName = :NAMED_CREDENTIAL_NAME
-        LIMIT 1
-      ];
+      ConnectApi.NamedCredential nc = ConnectApi.NamedCredentials.getNamedCredential(
+        NAMED_CREDENTIAL_NAME
+      );
 
-      if (!creds.isEmpty()) {
+      if (!nc.externalCredentials.isEmpty()) {
         result.put('exists', true);
-        result.put('endpoint', creds[0].Endpoint);
+        result.put('endpoint', nc.calloutUrl);
         result.put('status', 'Configured');
       }
     } catch (Exception e) {
