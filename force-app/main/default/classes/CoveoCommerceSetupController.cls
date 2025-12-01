@@ -117,8 +117,23 @@ public with sharing class CoveoCommerceSetupController {
 
     // Add default builder
     Map<String, String> defaultBuilder = new Map<String, String>();
-    defaultBuilder.put('label', 'Commerce Catalog Builder (Default)');
-    defaultBuilder.put('value', 'CatalogJsonBuilderCommerce');
+
+    try {
+      CatalogJsonBuilderMapping__mdt defaultMapping = [
+        SELECT DeveloperName, MasterLabel, ClassName__c
+        FROM CatalogJsonBuilderMapping__mdt
+        WHERE DeveloperName = 'Default'
+        LIMIT 1
+      ];
+
+      defaultBuilder.put('label', defaultMapping.MasterLabel);
+      defaultBuilder.put('value', defaultMapping.ClassName__c);
+    } catch (Exception e) {
+      // Use default if not found
+      defaultBuilder.put('label', 'Default Coveo Commerce Builder');
+      defaultBuilder.put('value', 'CatalogJsonBuilderCommerce');
+    }
+
     defaultBuilder.put(
       'description',
       'Standard Coveo Commerce catalog builder with ec_* fields'
@@ -129,7 +144,7 @@ public with sharing class CoveoCommerceSetupController {
     for (CatalogJsonBuilderMapping__mdt mapping : [
       SELECT DeveloperName, MasterLabel, ClassName__c
       FROM CatalogJsonBuilderMapping__mdt
-      WHERE DeveloperName != 'Active'
+      WHERE DeveloperName != 'Active' AND DeveloperName != 'Default'
     ]) {
       Map<String, String> option = new Map<String, String>();
       option.put('label', mapping.MasterLabel);
