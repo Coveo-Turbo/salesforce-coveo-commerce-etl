@@ -5,6 +5,7 @@
         <itemInstances>
             <componentInstance>
                 <componentName>c:coveoCommerceSetup</componentName>
+                <identifier>CoveoCommerceSetup</identifier>
             </componentInstance>
         </itemInstances>
         <name>main</name>
@@ -12,7 +13,7 @@
     </flexiPageRegions>
     <masterLabel>Coveo Commerce ETL Setup</masterLabel>
     <template>
-        <name>flexipage:appHomeTemplateSingleColumn</name>
+        <name>flexipage:defaultAppHomeTemplate</name>
     </template>
     <type>AppPage</type>
 </FlexiPage>

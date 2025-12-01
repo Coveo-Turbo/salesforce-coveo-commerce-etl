@@ -25,10 +25,6 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
-        <apexClass>NightlyCatalogExport</apexClass>
-        <enabled>true</enabled>
-    </classAccesses>
-    <classAccesses>
         <apexClass>ProductCatalogExportBatch</apexClass>
         <enabled>true</enabled>
     </classAccesses>
