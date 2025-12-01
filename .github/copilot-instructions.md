@@ -21,10 +21,20 @@ salesforce-coveo-commerce-etl/
 │   ├── objects/          # Custom objects and fields
 │   ├── namedCredentials/ # Named Credentials for Coveo API
 │   └── permissionsets/   # Permission sets
+├── assets/
+│   └── schema/
+│       └── PushApi.json  # Coveo Push/Stream API schema (OpenAPI/Swagger spec)
 ├── scripts/              # Shell scripts for org setup and data management
 ├── data/                 # Sample data for scratch orgs
 └── config/               # Scratch org configuration
 ```
+
+## API Reference
+
+The `assets/schema/PushApi.json` file contains the complete Coveo Push API specification (OpenAPI/Swagger format). Use this schema as a reference when implementing additional Stream API endpoints or actions such as:
+- File Container operations (`/organizations/{orgId}/files`)
+- Security Identity management (`/organizations/{orgId}/providers/{providerId}/permissions`)
+- Stream operations (`open`, `chunk`, `close`, `update`, `merge`, `deleteolderthan`)
 
 ## Technology Stack
 
