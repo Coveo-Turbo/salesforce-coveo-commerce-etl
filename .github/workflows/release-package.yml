@@ -1,0 +1,133 @@
+name: Release Unmanaged Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version (e.g., 1.2.0)"
+        required: true
+        type: string
+      release_notes:
+        description: "Release notes for this version"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli
+
+      - name: Validate SFDX project structure
+        run: |
+          echo "Validating sfdx-project.json..."
+          if [ ! -f "sfdx-project.json" ]; then
+            echo "Error: sfdx-project.json not found"
+            exit 1
+          fi
+
+          echo "Validating force-app directory..."
+          if [ ! -d "force-app" ]; then
+            echo "Error: force-app directory not found"
+            exit 1
+          fi
+
+          echo "Validating package.xml manifest..."
+          if [ ! -f "manifest/package.xml" ]; then
+            echo "Error: manifest/package.xml not found"
+            exit 1
+          fi
+
+          echo "Project structure validation passed!"
+
+      - name: Create metadata deployment package
+        run: |
+          echo "Creating deployment package..."
+          mkdir -p release
+
+          # Convert source format to metadata format for deployment
+          sf project convert source \
+            --root-dir force-app \
+            --output-dir release/metadata
+
+          # Create ZIP artifact
+          cd release/metadata
+          zip -r ../salesforce-coveo-commerce-etl-v${{ inputs.version }}.zip .
+          cd ../..
+
+          echo "Package created: release/salesforce-coveo-commerce-etl-v${{ inputs.version }}.zip"
+
+      - name: Update README with installation instructions
+        env:
+          VERSION: ${{ inputs.version }}
+          REPO_URL: https://github.com/${{ github.repository }}
+        run: |
+          chmod +x scripts/update-readme-install.sh
+          ./scripts/update-readme-install.sh
+
+      - name: Update package.json version
+        run: |
+          npm version ${{ inputs.version }} --no-git-tag-version --allow-same-version
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add README.md package.json
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update installation instructions for v${{ inputs.version }}"
+            git push
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: Release v${{ inputs.version }}
+          body: |
+            ## Salesforce Coveo Commerce ETL v${{ inputs.version }}
+
+            ${{ inputs.release_notes }}
+
+            ### Installation
+
+            Download the deployment package and deploy to your Salesforce org using the Salesforce CLI:
+
+            ```bash
+            # Download and extract
+            curl -L -o coveo-etl.zip "https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version }}/salesforce-coveo-commerce-etl-v${{ inputs.version }}.zip"
+            unzip coveo-etl.zip -d coveo-etl
+
+            # Deploy to your org
+            sf project deploy start --metadata-dir coveo-etl --target-org <your-org-alias>
+
+            # Assign permission set
+            sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
+            ```
+
+            See the [README](https://github.com/${{ github.repository }}#-installation) for detailed setup instructions.
+          files: |
+            release/salesforce-coveo-commerce-etl-v${{ inputs.version }}.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
