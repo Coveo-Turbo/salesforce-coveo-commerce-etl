@@ -18,7 +18,10 @@ fi
 
 RELEASE_DATE=$(date +"%Y-%m-%d")
 RELEASE_TAG="v${VERSION}"
-DOWNLOAD_URL="${REPO_URL}/releases/download/${RELEASE_TAG}/salesforce-coveo-commerce-etl-${RELEASE_TAG}.zip"
+# Extract repository name from REPO_URL (e.g., https://github.com/owner/repo -> repo)
+REPO_NAME=$(basename "${REPO_URL}" .git)
+PACKAGE_FILENAME="${REPO_NAME}-${RELEASE_TAG}.zip"
+DOWNLOAD_URL="${REPO_URL}/releases/download/${RELEASE_TAG}/${PACKAGE_FILENAME}"
 
 # Create temporary file for the installation section
 INSTALL_FILE=$(mktemp)
@@ -52,7 +55,7 @@ cat > "$INSTALL_FILE" << EOF
 1. **Clone this repository:**
    \`\`\`bash
    git clone ${REPO_URL}.git
-   cd salesforce-coveo-commerce-etl
+   cd ${REPO_NAME}
    \`\`\`
 
 2. **Deploy to your org:**

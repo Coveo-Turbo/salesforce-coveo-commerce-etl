@@ -20,6 +20,8 @@ jobs:
   release:
     name: Build and Release Package
     runs-on: ubuntu-latest
+    env:
+      PACKAGE_FILENAME: ${{ github.event.repository.name }}-v${{ inputs.version }}.zip
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -68,10 +70,10 @@ jobs:
 
           # Create ZIP artifact
           cd release/metadata
-          zip -r ../salesforce-coveo-commerce-etl-v${{ inputs.version }}.zip .
+          zip -r "../${{ env.PACKAGE_FILENAME }}" .
           cd ../..
 
-          echo "Package created: release/salesforce-coveo-commerce-etl-v${{ inputs.version }}.zip"
+          echo "Package created: release/${{ env.PACKAGE_FILENAME }}"
 
       - name: Update README with installation instructions
         env:
@@ -115,7 +117,7 @@ jobs:
 
             ```bash
             # Download and extract
-            curl -L -o coveo-etl.zip "https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version }}/salesforce-coveo-commerce-etl-v${{ inputs.version }}.zip"
+            curl -L -o coveo-etl.zip "https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version }}/${{ env.PACKAGE_FILENAME }}"
             unzip coveo-etl.zip -d coveo-etl
 
             # Deploy to your org
@@ -127,7 +129,7 @@ jobs:
 
             See the [README](https://github.com/${{ github.repository }}#-installation) for detailed setup instructions.
           files: |
-            release/salesforce-coveo-commerce-etl-v${{ inputs.version }}.zip
+            release/${{ env.PACKAGE_FILENAME }}
           draft: false
           prerelease: false
           generate_release_notes: true
