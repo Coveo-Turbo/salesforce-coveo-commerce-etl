@@ -63,6 +63,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     if (this.credentialStatus?.exists) {
       return "slds-badge slds-theme_success";
     }
+    // Show warning style for "API Key Missing" (partial configuration)
+    if (this.credentialStatus?.status === "API Key Missing") {
+      return "slds-badge slds-theme_warning";
+    }
     return "slds-badge slds-theme_error";
   }
 
