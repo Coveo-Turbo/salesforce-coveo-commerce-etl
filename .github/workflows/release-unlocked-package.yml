@@ -1,0 +1,261 @@
+name: Release Unlocked Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version (e.g., 1.2.0)"
+        required: true
+        type: string
+      release_notes:
+        description: "Release notes for this version"
+        required: false
+        type: string
+        default: ""
+      installation_key:
+        description: "Installation key for the package (optional, leave empty for no key)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  create-package:
+    name: Create and Release Unlocked Package
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE_FILENAME: ${{ github.event.repository.name }}-v${{ inputs.version }}.zip
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli
+
+      - name: Authenticate to DevHub
+        run: |
+          echo "${{ secrets.SFDX_AUTH_URL }}" > sfdx_auth.txt
+          sf org login sfdx-url --sfdx-url-file sfdx_auth.txt --alias DevHub --set-default-dev-hub
+          rm sfdx_auth.txt
+
+      - name: Check if package exists
+        id: check-package
+        run: |
+          # Read package name from sfdx-project.json
+          PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
+          echo "Package name: $PACKAGE_NAME"
+          echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+          
+          # Check if package already exists in sfdx-project.json packageAliases
+          PACKAGE_ID=$(jq -r --arg name "$PACKAGE_NAME" '.packageAliases[$name] // empty' sfdx-project.json)
+          if [ -n "$PACKAGE_ID" ]; then
+            echo "Package already exists with ID: $PACKAGE_ID"
+            echo "package_exists=true" >> $GITHUB_OUTPUT
+            echo "package_id=$PACKAGE_ID" >> $GITHUB_OUTPUT
+          else
+            echo "Package does not exist, will create new package"
+            echo "package_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create package (if not exists)
+        if: steps.check-package.outputs.package_exists == 'false'
+        run: |
+          # Read package info from sfdx-project.json
+          PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
+          PACKAGE_DESC=$(jq -r '.packageDirectories[0].versionDescription // "Salesforce Coveo Commerce ETL"' sfdx-project.json)
+          
+          echo "Creating new unlocked package: $PACKAGE_NAME"
+          sf package create \
+            --name "$PACKAGE_NAME" \
+            --description "$PACKAGE_DESC" \
+            --package-type Unlocked \
+            --path force-app \
+            --target-dev-hub DevHub \
+            --no-namespace
+
+          # Extract the package ID and update sfdx-project.json
+          echo "Package created successfully"
+
+      - name: Update version number in sfdx-project.json
+        run: |
+          # Update version number
+          jq --arg version "${{ inputs.version }}.NEXT" \
+             --arg versionName "ver ${{ inputs.version }}" \
+             '.packageDirectories[0].versionNumber = $version | .packageDirectories[0].versionName = $versionName' \
+             sfdx-project.json > sfdx-project.json.tmp
+          mv sfdx-project.json.tmp sfdx-project.json
+
+      - name: Create package version
+        id: create-version
+        env:
+          INSTALLATION_KEY: ${{ inputs.installation_key }}
+        run: |
+          echo "Creating package version ${{ inputs.version }}..."
+          
+          # Read package name from sfdx-project.json
+          PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
+          echo "Package name: $PACKAGE_NAME"
+          
+          # Build the package version command with proper argument handling
+          if [ -n "$INSTALLATION_KEY" ]; then
+            RESULT=$(sf package version create \
+              --package "$PACKAGE_NAME" \
+              --target-dev-hub DevHub \
+              --wait 20 \
+              --code-coverage \
+              --installation-key "$INSTALLATION_KEY" \
+              --json)
+          else
+            RESULT=$(sf package version create \
+              --package "$PACKAGE_NAME" \
+              --target-dev-hub DevHub \
+              --wait 20 \
+              --code-coverage \
+              --installation-key-bypass \
+              --json)
+          fi
+          
+          echo "Package version creation result:"
+          echo "$RESULT" | jq .
+          
+          # Extract the subscriber package version ID (04t...)
+          PACKAGE_VERSION_ID=$(echo "$RESULT" | jq -r '.result.SubscriberPackageVersionId')
+          
+          if [ -z "$PACKAGE_VERSION_ID" ] || [ "$PACKAGE_VERSION_ID" == "null" ]; then
+            echo "Error: Failed to extract package version ID"
+            echo "$RESULT"
+            exit 1
+          fi
+          
+          echo "Package Version ID: $PACKAGE_VERSION_ID"
+          echo "package_version_id=$PACKAGE_VERSION_ID" >> $GITHUB_OUTPUT
+
+      - name: Promote package version
+        run: |
+          echo "Promoting package version to released..."
+          sf package version promote \
+            --package ${{ steps.create-version.outputs.package_version_id }} \
+            --target-dev-hub DevHub \
+            --no-prompt
+
+      - name: Update sfdx-project.json with version alias
+        run: |
+          # Read package name from sfdx-project.json
+          PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
+          
+          # Add version alias to packageAliases
+          jq --arg alias "${PACKAGE_NAME}@${{ inputs.version }}" \
+             --arg id "${{ steps.create-version.outputs.package_version_id }}" \
+             '.packageAliases[$alias] = $id' \
+             sfdx-project.json > sfdx-project.json.tmp
+          mv sfdx-project.json.tmp sfdx-project.json
+
+      - name: Create metadata deployment package
+        run: |
+          echo "Creating deployment package..."
+          mkdir -p release
+
+          # Convert source format to metadata format for deployment
+          sf project convert source \
+            --root-dir force-app \
+            --output-dir release/metadata
+
+          # Create ZIP artifact
+          cd release/metadata
+          zip -r "../${{ env.PACKAGE_FILENAME }}" .
+          cd ../..
+
+          echo "Package created: release/${{ env.PACKAGE_FILENAME }}"
+
+      - name: Update README with installation instructions
+        env:
+          VERSION: ${{ inputs.version }}
+          REPO_URL: https://github.com/${{ github.repository }}
+          PACKAGE_ID: ${{ steps.create-version.outputs.package_version_id }}
+        run: |
+          chmod +x scripts/update-readme-install.sh
+          ./scripts/update-readme-install.sh
+
+      - name: Update package.json version
+        run: |
+          npm version ${{ inputs.version }} --no-git-tag-version --allow-same-version
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add README.md package.json sfdx-project.json
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: release unlocked package v${{ inputs.version }} (${{ steps.create-version.outputs.package_version_id }})"
+            git push
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: Release v${{ inputs.version }}
+          body: |
+            ## Salesforce Coveo Commerce ETL v${{ inputs.version }}
+
+            ${{ inputs.release_notes }}
+
+            ### Unlocked Package Installation (Recommended)
+
+            **Package Version ID:** `${{ steps.create-version.outputs.package_version_id }}`
+
+            #### Install via Package Links
+
+            * **Production / Developer Org:**
+              [Install Package](https://login.salesforce.com/packaging/installPackage.apexp?p0=${{ steps.create-version.outputs.package_version_id }})
+
+            * **Sandbox:**
+              [Install Package](https://test.salesforce.com/packaging/installPackage.apexp?p0=${{ steps.create-version.outputs.package_version_id }})
+
+            #### Install Using Salesforce CLI
+
+            ```bash
+            sf package install --package ${{ steps.create-version.outputs.package_version_id }} --target-org <your-org-alias> --wait 10
+            ```
+
+            #### Optional: Compile Only Package Apex
+
+            ```bash
+            sf package install --apex-compile package --package ${{ steps.create-version.outputs.package_version_id }} --target-org <your-org-alias> --wait 10
+            ```
+
+            ### Alternative: Metadata Deployment
+
+            Download the deployment package and deploy to your Salesforce org:
+
+            ```bash
+            # Download and extract
+            curl -L -o coveo-etl.zip "https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version }}/${{ env.PACKAGE_FILENAME }}"
+            unzip coveo-etl.zip -d coveo-etl
+
+            # Deploy to your org
+            sf project deploy start --metadata-dir coveo-etl --target-org <your-org-alias>
+
+            # Assign permission set
+            sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
+            ```
+
+            See the [README](https://github.com/${{ github.repository }}#-installation) for detailed setup instructions.
+          files: |
+            release/${{ env.PACKAGE_FILENAME }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
