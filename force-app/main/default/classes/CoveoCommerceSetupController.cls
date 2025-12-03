@@ -50,7 +50,7 @@ public with sharing class CoveoCommerceSetupController {
   /**
    * Checks if the API_KEY authentication parameter is configured
    * in the CoveoPushAuthCred external credential.
-   * @return true if API_KEY parameter exists with a non-empty value, false otherwise
+   * @return true if API_KEY parameter exists, false otherwise
    */
   private static Boolean hasApiKeyParameter() {
     try {
@@ -64,7 +64,7 @@ public with sharing class CoveoCommerceSetupController {
             for (
               ConnectApi.ExternalCredentialParameter param : principal.parameters
             ) {
-              if (param.parameterName == API_KEY_PARAMETER_NAME) {
+              if (API_KEY_PARAMETER_NAME.equals(param.parameterName)) {
                 // Parameter exists - we consider it configured
                 // (we cannot check the actual value as it's encrypted)
                 return true;
