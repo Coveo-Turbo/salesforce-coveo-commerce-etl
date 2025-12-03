@@ -1,6 +1,6 @@
 {
   "name": "salesforce-coveo-commerce-etl",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "[![Salesforce](https://img.shields.io/badge/Salesforce-Apex-blue.svg)](https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/) [![SFDX](https://img.shields.io/badge/CLI-SFDX-informational.svg)](https://developer.salesforce.com/tools/sfdxcli) ![Status](https://img.shields.io/badge/status-starter--kit-green) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)",
   "homepage": "https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl#readme",
   "bugs": {

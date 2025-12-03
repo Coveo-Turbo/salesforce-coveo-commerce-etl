@@ -30,6 +30,69 @@ It includes:
 
 ---
 
+## 📥 Installation
+
+### Current Version: 1.1.0
+
+> **Released:** 2025-12-03
+
+### Option 1: Deploy via Salesforce CLI (Recommended)
+
+1. **Download the latest release:**
+   ```bash
+   curl -L -o coveo-etl.zip "https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl/releases/download/v1.1.0/salesforce-coveo-commerce-etl-v1.1.0.zip"
+   unzip coveo-etl.zip -d coveo-etl
+   ```
+
+2. **Deploy to your Salesforce org:**
+   ```bash
+   sf project deploy start --metadata-dir coveo-etl --target-org <your-org-alias>
+   ```
+
+3. **Assign the permission set:**
+   ```bash
+   sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
+   ```
+
+### Option 2: Deploy from Source
+
+1. **Clone this repository:**
+   ```bash
+   git clone https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl.git
+   cd salesforce-coveo-commerce-etl
+   ```
+
+2. **Deploy to your org:**
+   ```bash
+   sf project deploy start --target-org <your-org-alias>
+   ```
+
+3. **Assign the permission set:**
+   ```bash
+   sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
+   ```
+
+### Post-Installation Setup
+
+After installation, complete the following steps:
+
+1. **Configure Named Credential:**
+   - Navigate to **Setup → Named Credentials**
+   - Create or update the `Coveo_Push` Named Credential
+   - Set the URL to your Coveo Push API endpoint (e.g., `https://api.cloud.coveo.com/push/v1`)
+   - Configure the External Credential with your Coveo API Key
+
+2. **Configure Catalog Jobs:**
+   - Go to **Setup → Custom Metadata Types → Catalog Job Configurations**
+   - Create configuration records for each catalog you want to export
+
+3. **Access the Admin Console:**
+   - Navigate to `/lightning/n/Coveo_ETL_Setup` in your Salesforce org
+
+For detailed configuration instructions, see the [Configuration](#%EF%B8%8F-configuration) section below.
+
+---
+
 # 🚀 Features
 
 ### 🗂️ Multi-Catalog Config
