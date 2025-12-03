@@ -39,6 +39,7 @@ Thumbs.db
 **/deploy/
 **/coverage/
 **/reports/
+release/
 
 # Node / dependency cache
 node_modules/
