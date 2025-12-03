@@ -80,13 +80,17 @@ After installation, complete the following steps:
    - Navigate to **Setup → Named Credentials**
    - Create or update the `Coveo_Push` Named Credential
    - Set the URL to your Coveo Push API endpoint (e.g., `https://api.cloud.coveo.com/push/v1`)
-   - Configure the External Credential with your Coveo API Key
 
-2. **Configure Catalog Jobs:**
+2. **Configure External Credential with API Key:**
+   - Navigate to **Setup → External Credentials**
+   - Find or create `CoveoPushAuthCred`
+   - Add an **Authentication Parameter** named `API_KEY` with your Coveo API Key value
+
+3. **Configure Catalog Jobs:**
    - Go to **Setup → Custom Metadata Types → Catalog Job Configurations**
    - Create configuration records for each catalog you want to export
 
-3. **Access the Admin Console:**
+4. **Access the Admin Console:**
    - Navigate to `/lightning/n/Coveo_ETL_Setup` in your Salesforce org
 
 For detailed configuration instructions, see the [Configuration](#%EF%B8%8F-configuration) section below.
@@ -257,13 +261,14 @@ Or search for "Coveo ETL Setup" in the App Launcher.
 
 ### Step 1 – Connect to Coveo (Named Credential)
 
-The setup page displays the status of the `Coveo_Push` Named Credential and provides guidance on configuring it:
+The setup page displays the status of the `Coveo_Push` Named Credential and provides guidance on configuring it. **The status will only show `Configured` when both the Named Credential exists AND the API_KEY authentication parameter is present.**
 
 1. Go to **Setup → Named Credentials**
 2. Find or create the `Coveo_Push` Named Credential
 3. Set the **URL** to your Coveo Push API endpoint (e.g., `https://api.cloud.coveo.com/push/v1`)
-4. Configure the **External Credential** with your Coveo API Key
-5. Assign the permission set `CoveoETL_Admin` to grant access
+4. Go to **Setup → External Credentials** and find `CoveoPushAuthCred`
+5. Add an **Authentication Parameter** named `API_KEY` with your Coveo API Key value
+6. Assign the permission set `CoveoETL_Admin` to grant access
 
 Use the **Test Connection** button to verify your configuration.
 

@@ -5,11 +5,15 @@
  */
 public with sharing class CoveoCommerceSetupController {
   private static final String NAMED_CREDENTIAL_NAME = 'Coveo_Push';
+  private static final String EXTERNAL_CREDENTIAL_NAME = 'CoveoPushAuthCred';
+  private static final String API_KEY_PARAMETER_NAME = 'API_KEY';
   private static final Integer MAX_ERROR_MESSAGE_LENGTH = 200;
 
   /**
    * Gets the status of the Coveo_Push Named Credential.
    * Returns a map with 'exists' (boolean), 'endpoint' (string), and 'status' (string).
+   * Status is only 'Configured' when both the Named Credential exists with an
+   * external credential AND the API_KEY authentication parameter is present.
    */
   @AuraEnabled(cacheable=true)
   public static Map<String, Object> getNamedCredentialStatus() {
@@ -24,9 +28,16 @@ public with sharing class CoveoCommerceSetupController {
       );
 
       if (!nc.externalCredentials.isEmpty()) {
-        result.put('exists', true);
         result.put('endpoint', nc.calloutUrl);
-        result.put('status', 'Configured');
+
+        // Check if API_KEY parameter is configured in the external credential
+        if (hasApiKeyParameter()) {
+          result.put('exists', true);
+          result.put('status', 'Configured');
+        } else {
+          result.put('exists', false);
+          result.put('status', 'API Key Missing');
+        }
       }
     } catch (Exception e) {
       // Named Credential not accessible or doesn't exist
@@ -34,6 +45,39 @@ public with sharing class CoveoCommerceSetupController {
     }
 
     return result;
+  }
+
+  /**
+   * Checks if the API_KEY authentication parameter is configured
+   * in the CoveoPushAuthCred external credential.
+   * @return true if API_KEY parameter exists, false otherwise
+   */
+  private static Boolean hasApiKeyParameter() {
+    try {
+      ConnectApi.ExternalCredential ec = ConnectApi.NamedCredentials.getExternalCredential(
+        EXTERNAL_CREDENTIAL_NAME
+      );
+
+      if (ec.principals != null && !ec.principals.isEmpty()) {
+        for (ConnectApi.ExternalCredentialPrincipal principal : ec.principals) {
+          if (principal.parameters != null) {
+            for (
+              ConnectApi.ExternalCredentialParameter param : principal.parameters
+            ) {
+              if (API_KEY_PARAMETER_NAME.equals(param.parameterName)) {
+                // Parameter exists - we consider it configured
+                // (we cannot check the actual value as it's encrypted)
+                return true;
+              }
+            }
+          }
+        }
+      }
+    } catch (Exception e) {
+      // External credential not accessible or doesn't exist
+      return false;
+    }
+    return false;
   }
 
   /**

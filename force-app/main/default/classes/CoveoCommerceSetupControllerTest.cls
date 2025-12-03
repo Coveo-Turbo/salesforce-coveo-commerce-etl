@@ -113,11 +113,13 @@ private class CoveoCommerceSetupControllerTest {
     System.assertNotEquals(null, exists, 'exists should not be null');
     System.assertNotEquals(null, status, 'status should not be null');
 
-    // If NC doesn't exist, status should indicate error or not configured
+    // If NC doesn't exist, status should indicate error, not configured, or API key missing
     if (!exists) {
       System.assert(
-        status.contains('Error') || status.contains('Not Configured'),
-        'Status should indicate error or not configured when NC does not exist'
+        status.contains('Error') ||
+          status.contains('Not Configured') ||
+          status.contains('API Key Missing'),
+        'Status should indicate error, not configured, or API key missing when NC is not fully configured'
       );
     }
   }
