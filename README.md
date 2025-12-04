@@ -36,7 +36,45 @@ It includes:
 
 > **Released:** 2025-12-03
 
-### Option 1: Deploy via Salesforce CLI (Recommended)
+This library can be installed using one of the following methods:
+
+### Option 1: Install via Unlocked Package (Recommended)
+
+This library is distributed as an [Unlocked Package](https://developer.salesforce.com/docs/atlas.en-us.sfdx_dev.meta/sfdx_dev/sfdx_dev_unlocked_pkg_install_pkg.htm). Once a package version is created via the release workflow, you can install it directly into your Salesforce environments.
+
+> **Note:** The Package Version ID (`04t...`) will be automatically populated when running the **Release Unlocked Package** workflow. Check the [Releases](https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl/releases) page for the latest package version.
+
+#### Install via Package Links
+
+Once a package is released, use these links (replace `{PACKAGE_ID}` with the actual Package Version ID):
+
+* **Production / Developer Org:**
+  `https://login.salesforce.com/packaging/installPackage.apexp?p0={PACKAGE_ID}`
+
+* **Sandbox:**
+  `https://test.salesforce.com/packaging/installPackage.apexp?p0={PACKAGE_ID}`
+
+#### Install Using Salesforce CLI
+
+```bash
+sf package install --package {PACKAGE_ID} --target-org <your-org-alias> --wait 10
+```
+
+Replace `{PACKAGE_ID}` with the Package Version ID (starts with `04t`) and `<your-org-alias>` with your target org.
+
+#### Optional: Compile Only the Package's Apex Code
+
+```bash
+sf package install --apex-compile package --package {PACKAGE_ID} --target-org <your-org-alias> --wait 10
+```
+
+After installation, assign the permission set:
+
+```bash
+sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
+```
+
+### Option 2: Deploy via Metadata Package
 
 1. **Download the latest release:**
    ```bash
@@ -54,7 +92,7 @@ It includes:
    sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
    ```
 
-### Option 2: Deploy from Source
+### Option 3: Deploy from Source
 
 1. **Clone this repository:**
    ```bash
