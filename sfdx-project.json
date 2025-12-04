@@ -12,5 +12,7 @@
   "namespace": "",
   "sfdcLoginUrl": "https://login.salesforce.com",
   "sourceApiVersion": "60.0",
-  "packageAliases": {}
+  "packageAliases": {
+    "salesforce-coveo-commerce-etl": "0HoKi000000PAswKAG"
+  }
 }
