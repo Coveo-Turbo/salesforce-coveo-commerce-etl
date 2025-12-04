@@ -57,42 +57,36 @@ To verify, check in **Setup → Object Manager** that the following objects exis
 If these objects are missing, the org is **not Commerce-enabled**.
 
 
+
 ## 📥 Installation
 
 ### Current Version: 1.1.0
 
-> **Released:** 2025-12-03
-
-This library can be installed using one of the following methods:
+> **Released:** 2025-12-04
+> **Package Version ID:** `04tKi000000D4XqIAK`
 
 ### Option 1: Install via Unlocked Package (Recommended)
 
-This library is distributed as an [Unlocked Package](https://developer.salesforce.com/docs/atlas.en-us.sfdx_dev.meta/sfdx_dev/sfdx_dev_unlocked_pkg_install_pkg.htm). Once a package version is created via the release workflow, you can install it directly into your Salesforce environments.
-
-> **Note:** The Package Version ID (`04t...`) will be automatically populated when running the **Release Unlocked Package** workflow. Check the [Releases](https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl/releases) page for the latest package version.
+This library is distributed as an [Unlocked Package](https://developer.salesforce.com/docs/atlas.en-us.sfdx_dev.meta/sfdx_dev/sfdx_dev_unlocked_pkg_install_pkg.htm). You can install it directly into your Salesforce environments.
 
 #### Install via Package Links
 
-Once a package is released, use these links (replace `{PACKAGE_ID}` with the actual Package Version ID):
-
 * **Production / Developer Org:**
-  `https://login.salesforce.com/packaging/installPackage.apexp?p0={PACKAGE_ID}`
+  [https://login.salesforce.com/packaging/installPackage.apexp?p0=04tKi000000D4XqIAK](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tKi000000D4XqIAK)
 
 * **Sandbox:**
-  `https://test.salesforce.com/packaging/installPackage.apexp?p0={PACKAGE_ID}`
+  [https://test.salesforce.com/packaging/installPackage.apexp?p0=04tKi000000D4XqIAK](https://test.salesforce.com/packaging/installPackage.apexp?p0=04tKi000000D4XqIAK)
 
 #### Install Using Salesforce CLI
 
 ```bash
-sf package install --package {PACKAGE_ID} --target-org <your-org-alias> --wait 10
+sf package install --package 04tKi000000D4XqIAK --target-org <your-org-alias> --wait 10
 ```
-
-Replace `{PACKAGE_ID}` with the Package Version ID (starts with `04t`) and `<your-org-alias>` with your target org.
 
 #### Optional: Compile Only the Package's Apex Code
 
 ```bash
-sf package install --apex-compile package --package {PACKAGE_ID} --target-org <your-org-alias> --wait 10
+sf package install --apex-compile package --package 04tKi000000D4XqIAK --target-org <your-org-alias> --wait 10
 ```
 
 After installation, assign the permission set:
