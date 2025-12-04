@@ -94,12 +94,13 @@ jobs:
              sfdx-project.json > sfdx-project.json.tmp
           mv sfdx-project.json.tmp sfdx-project.json
 
-      - name: Create package version
-        id: create-version
+      - name: Create package version (with code coverage)
+        id: create-version-validated
+        if: ${{ inputs.release_notes != '' }}
         env:
           INSTALLATION_KEY: ${{ inputs.installation_key }}
         run: |
-          echo "Creating package version ${{ inputs.version }}..."
+          echo "Creating package version ${{ inputs.version }} with code coverage..."
           
           # Read package name from sfdx-project.json
           PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
@@ -139,11 +140,70 @@ jobs:
           echo "Package Version ID: $PACKAGE_VERSION_ID"
           echo "package_version_id=$PACKAGE_VERSION_ID" >> $GITHUB_OUTPUT
 
+      - name: Create package version (skip validation)
+        id: create-version-skip-validation
+        if: ${{ inputs.release_notes == '' }}
+        env:
+          INSTALLATION_KEY: ${{ inputs.installation_key }}
+        run: |
+          echo "Creating package version ${{ inputs.version }} without validation (no release notes provided)..."
+          
+          # Read package name from sfdx-project.json
+          PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
+          echo "Package name: $PACKAGE_NAME"
+          
+          # Build the package version command with skip-validation
+          if [ -n "$INSTALLATION_KEY" ]; then
+            RESULT=$(sf package version create \
+              --package "$PACKAGE_NAME" \
+              --target-dev-hub DevHub \
+              --wait 20 \
+              --skip-validation \
+              --installation-key "$INSTALLATION_KEY" \
+              --json)
+          else
+            RESULT=$(sf package version create \
+              --package "$PACKAGE_NAME" \
+              --target-dev-hub DevHub \
+              --wait 20 \
+              --skip-validation \
+              --installation-key-bypass \
+              --json)
+          fi
+          
+          echo "Package version creation result:"
+          echo "$RESULT" | jq .
+          
+          # Extract the subscriber package version ID (04t...)
+          PACKAGE_VERSION_ID=$(echo "$RESULT" | jq -r '.result.SubscriberPackageVersionId')
+          
+          if [ -z "$PACKAGE_VERSION_ID" ] || [ "$PACKAGE_VERSION_ID" == "null" ]; then
+            echo "Error: Failed to extract package version ID"
+            echo "$RESULT"
+            exit 1
+          fi
+          
+          echo "Package Version ID: $PACKAGE_VERSION_ID"
+          echo "package_version_id=$PACKAGE_VERSION_ID" >> $GITHUB_OUTPUT
+
+      - name: Get package version ID
+        id: get-version-id
+        run: |
+          # Get the package version ID from whichever step ran
+          if [ -n "${{ steps.create-version-validated.outputs.package_version_id }}" ]; then
+            VERSION_ID="${{ steps.create-version-validated.outputs.package_version_id }}"
+          else
+            VERSION_ID="${{ steps.create-version-skip-validation.outputs.package_version_id }}"
+          fi
+          echo "Package Version ID: $VERSION_ID"
+          echo "package_version_id=$VERSION_ID" >> $GITHUB_OUTPUT
+
       - name: Promote package version
+        if: ${{ inputs.release_notes != '' }}
         run: |
           echo "Promoting package version to released..."
           sf package version promote \
-            --package ${{ steps.create-version.outputs.package_version_id }} \
+            --package ${{ steps.get-version-id.outputs.package_version_id }} \
             --target-dev-hub DevHub \
             --no-prompt
 
@@ -154,7 +214,7 @@ jobs:
           
           # Add version alias to packageAliases
           jq --arg alias "${PACKAGE_NAME}@${{ inputs.version }}" \
-             --arg id "${{ steps.create-version.outputs.package_version_id }}" \
+             --arg id "${{ steps.get-version-id.outputs.package_version_id }}" \
              '.packageAliases[$alias] = $id' \
              sfdx-project.json > sfdx-project.json.tmp
           mv sfdx-project.json.tmp sfdx-project.json
@@ -180,7 +240,7 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           REPO_URL: https://github.com/${{ github.repository }}
-          PACKAGE_ID: ${{ steps.create-version.outputs.package_version_id }}
+          PACKAGE_ID: ${{ steps.get-version-id.outputs.package_version_id }}
         run: |
           chmod +x scripts/update-readme-install.sh
           ./scripts/update-readme-install.sh
@@ -199,7 +259,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "chore: release unlocked package v${{ inputs.version }} (${{ steps.create-version.outputs.package_version_id }})"
+            git commit -m "chore: release unlocked package v${{ inputs.version }} (${{ steps.get-version-id.outputs.package_version_id }})"
             git push
           fi
 
@@ -215,26 +275,26 @@ jobs:
 
             ### Unlocked Package Installation (Recommended)
 
-            **Package Version ID:** `${{ steps.create-version.outputs.package_version_id }}`
+            **Package Version ID:** `${{ steps.get-version-id.outputs.package_version_id }}`
 
             #### Install via Package Links
 
             * **Production / Developer Org:**
-              [Install Package](https://login.salesforce.com/packaging/installPackage.apexp?p0=${{ steps.create-version.outputs.package_version_id }})
+              [Install Package](https://login.salesforce.com/packaging/installPackage.apexp?p0=${{ steps.get-version-id.outputs.package_version_id }})
 
             * **Sandbox:**
-              [Install Package](https://test.salesforce.com/packaging/installPackage.apexp?p0=${{ steps.create-version.outputs.package_version_id }})
+              [Install Package](https://test.salesforce.com/packaging/installPackage.apexp?p0=${{ steps.get-version-id.outputs.package_version_id }})
 
             #### Install Using Salesforce CLI
 
             ```bash
-            sf package install --package ${{ steps.create-version.outputs.package_version_id }} --target-org <your-org-alias> --wait 10
+            sf package install --package ${{ steps.get-version-id.outputs.package_version_id }} --target-org <your-org-alias> --wait 10
             ```
 
             #### Optional: Compile Only Package Apex
 
             ```bash
-            sf package install --apex-compile package --package ${{ steps.create-version.outputs.package_version_id }} --target-org <your-org-alias> --wait 10
+            sf package install --apex-compile package --package ${{ steps.get-version-id.outputs.package_version_id }} --target-org <your-org-alias> --wait 10
             ```
 
             ### Alternative: Metadata Deployment
