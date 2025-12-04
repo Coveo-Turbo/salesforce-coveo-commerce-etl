@@ -30,6 +30,33 @@ It includes:
 
 ---
 
+
+## ⚠️ Prerequisites: Salesforce B2B Commerce Dependency
+
+This package **requires Salesforce B2B Commerce** to be enabled in the target org (Scratch Org, Sandbox, or Production).
+The package references standard Commerce objects such as:
+
+* `ProductCategory`
+* `ProductCategoryProduct`
+* `ProductCatalog`
+* `Product2` (standard, used for products)
+* `Pricebook2` / `PricebookEntry` (standard pricing structure)
+
+Because these objects are part of **Salesforce B2B Commerce**, the following must be true:
+
+---
+
+### The org must have B2B Commerce licensed and enabled
+
+To verify, check in **Setup → Object Manager** that the following objects exist:
+
+* **ProductCategory**
+* **ProductCategoryProduct**
+* **ProductCatalog**
+
+If these objects are missing, the org is **not Commerce-enabled**.
+
+
 ## 📥 Installation
 
 ### Current Version: 1.1.0
