@@ -4,7 +4,7 @@
     <description>Fully-qualified Apex class name implementing
     ICatalogJsonBuilder</description>
     <externalId>false</externalId>
-    <fieldManageability>DeveloperControlled</fieldManageability>
+    <fieldManageability>SubscriberControlled</fieldManageability>
     <label>Class Name</label>
     <length>255</length>
     <required>true</required>
