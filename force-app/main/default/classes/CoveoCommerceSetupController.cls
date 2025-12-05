@@ -31,7 +31,7 @@ public with sharing class CoveoCommerceSetupController {
         result.put('endpoint', nc.calloutUrl);
 
         // Check if API_KEY parameter is configured in the external credential
-        if (hasApiKeyParameter()) {
+        if (isExternalCredentialConfigured()) {
           result.put('exists', true);
           result.put('status', 'Configured');
         } else {
@@ -48,38 +48,37 @@ public with sharing class CoveoCommerceSetupController {
   }
 
   /**
-   * Checks if the API_KEY authentication parameter is configured
-   * in the CoveoPushAuthCred external credential.
-   * The API_KEY must be present in the authParameterNames list of a principal
-   * (e.g., within the NamedUser principal).
-   * @return true if API_KEY parameter exists, false otherwise
+   * We can't inspect individual auth param names (e.g., 'API_KEY') from Apex.
+   * Instead, we treat 'Configured' or 'Unknown' authentication status on any principal
+   * as "API Key is configured".
    */
-  private static Boolean hasApiKeyParameter() {
+  private static Boolean isExternalCredentialConfigured() {
     try {
       ConnectApi.ExternalCredential ec = ConnectApi.NamedCredentials.getExternalCredential(
         EXTERNAL_CREDENTIAL_NAME
       );
 
-      if (ec.principals != null && !ec.principals.isEmpty()) {
-        for (ConnectApi.ExternalCredentialPrincipal principal : ec.principals) {
-          // Check authParameterNames which contains the actual authentication
-          // parameter names (e.g., API_KEY) configured under each principal
-          if (principal.authParameterNames != null) {
-            for (String authParamName : principal.authParameterNames) {
-              if (API_KEY_PARAMETER_NAME.equals(authParamName)) {
-                // API_KEY exists in authentication parameters - consider it configured
-                // (we cannot check the actual value as it's encrypted)
-                return true;
-              }
-            }
-          }
+      if (ec == null || ec.principals == null || ec.principals.isEmpty()) {
+        return false;
+      }
+
+      for (ConnectApi.ExternalCredentialPrincipal principal : ec.principals) {
+        String status = String.valueOf(principal.authenticationStatus);
+        System.debug(
+          'Principal: ' +
+            principal.principalName +
+            ', status=' +
+            principal.authenticationStatus
+        );
+        // Values: Configured, NotConfigured, Unknown
+        if (status != 'NotConfigured') {
+          return true; // "has required credentials for at least one principal"
         }
       }
+      return false;
     } catch (Exception e) {
-      // External credential not accessible or doesn't exist
       return false;
     }
-    return false;
   }
 
   /**
