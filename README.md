@@ -268,6 +268,9 @@ salesforce-coveo-commerce-etl/
 │   │   │   ├── ProductCatalogExportBatch.cls
 │   │   │   ├── CatalogJsonBuilderCommerce.cls
 │   │   │   ├── CatalogJsonBuilderDefault.cls
+│   │   │   ├── CatalogJsonBuilderGrouping.cls
+│   │   │   ├── CatalogJsonBuilderVariant.cls
+│   │   │   ├── CatalogJsonBuilderGroupingWithVariants.cls
 │   │   │   ├── ICatalogJsonBuilder.cls
 │   │   │   ├── CatalogJsonBuilderFactory.cls
 │   │   │   ├── SafeFieldUtil.cls
@@ -468,13 +471,131 @@ Features:
 
 # 🛠 Extending
 
-You can extend this starter kit by adding:
+## CatalogJsonBuilder Implementations
 
-* Variant support (`objecttype=Variant`)
-* Availability support
+This ETL supports multiple catalog organization strategies through dedicated builder implementations. You can configure each catalog to use a specific builder via the `BuilderType__c` field in `CatalogJobConfig__mdt`.
+
+### Available Builder Types
+
+| Builder Type | Class Name | Use Case |
+|-------------|-----------|----------|
+| `Default` | `CatalogJsonBuilderDefault` | Simple products without grouping/variant logic |
+| `Commerce` | `CatalogJsonBuilderCommerce` | Standard commerce with B2B category hierarchy (default) |
+| `Grouping` | `CatalogJsonBuilderGrouping` | Product families with parent-child grouping relationships |
+| `Variant` | `CatalogJsonBuilderVariant` | Product variants (size, color, material, etc.) |
+| `GroupingWithVariants` | `CatalogJsonBuilderGroupingWithVariants` | Combined grouping and variant support |
+
+### Product Grouping Use Case
+
+Use `CatalogJsonBuilderGrouping` when your catalog has product families where:
+- Parent products represent product families/groups
+- Child products reference parents via `Parent_Product__c` lookup field
+
+**Example Payload:**
+```json
+{
+  "objecttype": "Product",
+  "documentId": "product://CHILD-SKU",
+  "ec_product_id": "CHILD-SKU",
+  "ec_name": "Child Product",
+  "ec_item_group_id": "PARENT-SKU"
+}
+```
+
+### Product Variant Use Case
+
+Use `CatalogJsonBuilderVariant` when products have SKU-level variants:
+- Variant products have `Type = 'Variation'`
+- Variants reference parent via `Parent_Product__c`
+- Variant attributes (color, size) stored on variant records
+
+**Example Payload:**
+```json
+{
+  "objecttype": "Product",
+  "documentId": "product://SKU-BLUE-L",
+  "ec_product_id": "SKU-BLUE-L",
+  "ec_item_group_id": "PARENT-SKU",
+  "ec_variant_id": "SKU-BLUE-L",
+  "ec_variant_color": "Blue",
+  "ec_variant_size": "Large"
+}
+```
+
+### Combined Grouping + Variant Use Case
+
+Use `CatalogJsonBuilderGroupingWithVariants` for complex three-tier hierarchies:
+
+```
+Product Group (Family)
+└── Product (Group Member)
+    └── Variant (SKU)
+```
+
+**Example Payload:**
+```json
+{
+  "objecttype": "Product",
+  "documentId": "product://VARIANT-SKU",
+  "ec_product_id": "VARIANT-SKU",
+  "ec_item_group_id": "PRODUCT-SKU",
+  "ec_product_family": "GROUP-SKU",
+  "ec_variant_id": "VARIANT-SKU",
+  "ec_variant_color": "Blue"
+}
+```
+
+### Configuring Per-Catalog Builders
+
+Set the `BuilderType__c` field in your `CatalogJobConfig__mdt` records:
+
+| Field | Value |
+|-------|-------|
+| `BuilderType__c` | `Grouping` |
+
+Or use the full class name:
+
+| Field | Value |
+|-------|-------|
+| `BuilderType__c` | `CatalogJsonBuilderGrouping` |
+
+### Creating Custom Builders
+
+To create a custom builder:
+
+1. Create an Apex class implementing `ICatalogJsonBuilder`:
+
+```apex
+public class MyCustomBuilder implements ICatalogJsonBuilder {
+  public String buildFullUpdateNdjson(
+    List<Product2> products,
+    Map<Id, PricebookEntry> pbesByProduct,
+    List<String> extraFieldNames
+  ) {
+    // Your implementation
+  }
+
+  public String buildPartialMergeNdjson(
+    Map<String, Decimal> priceBySku,
+    Map<String, Boolean> inStockBySku
+  ) {
+    // Your implementation
+  }
+}
+```
+
+2. Set `BuilderType__c` to your class name in the catalog config
+
+---
+
+## Additional Extension Points
+
+You can further extend this starter kit by adding:
+
 * Per-locale pricebooks
 * Field mapping UI (CMDT → ec_* target mapping)
 * Apex Scheduler for nightly runs
+* Custom variant attribute mappings
 
 ---
 
