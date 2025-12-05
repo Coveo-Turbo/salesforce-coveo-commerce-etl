@@ -3,5 +3,5 @@
     <description>Selects which builder class implements ICatalogJsonBuilder at runtime.</description>
     <label>Catalog Json Builder Mapping</label>
     <pluralLabel>Catalog Json Builder Mappings</pluralLabel>
-    <visibility>PackageProtected</visibility>
+    <visibility>Public</visibility>
 </CustomObject>
