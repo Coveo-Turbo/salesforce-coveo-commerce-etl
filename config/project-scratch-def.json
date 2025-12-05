@@ -1,7 +1,7 @@
 {
   "orgName": "Coveo Commerce ETL (B2B)",
   "edition": "Developer",
-  "hasSampleData": true,
+  "hasSampleData": false,
   "features": [
     "Communities",
     "B2BCommerce",
