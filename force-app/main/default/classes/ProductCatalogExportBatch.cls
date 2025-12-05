@@ -31,7 +31,8 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
         Locale__c,
         IsActive__c,
         ProductFilter__c,
-        AdditionalProductFields__c
+        AdditionalProductFields__c,
+        BuilderType__c
       FROM CatalogJobConfig__mdt
       WHERE DeveloperName = :jobConfigDeveloperName
       LIMIT 1
@@ -40,7 +41,7 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     if (configs.isEmpty()) {
       throw new CatalogJobException(
         'No CatalogJobConfig__mdt record found with DeveloperName: ' +
-          jobConfigDeveloperName
+        jobConfigDeveloperName
       );
     }
     this.jobConfig = configs[0];
@@ -114,7 +115,9 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
         pbesByProduct.put(pbe.Product2Id, pbe);
       }
     }
-    ICatalogJsonBuilder builder = CatalogJsonBuilderFactory.get();
+    ICatalogJsonBuilder builder = CatalogJsonBuilderFactory.getForBuilderType(
+      jobConfig.BuilderType__c
+    );
     String ndjsonPayload = builder.buildFullUpdateNdjson(
       scope,
       pbesByProduct,
@@ -244,10 +247,13 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
 
     // Check for subqueries by looking for SELECT...FROM pattern
     // This is a simplified check - subqueries in WHERE clauses are generally unexpected
-    if (normalizedFilter.contains('SELECT ') && normalizedFilter.contains(' FROM ')) {
+    if (
+      normalizedFilter.contains('SELECT ') &&
+      normalizedFilter.contains(' FROM ')
+    ) {
       throw new CatalogJobException(
         'Invalid ProductFilter__c value: contains subquery pattern. ' +
-          'Only simple SOQL WHERE clause fragments are allowed.'
+        'Only simple SOQL WHERE clause fragments are allowed.'
       );
     }
 
