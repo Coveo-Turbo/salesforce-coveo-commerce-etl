@@ -98,7 +98,8 @@ public with sharing class CoveoCommerceSetupController {
         Locale__c,
         IsActive__c,
         ProductFilter__c,
-        AdditionalProductFields__c
+        AdditionalProductFields__c,
+        BuilderType__c
       FROM CatalogJobConfig__mdt
       ORDER BY MasterLabel
     ]) {
@@ -112,6 +113,12 @@ public with sharing class CoveoCommerceSetupController {
       configMap.put('isActive', cfg.IsActive__c);
       configMap.put('productFilter', cfg.ProductFilter__c);
       configMap.put('additionalProductFields', cfg.AdditionalProductFields__c);
+      configMap.put(
+        'builderType',
+        String.isNotBlank(cfg.BuilderType__c)
+          ? cfg.BuilderType__c
+          : '(Global Default)'
+      );
       configs.add(configMap);
     }
 
@@ -149,49 +156,40 @@ public with sharing class CoveoCommerceSetupController {
   }
 
   /**
-   * Gets all available builder class options.
-   * Currently returns the built-in builder; customers can extend by
-   * creating their own implementations.
+   * Gets all available builder class options with descriptions.
+   * Returns both built-in builders and any custom implementations.
    */
   @AuraEnabled(cacheable=true)
   public static List<Map<String, String>> getBuilderClassOptions() {
     List<Map<String, String>> options = new List<Map<String, String>>();
 
-    // Add default builder
-    Map<String, String> defaultBuilder = new Map<String, String>();
+    // Map of builder types to user-friendly descriptions
+    Map<String, String> builderDescriptions = new Map<String, String>{
+      'CatalogJsonBuilderDefault' => 'Simple products without grouping or variant logic',
+      'CatalogJsonBuilderCommerce' => 'Standard commerce with B2B category hierarchy (recommended for most use cases)',
+      'CatalogJsonBuilderGrouping' => 'Product families with parent-child grouping relationships (ec_item_group_id)',
+      'CatalogJsonBuilderVariant' => 'Product variants with size/color/material attributes (ec_variant_id)',
+      'CatalogJsonBuilderGroupingWithVariants' => 'Combined three-tier hierarchy: Group → Product → Variant (ec_product_family + ec_item_group_id + ec_variant_id)'
+    };
 
-    try {
-      CatalogJsonBuilderMapping__mdt defaultMapping = [
-        SELECT DeveloperName, MasterLabel, ClassName__c
-        FROM CatalogJsonBuilderMapping__mdt
-        WHERE DeveloperName = 'Default'
-        LIMIT 1
-      ];
-
-      defaultBuilder.put('label', defaultMapping.MasterLabel);
-      defaultBuilder.put('value', defaultMapping.ClassName__c);
-    } catch (Exception e) {
-      // Use default if not found
-      defaultBuilder.put('label', 'Default Coveo Commerce Builder');
-      defaultBuilder.put('value', 'CatalogJsonBuilderCommerce');
-    }
-
-    defaultBuilder.put(
-      'description',
-      'Standard Coveo Commerce catalog builder with ec_* fields'
-    );
-    options.add(defaultBuilder);
-
-    // Check if there are any other mappings defined
+    // Load all builder mappings
     for (CatalogJsonBuilderMapping__mdt mapping : [
       SELECT DeveloperName, MasterLabel, ClassName__c
       FROM CatalogJsonBuilderMapping__mdt
-      WHERE DeveloperName != 'Active' AND DeveloperName != 'Default'
+      WHERE DeveloperName != 'Active'
+      ORDER BY MasterLabel
     ]) {
       Map<String, String> option = new Map<String, String>();
       option.put('label', mapping.MasterLabel);
       option.put('value', mapping.ClassName__c);
-      option.put('description', 'Custom builder: ' + mapping.ClassName__c);
+
+      // Use predefined description or create a custom one
+      if (builderDescriptions.containsKey(mapping.ClassName__c)) {
+        option.put('description', builderDescriptions.get(mapping.ClassName__c));
+      } else {
+        option.put('description', 'Custom builder: ' + mapping.ClassName__c);
+      }
+
       options.add(option);
     }
 

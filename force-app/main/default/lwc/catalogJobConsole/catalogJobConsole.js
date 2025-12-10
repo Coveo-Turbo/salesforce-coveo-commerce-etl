@@ -25,6 +25,7 @@ export default class CatalogJobConsole extends LightningElement {
     ACTIONS_COL,
     { label: "Label", fieldName: "Label", wrapText: true },
     { label: "Locale", fieldName: "Locale__c" },
+    { label: "Builder Type", fieldName: "BuilderType__c", wrapText: true },
     { label: "Coveo Org Id", fieldName: "CoveoOrgId__c" },
     { label: "Source Id", fieldName: "SourceId__c" },
     {

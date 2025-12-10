@@ -12,6 +12,7 @@ import validateBuilderClass from "@salesforce/apex/CoveoCommerceSetupController.
 const CONFIG_COLUMNS = [
   { label: "Label", fieldName: "label", wrapText: true },
   { label: "Locale", fieldName: "locale" },
+  { label: "Builder Type", fieldName: "builderType", wrapText: true },
   { label: "Coveo Org Id", fieldName: "coveoOrgId" },
   { label: "Source Id", fieldName: "sourceId" },
   {
