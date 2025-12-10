@@ -22,7 +22,7 @@ sf data update record \
   --target-org "$alias" || true
 
 echo "➡️  Importing Commerce sample data"
-sf data import tree --target-org "$alias" --plan data/commerce-plan.json || true
+bash scripts/reset-commerce-data.sh "$alias" || true
 
 echo "➡️  Assigning permission set"
 sf org assign permset \
