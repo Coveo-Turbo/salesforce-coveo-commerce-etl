@@ -1,0 +1,30 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Combined_Product_Helmet"
+      },
+      "Name": "Coveo Safety Helmet",
+      "ProductCode": "PROD-HELMET-001",
+      "Family": "Safety Equipment",
+      "Description": "Professional safety helmet in multiple sizes and colors.",
+      "IsActive": true,
+      "Type__c": "Base",
+      "Product_Group__c": "@Prod_Combined_Group_Safety"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Combined_Product_Vest"
+      },
+      "Name": "Coveo High-Visibility Vest",
+      "ProductCode": "PROD-VEST-001",
+      "Family": "Safety Equipment",
+      "Description": "High-visibility safety vest in multiple sizes.",
+      "IsActive": true,
+      "Type__c": "Base",
+      "Product_Group__c": "@Prod_Combined_Group_Safety"
+    }
+  ]
+}

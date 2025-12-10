@@ -71,7 +71,7 @@ sf data delete bulk \
 echo "5) Deleting ProductCategory records for test catalogs..."
 sf data query \
   --target-org "$ORG_ALIAS" \
-  --query "SELECT Id FROM ProductCategory WHERE Catalog.Name IN ('Demo Catalog', 'Default Catalog - Simple Products', 'Grouping Catalog - Product Families', 'Variant Catalog - Product Variants', 'Combined Catalog - Grouping with Variants')" \
+  --query "SELECT Id FROM ProductCategory WHERE Catalog.Name IN ('Demo Catalog - Simple Products', 'Grouping Catalog - Product Families', 'Variant Catalog - Product Variants', 'Combined Catalog - Grouping with Variants')" \
   --result-format csv > "$DATA_DIR/tmp_ProductCategory.csv" || true
 
 sf data delete bulk \
@@ -85,7 +85,7 @@ sf data delete bulk \
 echo "6) Deleting test ProductCatalog records..."
 sf data query \
   --target-org "$ORG_ALIAS" \
-  --query "SELECT Id FROM ProductCatalog WHERE Name IN ('Demo Catalog', 'Default Catalog - Simple Products', 'Grouping Catalog - Product Families', 'Variant Catalog - Product Variants', 'Combined Catalog - Grouping with Variants')" \
+  --query "SELECT Id FROM ProductCatalog WHERE Name IN ('Demo Catalog - Simple Products', 'Grouping Catalog - Product Families', 'Variant Catalog - Product Variants', 'Combined Catalog - Grouping with Variants')" \
   --result-format csv > "$DATA_DIR/tmp_ProductCatalog.csv" || true
 
 sf data delete bulk \

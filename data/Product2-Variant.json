@@ -10,7 +10,7 @@
       "Family": "Apparel",
       "Description": "Professional work shirt in multiple sizes and colors.",
       "IsActive": true,
-      "Type": "Base"
+      "Type__c": "Base"
     },
     {
       "attributes": {
@@ -22,7 +22,7 @@
       "Family": "Apparel",
       "Description": "Professional work shirt - Blue, Size Small",
       "IsActive": true,
-      "Type": "Variation",
+      "Type__c": "Variation",
       "Parent_Product__c": "@Prod_Var_Tshirt_Base",
       "Variant_Color__c": "Blue",
       "Variant_Size__c": "Small"
@@ -37,7 +37,7 @@
       "Family": "Apparel",
       "Description": "Professional work shirt - Blue, Size Medium",
       "IsActive": true,
-      "Type": "Variation",
+      "Type__c": "Variation",
       "Parent_Product__c": "@Prod_Var_Tshirt_Base",
       "Variant_Color__c": "Blue",
       "Variant_Size__c": "Medium"
@@ -52,7 +52,7 @@
       "Family": "Apparel",
       "Description": "Professional work shirt - Red, Size Small",
       "IsActive": true,
-      "Type": "Variation",
+      "Type__c": "Variation",
       "Parent_Product__c": "@Prod_Var_Tshirt_Base",
       "Variant_Color__c": "Red",
       "Variant_Size__c": "Small"
@@ -67,7 +67,7 @@
       "Family": "Apparel",
       "Description": "Professional work shirt - Red, Size Medium",
       "IsActive": true,
-      "Type": "Variation",
+      "Type__c": "Variation",
       "Parent_Product__c": "@Prod_Var_Tshirt_Base",
       "Variant_Color__c": "Red",
       "Variant_Size__c": "Medium"
@@ -82,7 +82,7 @@
       "Family": "Safety Gear",
       "Description": "Professional work gloves in multiple sizes and materials.",
       "IsActive": true,
-      "Type": "Base"
+      "Type__c": "Base"
     },
     {
       "attributes": {
@@ -94,7 +94,7 @@
       "Family": "Safety Gear",
       "Description": "Leather work gloves - Size Small",
       "IsActive": true,
-      "Type": "Variation",
+      "Type__c": "Variation",
       "Parent_Product__c": "@Prod_Var_Gloves_Base",
       "Variant_Material__c": "Leather",
       "Variant_Size__c": "Small"
@@ -109,7 +109,7 @@
       "Family": "Safety Gear",
       "Description": "Leather work gloves - Size Medium",
       "IsActive": true,
-      "Type": "Variation",
+      "Type__c": "Variation",
       "Parent_Product__c": "@Prod_Var_Gloves_Base",
       "Variant_Material__c": "Leather",
       "Variant_Size__c": "Medium"
@@ -124,7 +124,7 @@
       "Family": "Safety Gear",
       "Description": "Synthetic work gloves - Size Small",
       "IsActive": true,
-      "Type": "Variation",
+      "Type__c": "Variation",
       "Parent_Product__c": "@Prod_Var_Gloves_Base",
       "Variant_Material__c": "Synthetic",
       "Variant_Size__c": "Small"

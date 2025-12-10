@@ -42,10 +42,13 @@
     "saveRefs": true,
     "resolveRefs": true,
     "files": [
-      "Product2.json",
+      "Product2-TopParentGroups.json",
+      "Product2-SubParentGroups.json",
       "Product2-Grouping.json",
+      "Product2-GroupingWithVariants.json",
+      "Product2-Base.json",
       "Product2-Variant.json",
-      "Product2-GroupingWithVariants.json"
+      "Product2.json"
     ]
   },
   {

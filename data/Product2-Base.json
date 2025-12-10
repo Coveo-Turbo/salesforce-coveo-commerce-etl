@@ -1,0 +1,28 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Var_Tshirt_Base"
+      },
+      "Name": "Coveo Pro Work Shirt",
+      "ProductCode": "BASE-SHIRT-001",
+      "Family": "Apparel",
+      "Description": "Professional work shirt in multiple sizes and colors.",
+      "IsActive": true,
+      "Type__c": "Base"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Var_Gloves_Base"
+      },
+      "Name": "Coveo Work Gloves",
+      "ProductCode": "BASE-GLOVES-001",
+      "Family": "Safety Gear",
+      "Description": "Professional work gloves in multiple sizes and materials.",
+      "IsActive": true,
+      "Type__c": "Base"
+    }
+  ]
+}
