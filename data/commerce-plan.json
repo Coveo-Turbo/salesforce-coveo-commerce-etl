@@ -39,10 +39,22 @@
     ]
   },
   {
+    "sobject": "ProductCategory",
+    "saveRefs": true,
+    "resolveRefs": true,
+    "files": [
+      "ProductCategory-UseCases.json"
+    ]
+  },
+  {
     "sobject": "Product2",
     "saveRefs": true,
+    "resolveRefs": true,
     "files": [
-      "Product2.json"
+      "Product2.json",
+      "Product2-Grouping.json",
+      "Product2-Variant.json",
+      "Product2-GroupingWithVariants.json"
     ]
   },
   {
@@ -56,7 +68,8 @@
     "sobject": "ProductCategoryProduct",
     "resolveRefs": true,
     "files": [
-      "ProductCategoryProduct.json"
+      "ProductCategoryProduct.json",
+      "ProductCategoryProduct-UseCases.json"
     ]
   }
 ]

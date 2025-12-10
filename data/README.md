@@ -6,9 +6,11 @@ This directory contains test data for different Coveo Commerce catalog organizat
 
 ### Base Data (Used by All Plans)
 - **ProductCatalog.json** - Main demo catalog
-- **ProductCatalog-UseCases.json** - Additional catalogs for each use case
-- **ProductCategory.json**, **ProductCategory2-4.json** - Category hierarchy
-- **ProductCategoryProduct.json** - Product-category associations
+- **ProductCatalog-UseCases.json** - Additional catalogs for each use case (Default, Grouping, Variant, Combined)
+- **ProductCategory.json**, **ProductCategory2-4.json** - Category hierarchy for main catalog
+- **ProductCategory-UseCases.json** - Categories for use case catalogs with proper parent-child relationships
+- **ProductCategoryProduct.json** - Product-category associations for main catalog products
+- **ProductCategoryProduct-UseCases.json** - Product-category associations for use case products
 - **Pricebook2.json**, **PricebookEntry.json** - Pricing data
 - **Product2.json** - Default/simple products for standard commerce use
 
@@ -79,8 +81,12 @@ Demonstrates three-tier hierarchy: Group → Product → Variant
 
 ## Import Plans
 
-### commerce-plan.json (Default)
-Imports standard product data (Product2.json) plus all catalog records. This is loaded by the standard `scripts/orgInit.sh`.
+### commerce-plan.json (Default - All Use Cases)
+Imports ALL test data including:
+- All catalog records (main + use case catalogs)
+- All product data files (Product2.json + all use case product files)
+- All category associations for all catalogs
+This is the comprehensive plan loaded by `scripts/orgInit.sh` and provides all test data in one import.
 
 ### commerce-plan-grouping.json
 Imports grouping test data. Use for testing the Grouping builder.
