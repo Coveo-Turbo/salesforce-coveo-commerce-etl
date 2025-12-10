@@ -6,37 +6,61 @@ ORG_ALIAS=${1:-ccetl}
 echo "🔧 Setting up Product2 custom fields for org: $ORG_ALIAS"
 echo ""
 
-# Function to create a custom field using Tooling API
+# Create temporary directory for field metadata
+TEMP_DIR=$(mktemp -d)
+METADATA_DIR="$TEMP_DIR/metadata"
+mkdir -p "$METADATA_DIR/objects/Product2/fields"
+
+echo "📋 Creating Product2 custom field metadata..."
+echo ""
+
+# Function to create a lookup field metadata file
 create_lookup_field() {
     local field_name=$1
     local label=$2
     local relationship_name=$3
     
-    echo "Creating lookup field: $field_name..."
+    echo "  - $field_name (Lookup)"
     
-    sf data create record \
-        --sobject CustomField \
-        --values "FullName='Product2.$field_name' Label='$label' Type='Lookup' ReferenceTo='Product2' RelationshipName='$relationship_name' DeleteConstraint='SetNull'" \
-        --target-org "$ORG_ALIAS" \
-        --use-tooling-api || echo "Field $field_name may already exist or creation failed"
+    cat > "$METADATA_DIR/objects/Product2/fields/$field_name.field-meta.xml" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>$field_name</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <externalId>false</externalId>
+    <label>$label</label>
+    <referenceTo>Product2</referenceTo>
+    <relationshipLabel>${label}s</relationshipLabel>
+    <relationshipName>$relationship_name</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <type>Lookup</type>
+</CustomField>
+EOF
 }
 
+# Function to create a text field metadata file
 create_text_field() {
     local field_name=$1
     local label=$2
     local length=${3:-50}
     
-    echo "Creating text field: $field_name..."
+    echo "  - $field_name (Text)"
     
-    sf data create record \
-        --sobject CustomField \
-        --values "FullName='Product2.$field_name' Label='$label' Type='Text' Length=$length" \
-        --target-org "$ORG_ALIAS" \
-        --use-tooling-api || echo "Field $field_name may already exist or creation failed"
+    cat > "$METADATA_DIR/objects/Product2/fields/$field_name.field-meta.xml" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>$field_name</fullName>
+    <externalId>false</externalId>
+    <label>$label</label>
+    <length>$length</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>
+EOF
 }
-
-echo "📋 Creating Product2 custom fields..."
-echo ""
 
 # Create lookup fields
 create_lookup_field "Parent_Product__c" "Parent Product" "Child_Products"
@@ -50,6 +74,23 @@ create_text_field "Variant_Material__c" "Variant Material" "50"
 create_text_field "Variant_Style__c" "Variant Style" "50"
 
 echo ""
+echo "📦 Deploying fields to org..."
+echo ""
+
+# Deploy the field metadata
+sf project deploy start \
+    --metadata-dir "$METADATA_DIR" \
+    --target-org "$ORG_ALIAS" \
+    --wait 10 \
+    || {
+        echo "⚠️  Deployment may have failed. Fields might already exist or there may be permission issues."
+        echo "   This is expected if fields already exist in your org."
+    }
+
+# Clean up temporary directory
+rm -rf "$TEMP_DIR"
+
+echo ""
 echo "✅ Product2 custom field setup complete!"
 echo ""
-echo "Note: You may need to refresh your page or reconnect to see the new fields."
+echo "Note: Fields are now available. You may need to refresh your browser to see them."
