@@ -7,6 +7,7 @@ echo "➡️  Creating scratch org: $alias"
 sf org create scratch \
   --definition-file config/project-scratch-def.json \
   --alias "$alias" \
+  --duration-days 30 \
   --set-default \
   --wait 10
 
@@ -22,7 +23,8 @@ sf data update record \
   --target-org "$alias" || true
 
 echo "➡️  Importing Commerce sample data"
-sf data import tree --target-org "$alias" --plan data/commerce-plan.json || true
+scripts/reset-commerce-data.sh || true
+# sf data import tree --target-org "$alias" --plan data/commerce-plan.json || true
 
 echo "➡️  Assigning permission set"
 sf org assign permset \
