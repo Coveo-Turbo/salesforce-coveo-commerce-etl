@@ -1,0 +1,137 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Combined_Group_Safety"
+      },
+      "Name": "Professional Safety Equipment Collection",
+      "ProductCode": "FAMILY-SAFETY-001",
+      "Family": "Safety Equipment",
+      "Description": "Complete collection of professional safety equipment.",
+      "IsActive": true
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Combined_Product_Helmet"
+      },
+      "Name": "Coveo Safety Helmet",
+      "ProductCode": "PROD-HELMET-001",
+      "Family": "Safety Equipment",
+      "Description": "Professional safety helmet in multiple sizes and colors.",
+      "IsActive": true,
+      "Type": "Base",
+      "Product_Group__c": "@Prod_Combined_Group_Safety"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Combined_Variant_Helmet_White_S"
+      },
+      "Name": "Coveo Safety Helmet - White - Small",
+      "ProductCode": "SKU-HELM-WHT-S",
+      "Family": "Safety Equipment",
+      "Description": "Safety helmet - White, Size Small",
+      "IsActive": true,
+      "Type": "Variation",
+      "Parent_Product__c": "@Prod_Combined_Product_Helmet",
+      "Product_Group__c": "@Prod_Combined_Group_Safety",
+      "Variant_Color__c": "White",
+      "Variant_Size__c": "Small"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Combined_Variant_Helmet_White_M"
+      },
+      "Name": "Coveo Safety Helmet - White - Medium",
+      "ProductCode": "SKU-HELM-WHT-M",
+      "Family": "Safety Equipment",
+      "Description": "Safety helmet - White, Size Medium",
+      "IsActive": true,
+      "Type": "Variation",
+      "Parent_Product__c": "@Prod_Combined_Product_Helmet",
+      "Product_Group__c": "@Prod_Combined_Group_Safety",
+      "Variant_Color__c": "White",
+      "Variant_Size__c": "Medium"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Combined_Variant_Helmet_Yellow_S"
+      },
+      "Name": "Coveo Safety Helmet - Yellow - Small",
+      "ProductCode": "SKU-HELM-YEL-S",
+      "Family": "Safety Equipment",
+      "Description": "Safety helmet - Yellow, Size Small",
+      "IsActive": true,
+      "Type": "Variation",
+      "Parent_Product__c": "@Prod_Combined_Product_Helmet",
+      "Product_Group__c": "@Prod_Combined_Group_Safety",
+      "Variant_Color__c": "Yellow",
+      "Variant_Size__c": "Small"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Combined_Product_Vest"
+      },
+      "Name": "Coveo High-Visibility Vest",
+      "ProductCode": "PROD-VEST-001",
+      "Family": "Safety Equipment",
+      "Description": "High-visibility safety vest in multiple sizes.",
+      "IsActive": true,
+      "Type": "Base",
+      "Product_Group__c": "@Prod_Combined_Group_Safety"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Combined_Variant_Vest_Orange_S"
+      },
+      "Name": "Coveo High-Visibility Vest - Orange - Small",
+      "ProductCode": "SKU-VEST-ORG-S",
+      "Family": "Safety Equipment",
+      "Description": "High-visibility vest - Orange, Size Small",
+      "IsActive": true,
+      "Type": "Variation",
+      "Parent_Product__c": "@Prod_Combined_Product_Vest",
+      "Product_Group__c": "@Prod_Combined_Group_Safety",
+      "Variant_Color__c": "Orange",
+      "Variant_Size__c": "Small"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Combined_Variant_Vest_Orange_M"
+      },
+      "Name": "Coveo High-Visibility Vest - Orange - Medium",
+      "ProductCode": "SKU-VEST-ORG-M",
+      "Family": "Safety Equipment",
+      "Description": "High-visibility vest - Orange, Size Medium",
+      "IsActive": true,
+      "Type": "Variation",
+      "Parent_Product__c": "@Prod_Combined_Product_Vest",
+      "Product_Group__c": "@Prod_Combined_Group_Safety",
+      "Variant_Color__c": "Orange",
+      "Variant_Size__c": "Medium"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Combined_Variant_Vest_Orange_L"
+      },
+      "Name": "Coveo High-Visibility Vest - Orange - Large",
+      "ProductCode": "SKU-VEST-ORG-L",
+      "Family": "Safety Equipment",
+      "Description": "High-visibility vest - Orange, Size Large",
+      "IsActive": true,
+      "Type": "Variation",
+      "Parent_Product__c": "@Prod_Combined_Product_Vest",
+      "Product_Group__c": "@Prod_Combined_Group_Safety",
+      "Variant_Color__c": "Orange",
+      "Variant_Size__c": "Large"
+    }
+  ]
+}

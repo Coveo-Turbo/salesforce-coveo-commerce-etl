@@ -3,7 +3,6 @@
     "sobject": "ProductCatalog",
     "saveRefs": true,
     "files": [
-      "ProductCatalog.json",
       "ProductCatalog-UseCases.json"
     ]
   },
@@ -41,8 +40,9 @@
   {
     "sobject": "Product2",
     "saveRefs": true,
+    "resolveRefs": true,
     "files": [
-      "Product2.json"
+      "Product2-Variant.json"
     ]
   },
   {
