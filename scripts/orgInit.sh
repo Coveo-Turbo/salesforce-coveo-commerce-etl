@@ -7,6 +7,7 @@ echo "➡️  Creating scratch org: $alias"
 sf org create scratch \
   --definition-file config/project-scratch-def.json \
   --alias "$alias" \
+  --duration-days 30 \
   --set-default \
   --wait 10
 
