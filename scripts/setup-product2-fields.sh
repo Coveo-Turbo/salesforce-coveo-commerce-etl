@@ -81,7 +81,7 @@ echo ""
 sf project deploy start \
     --metadata-dir "$METADATA_DIR" \
     --target-org "$ORG_ALIAS" \
-    --wait 10 \
+    --wait 2 \
     || {
         echo "⚠️  Deployment may have failed. Fields might already exist or there may be permission issues."
         echo "   This is expected if fields already exist in your org."
