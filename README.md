@@ -114,6 +114,11 @@ sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
    sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
    ```
 
+4. **Set up Product2 custom fields (for variant/grouping use cases):**
+   ```bash
+   bash scripts/setup-product2-fields.sh <your-org-alias>
+   ```
+
 ### Option 3: Deploy from Source
 
 1. **Clone this repository:**
@@ -130,6 +135,11 @@ sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
 3. **Assign the permission set:**
    ```bash
    sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
+   ```
+
+4. **Set up Product2 custom fields (for variant/grouping use cases):**
+   ```bash
+   bash scripts/setup-product2-fields.sh <your-org-alias>
    ```
 
 ### Post-Installation Setup

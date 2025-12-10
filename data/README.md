@@ -132,13 +132,23 @@ Database.executeBatch(new ProductCatalogExportBatch('YourConfigName'), 100);
 
 ## Custom Field Requirements
 
-For the variant and combined use cases, ensure these custom fields exist on Product2:
-- `Parent_Product__c` (Lookup to Product2)
-- `Product_Group__c` (Lookup to Product2) - for combined use case
-- `Type` (Picklist or Text)
-- `Variant_Color__c` (Text)
-- `Variant_Size__c` (Text)
-- `Variant_Material__c` (Text)
-- `Variant_Style__c` (Text)
+For the variant and combined use cases, custom fields are required on Product2. These are automatically created when running `scripts/orgInit.sh` for scratch orgs.
 
-These fields are accessed via `SafeFieldUtil`, so they won't cause errors if missing, but the data won't be complete.
+### Auto-Created Fields (via setup-product2-fields.sh)
+- `Parent_Product__c` (Lookup to Product2) - Links variants/children to parent products
+- `Product_Group__c` (Lookup to Product2) - Links products to their family/group (combined use case)
+- `Type` (Text, 50 chars) - Product type: "Base" or "Variation"
+- `Variant_Color__c` (Text, 50 chars) - Variant color attribute
+- `Variant_Size__c` (Text, 50 chars) - Variant size attribute
+- `Variant_Material__c` (Text, 50 chars) - Variant material attribute
+- `Variant_Style__c` (Text, 50 chars) - Variant style attribute
+
+### Manual Setup (for non-scratch orgs)
+If you're not using a scratch org, run the field setup script manually:
+```bash
+bash scripts/setup-product2-fields.sh <org-alias>
+```
+
+Alternatively, create these fields via Setup UI or deploy them via metadata.
+
+**Note:** These fields are accessed via `SafeFieldUtil`, so the builders won't error if fields are missing, but variant/grouping data won't be exported.

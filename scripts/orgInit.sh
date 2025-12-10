@@ -14,6 +14,9 @@ sf org create scratch \
 echo "➡️  Deploying project source"
 sf project deploy start --target-org "$alias" --ignore-conflicts
 
+echo "➡️  Setting up Product2 custom fields"
+bash scripts/setup-product2-fields.sh "$alias" || true
+
 echo "➡️  Activating Standard Pricebook (required by PricebookEntry)"
 # Ignore failure if already active
 sf data update record \
