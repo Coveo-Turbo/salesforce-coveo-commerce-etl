@@ -25,13 +25,13 @@ sf data update record \
   --values "IsActive=true" \
   --target-org "$alias" || true
 
-echo "➡️  Importing Commerce sample data"
-bash scripts/reset-commerce-data.sh "$alias" || true
-
 echo "➡️  Assigning permission set"
 sf org assign permset \
   --name CoveoETL_Admin \
   --target-org "$alias"
+
+echo "➡️  Importing Commerce sample data"
+bash scripts/reset-commerce-data.sh "$alias" || true
 
 echo "➡️  Opening org"
 sf org open --target-org "$alias"
