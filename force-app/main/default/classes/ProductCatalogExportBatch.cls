@@ -32,7 +32,8 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
         IsActive__c,
         ProductFilter__c,
         AdditionalProductFields__c,
-        BuilderType__c
+        BuilderType__c,
+        CatalogId__c
       FROM CatalogJobConfig__mdt
       WHERE DeveloperName = :jobConfigDeveloperName
       LIMIT 1
@@ -91,6 +92,25 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       'SELECT ' +
       selectClause +
       ' FROM Product2 WHERE IsActive = true';
+
+    // Filter by catalog if CatalogId is specified
+    if (!String.isBlank(jobConfig.CatalogId__c)) {
+      // Get all product IDs associated with this catalog via ProductCategory → ProductCategoryProduct
+      Set<Id> productIdsInCatalog = getProductIdsForCatalog(
+        jobConfig.CatalogId__c
+      );
+      if (productIdsInCatalog.isEmpty()) {
+        System.debug(
+          LoggingLevel.WARN,
+          'No products found for CatalogId: ' + jobConfig.CatalogId__c
+        );
+        // Return empty query locator
+        return Database.getQueryLocator(
+          'SELECT Id FROM Product2 WHERE Id = null'
+        );
+      }
+      baseQuery += ' AND Id IN :productIdsInCatalog';
+    }
 
     if (!String.isBlank(jobConfig.ProductFilter__c)) {
       String sanitizedFilter = validateAndSanitizeFilter(
@@ -202,6 +222,30 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
         );
       }
     }
+  }
+
+  /**
+   * Gets all Product IDs associated with a specific catalog via ProductCategory → ProductCategoryProduct.
+   *
+   * @param catalogId The Salesforce ProductCatalog ID
+   * @return Set of Product2 IDs that belong to this catalog
+   */
+  @TestVisible
+  private static Set<Id> getProductIdsForCatalog(String catalogId) {
+    Set<Id> productIds = new Set<Id>();
+
+    // Query ProductCategoryProduct records for categories in this catalog
+    for (ProductCategoryProduct pcp : [
+      SELECT ProductId
+      FROM ProductCategoryProduct
+      WHERE
+        ProductCategory.CatalogId = :catalogId
+        AND ProductId != null
+    ]) {
+      productIds.add(pcp.ProductId);
+    }
+
+    return productIds;
   }
 
   /**

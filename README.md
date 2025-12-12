@@ -176,17 +176,31 @@ Use Custom Metadata (`CatalogJobConfig__mdt`) to define multiple catalogs:
 * Coveo Org ID
 * Source ID
 * Locale
-* Product filters (`ProductFilter__c`)
+* **Catalog ID** (`CatalogId__c`) - Filters products to a specific ProductCatalog
+* Product filters (`ProductFilter__c`) - Additional SOQL WHERE clause filters
 * Additional Product2 fields (`AdditionalProductFields__c`)
+* Builder Type (`BuilderType__c`) - Determines how product grouping/variants are handled
 * (Optional) catalog root category
 
-### 🔎 Dynamic Product Selection
+### 🔎 Per-Catalog Product Filtering
 
-Each catalog can define its own **SOQL WHERE** clause (without the WHERE keyword):
+#### Filter by Salesforce ProductCatalog
+
+Set the `CatalogId__c` field to the Salesforce ProductCatalog ID. This automatically filters products to only those associated with the catalog via ProductCategory → ProductCategoryProduct relationships:
+
+```
+CatalogId__c: a0X5g000002AbCDEAZ
+```
+
+#### Additional Dynamic Filters
+
+Each catalog can also define its own **SOQL WHERE** clause (without the WHERE keyword) for additional filtering:
 
 ```txt
 Family = 'Generators' AND Locale__c = 'en_US'
 ```
+
+These filters work in combination with the CatalogId filter when both are specified.
 
 ### ➕ Dynamic Field Enrichment
 

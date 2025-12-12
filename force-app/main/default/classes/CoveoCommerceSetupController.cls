@@ -99,7 +99,8 @@ public with sharing class CoveoCommerceSetupController {
         IsActive__c,
         ProductFilter__c,
         AdditionalProductFields__c,
-        BuilderType__c
+        BuilderType__c,
+        CatalogId__c
       FROM CatalogJobConfig__mdt
       ORDER BY MasterLabel
     ]) {
@@ -119,6 +120,7 @@ public with sharing class CoveoCommerceSetupController {
           ? cfg.BuilderType__c
           : '(Global Default)'
       );
+      configMap.put('catalogId', cfg.CatalogId__c);
       configs.add(configMap);
     }
 

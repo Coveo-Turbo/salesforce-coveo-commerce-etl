@@ -11,7 +11,8 @@ public with sharing class CatalogJobRunner {
         IsActive__c,
         ProductFilter__c,
         AdditionalProductFields__c,
-        BuilderType__c
+        BuilderType__c,
+        CatalogId__c
       FROM CatalogJobConfig__mdt
       ORDER BY Label
     ];
