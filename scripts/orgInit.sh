@@ -14,6 +14,9 @@ sf org create scratch \
 echo "➡️  Deploying project source"
 sf project deploy start --target-org "$alias" --ignore-conflicts
 
+echo "➡️  Setting up Product2 custom fields"
+bash scripts/setup-product2-fields.sh "$alias" || true
+
 echo "➡️  Activating Standard Pricebook (required by PricebookEntry)"
 # Ignore failure if already active
 sf data update record \
@@ -22,14 +25,13 @@ sf data update record \
   --values "IsActive=true" \
   --target-org "$alias" || true
 
-echo "➡️  Importing Commerce sample data"
-scripts/reset-commerce-data.sh || true
-# sf data import tree --target-org "$alias" --plan data/commerce-plan.json || true
-
 echo "➡️  Assigning permission set"
 sf org assign permset \
   --name CoveoETL_Admin \
   --target-org "$alias"
+
+echo "➡️  Importing Commerce sample data"
+bash scripts/reset-commerce-data.sh "$alias" || true
 
 echo "➡️  Opening org"
 sf org open --target-org "$alias"

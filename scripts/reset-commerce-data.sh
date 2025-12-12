@@ -52,12 +52,12 @@ sf data delete bulk \
 
 ########################################
 # 4) Delete Product2 demo products
-#    (assumes your SKUs start with 'SKU-' for demo data)
+#    (includes SKU-%, GROUP-%, BASE-%, PROD-%, FAMILY-% prefixes)
 ########################################
-echo "4) Deleting Product2 demo products (ProductCode LIKE 'SKU-%')..."
+echo "4) Deleting Product2 demo products (all test data prefixes)..."
 sf data query \
   --target-org "$ORG_ALIAS" \
-  --query "SELECT Id FROM Product2 WHERE ProductCode LIKE 'SKU-%'" \
+  --query "SELECT Id FROM Product2 WHERE ProductCode LIKE 'SKU-%' OR ProductCode LIKE 'GROUP-%' OR ProductCode LIKE 'BASE-%' OR ProductCode LIKE 'PROD-%' OR ProductCode LIKE 'FAMILY-%'" \
   --result-format csv > "$DATA_DIR/tmp_Product2.csv" || true
 
 sf data delete bulk \
@@ -66,12 +66,12 @@ sf data delete bulk \
   --file "$DATA_DIR/tmp_Product2.csv" || true
 
 ########################################
-# 5) Delete ProductCategory (demo catalog only)
+# 5) Delete ProductCategory (all test catalogs)
 ########################################
-echo "5) Deleting ProductCategory records for 'Demo Catalog'..."
+echo "5) Deleting ProductCategory records for test catalogs..."
 sf data query \
   --target-org "$ORG_ALIAS" \
-  --query "SELECT Id FROM ProductCategory WHERE Catalog.Name = 'Demo Catalog'" \
+  --query "SELECT Id FROM ProductCategory WHERE Catalog.Name IN ('Demo Catalog - Simple Products', 'Grouping Catalog - Product Families', 'Variant Catalog - Product Variants', 'Combined Catalog - Grouping with Variants')" \
   --result-format csv > "$DATA_DIR/tmp_ProductCategory.csv" || true
 
 sf data delete bulk \
@@ -80,12 +80,12 @@ sf data delete bulk \
   --file "$DATA_DIR/tmp_ProductCategory.csv" || true
 
 ########################################
-# 6) Delete ProductCatalog (Demo Catalog)
+# 6) Delete ProductCatalog (all test catalogs)
 ########################################
-echo "6) Deleting ProductCatalog 'Demo Catalog'..."
+echo "6) Deleting test ProductCatalog records..."
 sf data query \
   --target-org "$ORG_ALIAS" \
-  --query "SELECT Id FROM ProductCatalog WHERE Name = 'Demo Catalog'" \
+  --query "SELECT Id FROM ProductCatalog WHERE Name IN ('Demo Catalog - Simple Products', 'Grouping Catalog - Product Families', 'Variant Catalog - Product Variants', 'Combined Catalog - Grouping with Variants')" \
   --result-format csv > "$DATA_DIR/tmp_ProductCatalog.csv" || true
 
 sf data delete bulk \

@@ -5,7 +5,28 @@
         "type": "ProductCatalog",
         "referenceId": "Catalog_Main"
       },
-      "Name": "Demo Catalog"
+      "Name": "Demo Catalog - Simple Products"
+    },
+    {
+      "attributes": {
+        "type": "ProductCatalog",
+        "referenceId": "Catalog_Grouping"
+      },
+      "Name": "Grouping Catalog - Product Families"
+    },
+    {
+      "attributes": {
+        "type": "ProductCatalog",
+        "referenceId": "Catalog_Variant"
+      },
+      "Name": "Variant Catalog - Product Variants"
+    },
+    {
+      "attributes": {
+        "type": "ProductCatalog",
+        "referenceId": "Catalog_Combined"
+      },
+      "Name": "Combined Catalog - Grouping with Variants"
     }
   ]
 }

@@ -266,6 +266,11 @@
                       <strong>Locale</strong> – Language/region code (e.g.,
                       en-US)
                     </li>
+                    <li>
+                      <strong>Builder Type</strong> – Catalog organization
+                      strategy (Default, Commerce, Grouping, Variant,
+                      GroupingWithVariants)
+                    </li>
                   </ul>
                 </div>
                 <div class="slds-col slds-size_1-of-2 slds-p-left_small">
@@ -288,20 +293,51 @@
         </div>
       </lightning-accordion-section>
 
-      <!-- Step 3: Advanced Settings -->
+      <!-- Step 3: Advanced Builder Settings -->
       <lightning-accordion-section
         name="step3"
         label="Step 3 – Advanced Builder Settings"
       >
         <div class="slds-p-horizontal_medium slds-p-bottom_medium">
+          <!-- Info Banner -->
+          <div
+            class="slds-box slds-theme_info slds-theme_alert-texture slds-m-bottom_medium"
+          >
+            <div class="slds-grid slds-wrap">
+              <div class="slds-col slds-size_1-of-1">
+                <div class="slds-media slds-media_center">
+                  <div class="slds-media__figure">
+                    <lightning-icon
+                      icon-name="utility:info"
+                      size="small"
+                      variant="inverse"
+                    ></lightning-icon>
+                  </div>
+                  <div class="slds-media__body">
+                    <h3 class="slds-text-heading_small">
+                      Per-Catalog Builder Configuration
+                    </h3>
+                    <p class="slds-text-body_small">
+                      Each catalog job can now use a different builder type. Set
+                      the <strong>Builder Type</strong> field in your
+                      CatalogJobConfig__mdt records to choose between Default,
+                      Grouping, Variant, or GroupingWithVariants strategies.
+                      Leave blank to use the global default below.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="slds-grid slds-wrap slds-gutters">
-            <!-- Current Builder -->
+            <!-- Current Global Default Builder -->
             <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
               <div
                 class="status-card slds-box slds-box_x-small slds-m-bottom_medium"
               >
                 <h3 class="slds-text-heading_small slds-m-bottom_small">
-                  Active Builder Class
+                  Global Default Builder
                 </h3>
                 <template if:true={isLoadingBuilder}>
                   <lightning-spinner
@@ -312,22 +348,26 @@
                 <template if:false={isLoadingBuilder}>
                   <div class="slds-m-bottom_small">
                     <p class="slds-text-title_caps slds-m-bottom_xx-small">
-                      Current Builder
+                      Active Class
                     </p>
                     <p class="slds-text-heading_small">
                       <code>{builderClassName}</code>
                     </p>
                   </div>
+                  <p class="slds-text-body_small slds-text-color_weak">
+                    This builder is used when a catalog job has no specific
+                    Builder Type configured.
+                  </p>
                   <template if:true={isDefaultBuilder}>
                     <lightning-badge
                       label="Default"
-                      class="slds-theme_success"
+                      class="slds-theme_success slds-m-top_x-small"
                     ></lightning-badge>
                   </template>
                   <template if:false={isDefaultBuilder}>
                     <lightning-badge
                       label="Custom"
-                      class="slds-theme_warning"
+                      class="slds-theme_warning slds-m-top_x-small"
                     ></lightning-badge>
                   </template>
                 </template>
@@ -342,6 +382,7 @@
                   value={customBuilderInput}
                   onchange={handleCustomBuilderInputChange}
                   class="slds-m-bottom_small"
+                  field-level-help="Test if a custom builder class is valid before deploying it."
                 ></lightning-input>
                 <lightning-button
                   label="Validate Class"
@@ -367,27 +408,37 @@
               <div class="help-card slds-box slds-box_x-small slds-theme_shade">
                 <h3 class="slds-text-heading_small slds-m-bottom_small">
                   <lightning-icon
-                    icon-name="utility:warning"
+                    icon-name="utility:settings"
                     size="x-small"
                     class="slds-m-right_x-small"
                   ></lightning-icon>
-                  Custom Builder Requirements
+                  Builder Configuration Options
                 </h3>
-                <p class="slds-m-bottom_small">
-                  To use a custom builder, your Apex class must:
-                </p>
-                <ul class="slds-list_dotted">
-                  <li>
-                    Implement the <code>ICatalogJsonBuilder</code> interface
-                  </li>
-                  <li>Be deployed to your org before selecting it</li>
-                  <li>Handle all required catalog JSON formatting</li>
-                </ul>
-                <p class="slds-m-top_small slds-text-color_weak">
-                  To change the active builder, update the
-                  <code>CatalogJsonBuilderMapping__mdt.Active</code> record in
-                  Custom Metadata Setup.
-                </p>
+                <div class="slds-m-bottom_medium">
+                  <p class="slds-text-heading_small slds-m-bottom_x-small">
+                    Per-Catalog Configuration (Recommended)
+                  </p>
+                  <ol class="slds-list_ordered">
+                    <li class="slds-m-bottom_x-small">
+                      Edit your <code>CatalogJobConfig__mdt</code> record
+                    </li>
+                    <li class="slds-m-bottom_x-small">
+                      Set <code>BuilderType__c</code> to: Default, Commerce,
+                      Grouping, Variant, or GroupingWithVariants
+                    </li>
+                    <li>Leave blank to use the global default</li>
+                  </ol>
+                </div>
+                <div>
+                  <p class="slds-text-heading_small slds-m-bottom_x-small">
+                    Global Default Configuration
+                  </p>
+                  <p class="slds-text-body_small slds-text-color_weak">
+                    To change the global default builder, update
+                    <code>CatalogJsonBuilderMapping__mdt.Active</code> in Custom
+                    Metadata Setup.
+                  </p>
+                </div>
               </div>
 
               <!-- Available Builders -->
@@ -398,7 +449,7 @@
                     size="x-small"
                     class="slds-m-right_x-small"
                   ></lightning-icon>
-                  Available Builder Options
+                  Available Builder Types
                 </summary>
                 <div class="slds-box slds-box_x-small slds-m-top_small">
                   <template if:true={builderOptions}>

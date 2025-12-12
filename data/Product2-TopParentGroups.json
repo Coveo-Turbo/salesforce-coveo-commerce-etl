@@ -1,0 +1,37 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Group_PowerTools"
+      },
+      "Name": "Professional Power Tools Collection",
+      "ProductCode": "GROUP-PWR-001",
+      "Family": "Power Tools",
+      "Description": "Premium collection of professional-grade power tools.",
+      "IsActive": true
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Group_HandTools"
+      },
+      "Name": "Master Hand Tool Set",
+      "ProductCode": "GROUP-HND-001",
+      "Family": "Hand Tools",
+      "Description": "Complete set of essential hand tools for professionals.",
+      "IsActive": true
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Combined_Group_Safety"
+      },
+      "Name": "Professional Safety Equipment Collection",
+      "ProductCode": "FAMILY-SAFETY-001",
+      "Family": "Safety Equipment",
+      "Description": "Complete collection of professional safety equipment.",
+      "IsActive": true
+    }
+  ]
+}
