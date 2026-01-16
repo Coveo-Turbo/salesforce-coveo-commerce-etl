@@ -15,6 +15,38 @@
       },
       "Name": "Accessories",
       "CatalogId": "@Catalog_Main"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Tools_Grouping"
+      },
+      "Name": "Tools",
+      "CatalogId": "@Catalog_Grouping"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_Apparel_Variant"
+      },
+      "Name": "Apparel",
+      "CatalogId": "@Catalog_Variant"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_SafetyGear_Variant"
+      },
+      "Name": "Safety Gear",
+      "CatalogId": "@Catalog_Variant"
+    },
+    {
+      "attributes": {
+        "type": "ProductCategory",
+        "referenceId": "Cat_SafetyEquipment_Combined"
+      },
+      "Name": "Safety Equipment",
+      "CatalogId": "@Catalog_Combined"
     }
   ]
 }

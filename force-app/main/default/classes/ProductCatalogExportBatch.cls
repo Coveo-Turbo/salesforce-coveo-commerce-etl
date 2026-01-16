@@ -31,7 +31,9 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
         Locale__c,
         IsActive__c,
         ProductFilter__c,
-        AdditionalProductFields__c
+        AdditionalProductFields__c,
+        BuilderType__c,
+        CatalogId__c
       FROM CatalogJobConfig__mdt
       WHERE DeveloperName = :jobConfigDeveloperName
       LIMIT 1
@@ -40,7 +42,7 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     if (configs.isEmpty()) {
       throw new CatalogJobException(
         'No CatalogJobConfig__mdt record found with DeveloperName: ' +
-          jobConfigDeveloperName
+        jobConfigDeveloperName
       );
     }
     this.jobConfig = configs[0];
@@ -91,6 +93,25 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       selectClause +
       ' FROM Product2 WHERE IsActive = true';
 
+    // Filter by catalog if CatalogId is specified
+    if (!String.isBlank(jobConfig.CatalogId__c)) {
+      // Get all product IDs associated with this catalog via ProductCategory → ProductCategoryProduct
+      Set<Id> productIdsInCatalog = getProductIdsForCatalog(
+        jobConfig.CatalogId__c
+      );
+      if (productIdsInCatalog.isEmpty()) {
+        System.debug(
+          LoggingLevel.WARN,
+          'No products found for CatalogId: ' + jobConfig.CatalogId__c
+        );
+        // Return empty query locator
+        return Database.getQueryLocator(
+          'SELECT Id FROM Product2 WHERE Id = null'
+        );
+      }
+      baseQuery += ' AND Id IN :productIdsInCatalog';
+    }
+
     if (!String.isBlank(jobConfig.ProductFilter__c)) {
       String sanitizedFilter = validateAndSanitizeFilter(
         jobConfig.ProductFilter__c
@@ -114,7 +135,9 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
         pbesByProduct.put(pbe.Product2Id, pbe);
       }
     }
-    ICatalogJsonBuilder builder = CatalogJsonBuilderFactory.get();
+    ICatalogJsonBuilder builder = CatalogJsonBuilderFactory.getForBuilderType(
+      jobConfig.BuilderType__c
+    );
     String ndjsonPayload = builder.buildFullUpdateNdjson(
       scope,
       pbesByProduct,
@@ -202,6 +225,30 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   }
 
   /**
+   * Gets all Product IDs associated with a specific catalog via ProductCategory → ProductCategoryProduct.
+   *
+   * @param catalogId The Salesforce ProductCatalog ID
+   * @return Set of Product2 IDs that belong to this catalog
+   */
+  @TestVisible
+  private static Set<Id> getProductIdsForCatalog(String catalogId) {
+    Set<Id> productIds = new Set<Id>();
+
+    // Query ProductCategoryProduct records for categories in this catalog
+    for (ProductCategoryProduct pcp : [
+      SELECT ProductId
+      FROM ProductCategoryProduct
+      WHERE
+        ProductCategory.CatalogId = :catalogId
+        AND ProductId != null
+    ]) {
+      productIds.add(pcp.ProductId);
+    }
+
+    return productIds;
+  }
+
+  /**
    * Validates and sanitizes the ProductFilter__c value before using it in dynamic SOQL.
    * While Custom Metadata is developer-controlled, this method provides an additional
    * layer of protection against malformed queries and potential injection patterns.
@@ -244,10 +291,13 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
 
     // Check for subqueries by looking for SELECT...FROM pattern
     // This is a simplified check - subqueries in WHERE clauses are generally unexpected
-    if (normalizedFilter.contains('SELECT ') && normalizedFilter.contains(' FROM ')) {
+    if (
+      normalizedFilter.contains('SELECT ') &&
+      normalizedFilter.contains(' FROM ')
+    ) {
       throw new CatalogJobException(
         'Invalid ProductFilter__c value: contains subquery pattern. ' +
-          'Only simple SOQL WHERE clause fragments are allowed.'
+        'Only simple SOQL WHERE clause fragments are allowed.'
       );
     }
 

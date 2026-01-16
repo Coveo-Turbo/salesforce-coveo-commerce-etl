@@ -231,14 +231,26 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
     List<ProductCategoryProduct> links,
     Map<Id, ProductCategory> catById
   ) {
-    System.debug(LoggingLevel.FINE, 'buildCategoryPathsForProduct: START productId=' + productId);
-    System.debug(LoggingLevel.FINE, '  links.size=' + (links == null ? 0 : links.size()));
-    System.debug(LoggingLevel.FINE, '  catById.size=' + (catById == null ? 0 : catById.size()));
+    System.debug(
+      LoggingLevel.FINE,
+      'buildCategoryPathsForProduct: START productId=' + productId
+    );
+    System.debug(
+      LoggingLevel.FINE,
+      '  links.size=' + (links == null ? 0 : links.size())
+    );
+    System.debug(
+      LoggingLevel.FINE,
+      '  catById.size=' + (catById == null ? 0 : catById.size())
+    );
 
     Set<String> pathsSet = new Set<String>();
 
     if (links == null || links.isEmpty()) {
-      System.debug(LoggingLevel.FINE, '  No ProductCategoryProduct links provided.');
+      System.debug(
+        LoggingLevel.FINE,
+        '  No ProductCategoryProduct links provided.'
+      );
       return new List<String>();
     }
     if (catById == null || catById.isEmpty()) {
@@ -271,7 +283,10 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
       while (cur != null && guard++ < 10) {
         ProductCategory c = catById.get(cur);
         if (c == null) {
-          System.debug(LoggingLevel.FINE, '  Category not found in map for Id=' + cur);
+          System.debug(
+            LoggingLevel.FINE,
+            '  Category not found in map for Id=' + cur
+          );
           break;
         }
         chain.add(c.Name); // leaf -> root

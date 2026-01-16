@@ -1,0 +1,64 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Group_Child_Drill"
+      },
+      "Name": "Coveo Heavy-Duty Drill 20V",
+      "ProductCode": "SKU-GRP-DRL-001",
+      "Family": "Power Tools",
+      "Description": "20V heavy-duty drill, part of Professional Power Tools Collection.",
+      "IsActive": true,
+      "Parent_Product__c": "@Prod_Group_PowerTools"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Group_Child_Impact"
+      },
+      "Name": "Coveo Impact Driver 20V",
+      "ProductCode": "SKU-GRP-IMP-001",
+      "Family": "Power Tools",
+      "Description": "20V impact driver, part of Professional Power Tools Collection.",
+      "IsActive": true,
+      "Parent_Product__c": "@Prod_Group_PowerTools"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Group_Child_Grinder"
+      },
+      "Name": "Coveo Angle Grinder 4.5\"",
+      "ProductCode": "SKU-GRP-GRD-001",
+      "Family": "Power Tools",
+      "Description": "4.5\" angle grinder, part of Professional Power Tools Collection.",
+      "IsActive": true,
+      "Parent_Product__c": "@Prod_Group_PowerTools"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Group_Child_Socket"
+      },
+      "Name": "Coveo Socket Set 120-Piece",
+      "ProductCode": "SKU-GRP-SOC-001",
+      "Family": "Hand Tools",
+      "Description": "120-piece socket set, part of Master Hand Tool Set.",
+      "IsActive": true,
+      "Parent_Product__c": "@Prod_Group_HandTools"
+    },
+    {
+      "attributes": {
+        "type": "Product2",
+        "referenceId": "Prod_Group_Child_Pliers"
+      },
+      "Name": "Coveo Pliers Set 5-Piece",
+      "ProductCode": "SKU-GRP-PLR-001",
+      "Family": "Hand Tools",
+      "Description": "5-piece pliers set, part of Master Hand Tool Set.",
+      "IsActive": true,
+      "Parent_Product__c": "@Prod_Group_HandTools"
+    }
+  ]
+}
