@@ -59,12 +59,13 @@ If these objects are missing, the org is **not Commerce-enabled**.
 
 
 
+
 ## 📥 Installation
 
-### Current Version: 1.1.1
+### Current Version: 1.1.2
 
-> **Released:** 2025-12-05
-> **Package Version ID:** `04tKi000000D4YZIA0`
+> **Released:** 2026-01-16
+> **Package Version ID:** `04tak000000KkebAAC`
 
 ### Option 1: Install via Unlocked Package (Recommended)
 
@@ -73,21 +74,21 @@ This library is distributed as an [Unlocked Package](https://developer.salesforc
 #### Install via Package Links
 
 * **Production / Developer Org:**
-  [https://login.salesforce.com/packaging/installPackage.apexp?p0=04tKi000000D4YZIA0](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tKi000000D4YZIA0)
+  [https://login.salesforce.com/packaging/installPackage.apexp?p0=04tak000000KkebAAC](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tak000000KkebAAC)
 
 * **Sandbox:**
-  [https://test.salesforce.com/packaging/installPackage.apexp?p0=04tKi000000D4YZIA0](https://test.salesforce.com/packaging/installPackage.apexp?p0=04tKi000000D4YZIA0)
+  [https://test.salesforce.com/packaging/installPackage.apexp?p0=04tak000000KkebAAC](https://test.salesforce.com/packaging/installPackage.apexp?p0=04tak000000KkebAAC)
 
 #### Install Using Salesforce CLI
 
 ```bash
-sf package install --package 04tKi000000D4YZIA0 --target-org <your-org-alias> --wait 10
+sf package install --package 04tak000000KkebAAC --target-org <your-org-alias> --wait 10
 ```
 
 #### Optional: Compile Only the Package's Apex Code
 
 ```bash
-sf package install --apex-compile package --package 04tKi000000D4YZIA0 --target-org <your-org-alias> --wait 10
+sf package install --apex-compile package --package 04tak000000KkebAAC --target-org <your-org-alias> --wait 10
 ```
 
 After installation, assign the permission set:
@@ -100,7 +101,7 @@ sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
 
 1. **Download the latest release:**
    ```bash
-   curl -L -o coveo-etl.zip "https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl/releases/download/v1.1.1/salesforce-coveo-commerce-etl-v1.1.1.zip"
+   curl -L -o coveo-etl.zip "https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl/releases/download/v1.1.2/salesforce-coveo-commerce-etl-v1.1.2.zip"
    unzip coveo-etl.zip -d coveo-etl
    ```
 
@@ -112,11 +113,6 @@ sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
 3. **Assign the permission set:**
    ```bash
    sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
-   ```
-
-4. **Set up Product2 custom fields (for variant/grouping use cases):**
-   ```bash
-   bash scripts/setup-product2-fields.sh <your-org-alias>
    ```
 
 ### Option 3: Deploy from Source
@@ -135,11 +131,6 @@ sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
 3. **Assign the permission set:**
    ```bash
    sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
-   ```
-
-4. **Set up Product2 custom fields (for variant/grouping use cases):**
-   ```bash
-   bash scripts/setup-product2-fields.sh <your-org-alias>
    ```
 
 ### Post-Installation Setup
