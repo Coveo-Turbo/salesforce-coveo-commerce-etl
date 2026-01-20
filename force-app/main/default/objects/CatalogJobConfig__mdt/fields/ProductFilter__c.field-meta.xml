@@ -5,6 +5,8 @@
     <externalId>false</externalId>
     <fieldManageability>SubscriberControlled</fieldManageability>
     <label>Product Filter</label>
+    <length>32768</length>
     <required>false</required>
-    <type>TextArea</type>
+    <type>LongTextArea</type>
+    <visibleLines>15</visibleLines>
 </CustomField>
