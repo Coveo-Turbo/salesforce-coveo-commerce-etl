@@ -218,6 +218,7 @@
               data={catalogConfigs}
               columns={configColumns}
               hide-checkbox-column
+              onrowaction={handleRowAction}
               class="config-table"
             ></lightning-datatable>
           </template>
@@ -474,5 +475,59 @@
         </div>
       </lightning-accordion-section>
     </lightning-accordion>
+
+    <!-- Details Modal -->
+    <template if:true={showDetailsModal}>
+      <section
+        role="dialog"
+        tabindex="-1"
+        class="slds-modal slds-fade-in-open"
+        aria-modal="true"
+      >
+        <div class="slds-modal__container">
+          <header class="slds-modal__header">
+            <lightning-button-icon
+              icon-name="utility:close"
+              variant="bare-inverse"
+              size="large"
+              onclick={handleCloseModal}
+              alternative-text="Close"
+              class="slds-modal__close"
+            ></lightning-button-icon>
+            <h2 class="slds-text-heading_medium">{configModalTitle}</h2>
+          </header>
+          <div class="slds-modal__content slds-p-around_medium">
+            <div class="slds-form">
+              <div class="slds-form-element slds-m-bottom_medium">
+                <label class="slds-form-element__label slds-text-title_bold">
+                  Product Filter
+                </label>
+                <div class="slds-form-element__control">
+                  <div class="setup-detail-content">{configProductFilter}</div>
+                </div>
+              </div>
+              <div class="slds-form-element">
+                <label class="slds-form-element__label slds-text-title_bold">
+                  Additional Product Fields
+                </label>
+                <div class="slds-form-element__control">
+                  <div class="setup-detail-content">
+                    {configAdditionalFields}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <footer class="slds-modal__footer">
+            <lightning-button
+              label="Close"
+              onclick={handleCloseModal}
+              variant="brand"
+            ></lightning-button>
+          </footer>
+        </div>
+      </section>
+      <div class="slds-backdrop slds-backdrop_open"></div>
+    </template>
   </div>
 </template>

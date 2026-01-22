@@ -17,12 +17,27 @@ const ACTIONS_COL = {
   }
 };
 
+const VIEW_DETAILS_COL = {
+  label: "Details",
+  type: "button",
+  initialWidth: 90,
+  typeAttributes: {
+    label: "View",
+    name: "viewDetails",
+    variant: "neutral",
+    title: "View full field details"
+  }
+};
+
 export default class CatalogJobConsole extends LightningElement {
   @track configs;
   @track error;
+  @track showDetailsModal = false;
+  @track selectedRow = null;
 
   columns = [
     ACTIONS_COL,
+    VIEW_DETAILS_COL,
     { label: "Label", fieldName: "Label", wrapText: true },
     { label: "Locale", fieldName: "Locale__c" },
     { label: "Catalog ID", fieldName: "CatalogId__c", wrapText: true },
@@ -35,23 +50,46 @@ export default class CatalogJobConsole extends LightningElement {
       type: "boolean",
       cellAttributes: { alignment: "center" }
     },
-    { label: "Product Filter", fieldName: "ProductFilter__c", wrapText: true },
+    {
+      label: "Product Filter",
+      fieldName: "ProductFilter__c_truncated",
+      wrapText: false,
+      cellAttributes: { class: "slds-truncate" }
+    },
     {
       label: "Extra Fields",
-      fieldName: "AdditionalProductFields__c",
-      wrapText: true
+      fieldName: "AdditionalProductFields__c_truncated",
+      wrapText: false,
+      cellAttributes: { class: "slds-truncate" }
     }
   ];
 
   @wire(listConfigs)
   wiredConfigs({ data, error }) {
     if (data) {
-      this.configs = data;
+      // Add truncated versions of large text fields
+      this.configs = data.map((config) => ({
+        ...config,
+        ProductFilter__c_truncated: this.truncateText(
+          config.ProductFilter__c,
+          50
+        ),
+        AdditionalProductFields__c_truncated: this.truncateText(
+          config.AdditionalProductFields__c,
+          50
+        )
+      }));
       this.error = undefined;
     } else if (error) {
       this.error = error;
       this.configs = undefined;
     }
+  }
+
+  truncateText(text, maxLength) {
+    if (!text) return "";
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + "...";
   }
 
   get errorMessage() {
@@ -103,7 +141,27 @@ export default class CatalogJobConsole extends LightningElement {
 
     if (actionName === "run") {
       this.handleRunSingle(row.DeveloperName);
+    } else if (actionName === "viewDetails") {
+      this.selectedRow = row;
+      this.showDetailsModal = true;
     }
+  }
+
+  handleCloseModal() {
+    this.showDetailsModal = false;
+    this.selectedRow = null;
+  }
+
+  get modalTitle() {
+    return this.selectedRow ? `Details: ${this.selectedRow.Label}` : "Details";
+  }
+
+  get productFilter() {
+    return this.selectedRow?.ProductFilter__c || "(None)";
+  }
+
+  get additionalFields() {
+    return this.selectedRow?.AdditionalProductFields__c || "(None)";
   }
 
   handleRunSingle(devName) {
