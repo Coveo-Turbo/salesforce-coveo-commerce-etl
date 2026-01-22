@@ -148,3 +148,17 @@ details summary::before {
 details[open] summary::before {
   transform: rotate(90deg);
 }
+
+/* Modal detail content */
+.setup-detail-content {
+  background-color: var(--lwc-colorBackgroundAlt, #fafaf9);
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--lwc-colorBorder, #e5e5e5);
+  font-family: Consolas, Monaco, "Andale Mono", monospace;
+  font-size: 0.875rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+}

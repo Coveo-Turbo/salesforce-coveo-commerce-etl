@@ -9,7 +9,20 @@ import getBuilderClassOptions from "@salesforce/apex/CoveoCommerceSetupControlle
 import testNamedCredentialConnection from "@salesforce/apex/CoveoCommerceSetupController.testNamedCredentialConnection";
 import validateBuilderClass from "@salesforce/apex/CoveoCommerceSetupController.validateBuilderClass";
 
+const TRUNCATE_LENGTH = 50;
+
 const CONFIG_COLUMNS = [
+  {
+    label: "Details",
+    type: "button",
+    initialWidth: 90,
+    typeAttributes: {
+      label: "View",
+      name: "viewDetails",
+      variant: "neutral",
+      title: "View full field details"
+    }
+  },
   { label: "Label", fieldName: "label", wrapText: true },
   { label: "Locale", fieldName: "locale" },
   { label: "Catalog ID", fieldName: "catalogId", wrapText: true },
@@ -22,11 +35,17 @@ const CONFIG_COLUMNS = [
     type: "boolean",
     cellAttributes: { alignment: "center" }
   },
-  { label: "Product Filter", fieldName: "productFilter", wrapText: true },
+  {
+    label: "Product Filter",
+    fieldName: "productFilter_truncated",
+    wrapText: false,
+    cellAttributes: { class: "slds-truncate" }
+  },
   {
     label: "Extra Fields",
-    fieldName: "additionalProductFields",
-    wrapText: true
+    fieldName: "additionalProductFields_truncated",
+    wrapText: false,
+    cellAttributes: { class: "slds-truncate" }
   }
 ];
 
@@ -42,6 +61,8 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   // Catalog configs
   @track catalogConfigs = null;
   @track isLoadingConfigs = true;
+  @track showDetailsModal = false;
+  @track selectedConfigRow = null;
   configColumns = CONFIG_COLUMNS;
 
   // Builder mapping
@@ -173,12 +194,29 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   wiredConfigs({ data, error }) {
     this.isLoadingConfigs = false;
     if (data) {
-      this.catalogConfigs = data;
+      // Add truncated versions of large text fields
+      this.catalogConfigs = data.map((config) => ({
+        ...config,
+        productFilter_truncated: this.truncateText(
+          config.productFilter,
+          TRUNCATE_LENGTH
+        ),
+        additionalProductFields_truncated: this.truncateText(
+          config.additionalProductFields,
+          TRUNCATE_LENGTH
+        )
+      }));
     } else if (error) {
       this.catalogConfigs = [];
       // eslint-disable-next-line no-console
       console.error("Error loading configs:", error);
     }
+  }
+
+  truncateText(text, maxLength) {
+    if (!text) return "";
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + "...";
   }
 
   @wire(getActiveBuilderMapping)
@@ -279,6 +317,35 @@ export default class CoveoCommerceSetup extends NavigationMixin(
         apiName: "Catalog_Job_Console"
       }
     });
+  }
+
+  handleRowAction(event) {
+    const actionName = event.detail.action.name;
+    const row = event.detail.row;
+
+    if (actionName === "viewDetails") {
+      this.selectedConfigRow = row;
+      this.showDetailsModal = true;
+    }
+  }
+
+  handleCloseModal() {
+    this.showDetailsModal = false;
+    this.selectedConfigRow = null;
+  }
+
+  get configModalTitle() {
+    return this.selectedConfigRow
+      ? `Details: ${this.selectedConfigRow.label}`
+      : "Details";
+  }
+
+  get configProductFilter() {
+    return this.selectedConfigRow?.productFilter || "(None)";
+  }
+
+  get configAdditionalFields() {
+    return this.selectedConfigRow?.additionalProductFields || "(None)";
   }
 
   // Utility methods
