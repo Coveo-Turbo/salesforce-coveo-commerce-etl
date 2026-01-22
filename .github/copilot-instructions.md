@@ -84,7 +84,8 @@ npx prettier --write "**/*.{cls,trigger,apex,html,js,json}"
 
 ### Batch Processing
 - `ProductCatalogExportBatch.cls` is the main batch job for catalog exports
-- Batch size of 100 recommended for processing
+- Batch size defaults to 50 and can be configured via `BatchSize__c` field in `CatalogJobConfig__mdt`
+- Lower batch sizes (25-50) are recommended for large `AdditionalProductFields__c` payloads to avoid Apex heap limits
 
 ### Category Hierarchy
 - Categories use B2B Commerce's `ProductCategory` and `ProductCategoryProduct` models
