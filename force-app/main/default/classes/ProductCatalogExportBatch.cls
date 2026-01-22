@@ -33,7 +33,8 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
         ProductFilter__c,
         AdditionalProductFields__c,
         BuilderType__c,
-        CatalogId__c
+        CatalogId__c,
+        BatchSize__c
       FROM CatalogJobConfig__mdt
       WHERE DeveloperName = :jobConfigDeveloperName
       LIMIT 1
@@ -62,6 +63,17 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       LIMIT 1
     ]
     .Id;
+  }
+
+  /**
+   * Returns the configured batch size for this job, defaulting to 50 if not specified.
+   * This allows CatalogJobRunner to retrieve the batch size without re-querying the config.
+   */
+  public Integer getBatchSize() {
+    if (jobConfig.BatchSize__c != null) {
+      return Integer.valueOf(jobConfig.BatchSize__c);
+    }
+    return 50; // Default batch size
   }
 
   global Database.QueryLocator start(Database.BatchableContext bc) {
@@ -238,9 +250,7 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     for (ProductCategoryProduct pcp : [
       SELECT ProductId
       FROM ProductCategoryProduct
-      WHERE
-        ProductCategory.CatalogId = :catalogId
-        AND ProductId != null
+      WHERE ProductCategory.CatalogId = :catalogId AND ProductId != NULL
     ]) {
       productIds.add(pcp.ProductId);
     }

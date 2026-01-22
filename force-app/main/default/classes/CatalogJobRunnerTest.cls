@@ -164,6 +164,7 @@ private class CatalogJobRunnerTest {
       Boolean isActive = config.IsActive__c;
       String productFilter = config.ProductFilter__c;
       String additionalFields = config.AdditionalProductFields__c;
+      Decimal batchSize = config.BatchSize__c;
 
       // Verify DeveloperName is not null (required field)
       System.assertNotEquals(

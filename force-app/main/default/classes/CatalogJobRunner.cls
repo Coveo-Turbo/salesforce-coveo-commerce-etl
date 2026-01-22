@@ -12,7 +12,8 @@ public with sharing class CatalogJobRunner {
         ProductFilter__c,
         AdditionalProductFields__c,
         BuilderType__c,
-        CatalogId__c
+        CatalogId__c,
+        BatchSize__c
       FROM CatalogJobConfig__mdt
       ORDER BY Label
     ];
@@ -20,10 +21,10 @@ public with sharing class CatalogJobRunner {
 
   @AuraEnabled
   public static void runSingle(String jobConfigDeveloperName) {
-    Database.executeBatch(
-      new ProductCatalogExportBatch(jobConfigDeveloperName),
-      100
+    ProductCatalogExportBatch batch = new ProductCatalogExportBatch(
+      jobConfigDeveloperName
     );
+    Database.executeBatch(batch, batch.getBatchSize());
   }
 
   @AuraEnabled
@@ -35,10 +36,10 @@ public with sharing class CatalogJobRunner {
     ];
 
     for (CatalogJobConfig__mdt cfg : configs) {
-      Database.executeBatch(
-        new ProductCatalogExportBatch(cfg.DeveloperName),
-        100
+      ProductCatalogExportBatch batch = new ProductCatalogExportBatch(
+        cfg.DeveloperName
       );
+      Database.executeBatch(batch, batch.getBatchSize());
     }
   }
 }

@@ -392,8 +392,10 @@ For each catalog, create something like:
 ## Run one catalog
 
 ```apex
-Database.executeBatch(new ProductCatalogExportBatch('EN_US_Catalog'), 100);
+Database.executeBatch(new ProductCatalogExportBatch('EN_US_Catalog'), 50);
 ```
+
+> **Note**: The batch size defaults to 50 but can be configured via the `BatchSize__c` field in the `CatalogJobConfig__mdt` metadata record. Use lower values (25-50) for large `AdditionalProductFields__c` payloads to avoid Apex heap size limits.
 
 ## Run all active catalogs
 

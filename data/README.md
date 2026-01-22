@@ -127,8 +127,10 @@ After importing the appropriate test data, create a `CatalogJobConfig__mdt` reco
 
 Then run the catalog export batch job:
 ```apex
-Database.executeBatch(new ProductCatalogExportBatch('YourConfigName'), 100);
+Database.executeBatch(new ProductCatalogExportBatch('YourConfigName'), 50);
 ```
+
+> **Note**: The batch size defaults to 50 but can be configured via the `BatchSize__c` field in the `CatalogJobConfig__mdt` metadata record. Use lower values (25-50) for large `AdditionalProductFields__c` payloads to avoid Apex heap size limits.
 
 ## Custom Field Requirements
 
