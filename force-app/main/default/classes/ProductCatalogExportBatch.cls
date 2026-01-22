@@ -33,7 +33,8 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
         ProductFilter__c,
         AdditionalProductFields__c,
         BuilderType__c,
-        CatalogId__c
+        CatalogId__c,
+        BatchSize__c
       FROM CatalogJobConfig__mdt
       WHERE DeveloperName = :jobConfigDeveloperName
       LIMIT 1
@@ -238,9 +239,7 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     for (ProductCategoryProduct pcp : [
       SELECT ProductId
       FROM ProductCategoryProduct
-      WHERE
-        ProductCategory.CatalogId = :catalogId
-        AND ProductId != null
+      WHERE ProductCategory.CatalogId = :catalogId AND ProductId != NULL
     ]) {
       productIds.add(pcp.ProductId);
     }
