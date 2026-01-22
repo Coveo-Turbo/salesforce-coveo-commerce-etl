@@ -5,6 +5,8 @@ import listConfigs from "@salesforce/apex/CatalogJobRunner.listConfigs";
 import runSingle from "@salesforce/apex/CatalogJobRunner.runSingle";
 import runAllActive from "@salesforce/apex/CatalogJobRunner.runAllActive";
 
+const TRUNCATE_LENGTH = 50;
+
 const ACTIONS_COL = {
   label: "Actions",
   type: "button",
@@ -72,11 +74,11 @@ export default class CatalogJobConsole extends LightningElement {
         ...config,
         ProductFilter__c_truncated: this.truncateText(
           config.ProductFilter__c,
-          50
+          TRUNCATE_LENGTH
         ),
         AdditionalProductFields__c_truncated: this.truncateText(
           config.AdditionalProductFields__c,
-          50
+          TRUNCATE_LENGTH
         )
       }));
       this.error = undefined;

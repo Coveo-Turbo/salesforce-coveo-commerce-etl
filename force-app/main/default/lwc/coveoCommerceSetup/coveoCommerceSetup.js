@@ -9,6 +9,8 @@ import getBuilderClassOptions from "@salesforce/apex/CoveoCommerceSetupControlle
 import testNamedCredentialConnection from "@salesforce/apex/CoveoCommerceSetupController.testNamedCredentialConnection";
 import validateBuilderClass from "@salesforce/apex/CoveoCommerceSetupController.validateBuilderClass";
 
+const TRUNCATE_LENGTH = 50;
+
 const CONFIG_COLUMNS = [
   {
     label: "Details",
@@ -195,10 +197,13 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       // Add truncated versions of large text fields
       this.catalogConfigs = data.map((config) => ({
         ...config,
-        productFilter_truncated: this.truncateText(config.productFilter, 50),
+        productFilter_truncated: this.truncateText(
+          config.productFilter,
+          TRUNCATE_LENGTH
+        ),
         additionalProductFields_truncated: this.truncateText(
           config.additionalProductFields,
-          50
+          TRUNCATE_LENGTH
         )
       }));
     } else if (error) {
