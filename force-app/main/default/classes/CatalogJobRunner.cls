@@ -21,42 +21,25 @@ public with sharing class CatalogJobRunner {
 
   @AuraEnabled
   public static void runSingle(String jobConfigDeveloperName) {
-    List<CatalogJobConfig__mdt> configs = [
-      SELECT BatchSize__c
-      FROM CatalogJobConfig__mdt
-      WHERE DeveloperName = :jobConfigDeveloperName
-      LIMIT 1
-    ];
-
-    Integer batchSize = 50; // Default batch size
-    if (!configs.isEmpty() && configs[0].BatchSize__c != null) {
-      batchSize = Integer.valueOf(configs[0].BatchSize__c);
-    }
-
-    Database.executeBatch(
-      new ProductCatalogExportBatch(jobConfigDeveloperName),
-      batchSize
+    ProductCatalogExportBatch batch = new ProductCatalogExportBatch(
+      jobConfigDeveloperName
     );
+    Database.executeBatch(batch, batch.getBatchSize());
   }
 
   @AuraEnabled
   public static void runAllActive() {
     List<CatalogJobConfig__mdt> configs = [
-      SELECT DeveloperName, IsActive__c, BatchSize__c
+      SELECT DeveloperName, IsActive__c
       FROM CatalogJobConfig__mdt
       WHERE IsActive__c = TRUE
     ];
 
     for (CatalogJobConfig__mdt cfg : configs) {
-      Integer batchSize = 50; // Default batch size
-      if (cfg.BatchSize__c != null) {
-        batchSize = Integer.valueOf(cfg.BatchSize__c);
-      }
-
-      Database.executeBatch(
-        new ProductCatalogExportBatch(cfg.DeveloperName),
-        batchSize
+      ProductCatalogExportBatch batch = new ProductCatalogExportBatch(
+        cfg.DeveloperName
       );
+      Database.executeBatch(batch, batch.getBatchSize());
     }
   }
 }

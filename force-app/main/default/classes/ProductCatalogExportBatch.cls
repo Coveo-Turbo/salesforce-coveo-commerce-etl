@@ -65,6 +65,17 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     .Id;
   }
 
+  /**
+   * Returns the configured batch size for this job, defaulting to 50 if not specified.
+   * This allows CatalogJobRunner to retrieve the batch size without re-querying the config.
+   */
+  public Integer getBatchSize() {
+    if (jobConfig.BatchSize__c != null) {
+      return Integer.valueOf(jobConfig.BatchSize__c);
+    }
+    return 50; // Default batch size
+  }
+
   global Database.QueryLocator start(Database.BatchableContext bc) {
     // Base fields required for catalog
     List<String> fields = new List<String>{
