@@ -6,11 +6,10 @@ private class ProductCatalogExportBatchTest {
    * and ignores subsequent ones.
    */
   private class MockHttpMultiBatchCallout implements HttpCalloutMock {
-    private Integer callCount = 0;
+    private Integer streamUpdateCallCount = 0;
 
     public HttpResponse respond(HttpRequest req) {
       HttpResponse res = new HttpResponse();
-      callCount++;
 
       String endpoint = req.getEndpoint();
 
@@ -18,11 +17,7 @@ private class ProductCatalogExportBatchTest {
       if (endpoint.contains('/files')) {
         res.setStatusCode(201);
         res.setBody(
-          '{"fileId":"test-file-' +
-            callCount +
-            '","uploadUri":"https://test.s3.amazonaws.com/upload-' +
-            callCount +
-            '","requiredHeaders":{}}'
+          '{"fileId":"test-file-id","uploadUri":"https://test.s3.amazonaws.com/upload","requiredHeaders":{}}'
         );
       }
       // Mock S3 upload
@@ -30,11 +25,12 @@ private class ProductCatalogExportBatchTest {
         res.setStatusCode(200);
         res.setBody('');
       }
-      // Mock stream update - return different orderingIds for each call
+      // Mock stream update - return different orderingIds for each stream update call
       else if (endpoint.contains('/stream/update')) {
         res.setStatusCode(202);
-        // First batch gets orderingId 1000, second gets 1001, third gets 1002, etc.
-        Long orderingId = 1000 + (callCount / 3); // Divided by 3 because of file/upload/update calls
+        streamUpdateCallCount++;
+        // Each stream update gets a unique orderingId: 1000, 1001, 1002, etc.
+        Long orderingId = 1000 + streamUpdateCallCount - 1;
         res.setBody(
           '{"orderingId":' + orderingId + ',"streamId":"test-stream"}'
         );
