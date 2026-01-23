@@ -17,8 +17,8 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   private final List<String> extraFieldNames = new List<String>();
   private final Id stdPricebookId;
 
-  // Track highest orderingId across execute() calls
-  public Long latestOrderingId;
+  // Track the first orderingId from the initial batch to use in deleteOlderThan
+  public Long firstOrderingId;
   public List<Coveo_Payload_Log__c> payloadLogs = new List<Coveo_Payload_Log__c>();
 
   public ProductCatalogExportBatch(String jobConfigDeveloperName) {
@@ -203,24 +203,27 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       updateResponse
     );
 
+    // Capture the first orderingId from the first batch execution
+    // This will be used in finish() to delete items from previous runs only
     if (resMap.containsKey('orderingId')) {
       Long oid = Long.valueOf(String.valueOf(resMap.get('orderingId')));
-      if (latestOrderingId == null || oid > latestOrderingId) {
-        latestOrderingId = oid;
+      if (firstOrderingId == null) {
+        firstOrderingId = oid;
       }
     }
   }
 
   global void finish(Database.BatchableContext bc) {
     System.debug(
-      'ProductCatalogExportBatch.finish: latestOrderingId=' + latestOrderingId
+      'ProductCatalogExportBatch.finish: firstOrderingId=' + firstOrderingId
     );
 
     // Delete older items for this specific source
+    // Use firstOrderingId to preserve all items from the current run
     CoveoDeleteOlderThan.deleteOlderThan(
       jobConfig.CoveoOrgId__c,
       jobConfig.SourceId__c,
-      latestOrderingId
+      firstOrderingId
     );
 
     // Insert logs if any
