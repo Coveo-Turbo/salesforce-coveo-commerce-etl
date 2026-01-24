@@ -219,7 +219,7 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
 
     // Capture the first orderingId from the first batch execution
     // This will be used in finish() to delete items from previous runs only
-    if (resMap.containsKey('orderingId')) {
+    if (resMap.containsKey('orderingId') && resMap.get('orderingId') != null) {
       Long oid = Long.valueOf(String.valueOf(resMap.get('orderingId')));
       if (firstOrderingId == null) {
         firstOrderingId = oid;
