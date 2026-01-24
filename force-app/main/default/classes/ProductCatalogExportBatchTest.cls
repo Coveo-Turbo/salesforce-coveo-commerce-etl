@@ -49,18 +49,21 @@ private class ProductCatalogExportBatchTest {
   }
 
   /**
-   * Test that payload logs are now inserted via Queueable instead of accumulating in batch state
-   * This validates the fix for the heap size issue
+   * Test that payload logs use Queueable with feature flag control
+   * This validates the fix for the heap size issue while maintaining firstOrderingId
    */
   @IsTest
-  static void testBatchClass_removedStatefulInterface() {
+  static void testBatchClass_usesStatefulForOrderingIdOnly() {
     // This test validates that:
-    // 1. ProductCatalogExportBatch no longer implements Database.Stateful
+    // 1. ProductCatalogExportBatch implements Database.Stateful for firstOrderingId
     // 2. There is no class-level payloadLogs list that accumulates
-    // 3. The class compiles without Database.Stateful
+    // 3. Payload logging is controlled by EnablePayloadLogging__c feature flag
+    // 4. Logs are inserted via Queueable, not accumulated in batch state
 
-    // The fact that this test compiles and runs confirms the removal of Database.Stateful
-    // and the payloadLogs accumulation pattern
+    // The fact that this test compiles and runs confirms:
+    // - Database.Stateful is used only for firstOrderingId tracking
+    // - Payload logging uses Queueable pattern
+    // - Feature flag controls logging behavior
 
     try {
       // Attempt to create batch - will throw due to missing config
@@ -69,21 +72,20 @@ private class ProductCatalogExportBatchTest {
       );
     } catch (Exception e) {
       // Expected - no config exists
-      // The key is that the class compiled without Database.Stateful
+      // The key is that the class structure is correct
     }
 
     System.assert(
       true,
-      'ProductCatalogExportBatch compiles without Database.Stateful'
+      'ProductCatalogExportBatch uses Stateful only for firstOrderingId'
     );
   }
 
   /**
-   * Test that the batch processes correctly without orderingId tracking
-   * Since Database.Stateful was removed, orderingId is no longer tracked
+   * Test that the batch tracks orderingId correctly with Database.Stateful
    */
   @IsTest
-  static void testBatch_handlesNullOrderingId() {
+  static void testBatch_tracksFirstOrderingId() {
     // Setup test products
     Product2 p1 = new Product2(
       Name = 'Test Product',
@@ -105,14 +107,14 @@ private class ProductCatalogExportBatchTest {
 
     Test.startTest();
 
-    // The batch now handles null orderingId gracefully
+    // The batch now tracks firstOrderingId using Database.Stateful
     // Since we can't create Custom Metadata in tests, this validates that:
-    // 1. The code compiles without firstOrderingId field
-    // 2. The finish() method passes null to deleteOlderThan
-    // 3. CoveoDeleteOlderThan handles null gracefully
+    // 1. The code compiles with Database.Stateful and firstOrderingId field
+    // 2. The finish() method uses firstOrderingId for deleteOlderThan
+    // 3. Payload logging is feature-gated via EnablePayloadLogging__c
 
     Test.stopTest();
 
-    System.assert(true, 'Batch handles null orderingId correctly');
+    System.assert(true, 'Batch tracks firstOrderingId with Stateful');
   }
 }

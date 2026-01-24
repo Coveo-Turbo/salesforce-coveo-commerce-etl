@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>EnablePayloadLogging__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Feature flag to enable payload logging. When enabled, each batch execution will create a Coveo_Payload_Log__c record for troubleshooting. Default is OFF to minimize queueable job usage.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>Enable payload logging for troubleshooting. Creates a log record per batch execution via Queueable job.</inlineHelpText>
+    <label>Enable Payload Logging</label>
+    <type>Checkbox</type>
+</CustomField>
