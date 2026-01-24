@@ -17,11 +17,6 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   private final List<String> extraFieldNames = new List<String>();
   private final Id stdPricebookId;
 
-  // Track the first orderingId from the initial batch to use in deleteOlderThan
-  // Note: Without Database.Stateful, this field is not preserved across execute() calls
-  // The firstOrderingId logic is handled differently - see finish() method
-  public Long firstOrderingId;
-
   public ProductCatalogExportBatch(String jobConfigDeveloperName) {
     List<CatalogJobConfig__mdt> configs = [
       SELECT
@@ -170,22 +165,19 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
 
     // Create log for this batch execution and enqueue for async insertion
     // This avoids mixed DML exceptions and prevents heap accumulation
-    List<Coveo_Payload_Log__c> logsToInsert = new List<Coveo_Payload_Log__c>();
-    logsToInsert.add(
-      new Coveo_Payload_Log__c(
-        ScopeSize__c = scope.size(),
-        OperationCount__c = vr.operationCount,
-        IsValid__c = vr.isValid,
-        Reason__c = vr.reason,
-        Payload__c = ndjsonPayload.left(32000) // guard against LT max
-      )
+    Coveo_Payload_Log__c log = new Coveo_Payload_Log__c(
+      ScopeSize__c = scope.size(),
+      OperationCount__c = vr.operationCount,
+      IsValid__c = vr.isValid,
+      Reason__c = vr.reason,
+      Payload__c = ndjsonPayload.left(32000) // guard against LT max
     );
 
-    // Enqueue queueable job to insert logs asynchronously
+    // Enqueue queueable job to insert log asynchronously
     // This runs in a separate transaction, avoiding mixed DML
-    if (!logsToInsert.isEmpty()) {
-      System.enqueueJob(new CoveoPayloadLogQueueable(logsToInsert));
-    }
+    System.enqueueJob(
+      new CoveoPayloadLogQueueable(new List<Coveo_Payload_Log__c>{ log })
+    );
 
     Blob ndjson = Blob.valueOf(ndjsonPayload);
 
@@ -208,37 +200,23 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       (String) container.get('fileId')
     );
 
-    // Parse orderingId from response body
-    Map<String, Object> resMap = (Map<String, Object>) JSON.deserializeUntyped(
-      updateResponse
+    System.debug(
+      LoggingLevel.DEBUG,
+      'Coveo stream update response: ' + updateResponse
     );
-
-    // Capture the first orderingId from the first batch execution
-    // This will be used in finish() to delete items from previous runs only
-    if (resMap.containsKey('orderingId')) {
-      Long oid = Long.valueOf(String.valueOf(resMap.get('orderingId')));
-      if (firstOrderingId == null) {
-        firstOrderingId = oid;
-      }
-    }
   }
 
   global void finish(Database.BatchableContext bc) {
-    System.debug(
-      'ProductCatalogExportBatch.finish: firstOrderingId=' + firstOrderingId
-    );
+    // Note: Without Database.Stateful, we cannot track the firstOrderingId
+    // across batch executions. Passing null to deleteOlderThan will skip
+    // the cleanup operation (see CoveoDeleteOlderThan for details).
+    // If cleanup is required, consider implementing a separate scheduled job
+    // that tracks orderingIds via a custom object.
 
-    // Note: Without Database.Stateful, firstOrderingId is always null here
-    // since it's not preserved across execute() calls. The deleteOlderThan
-    // operation with null orderingId will delete items older than the oldest
-    // item in the current batch run, which is the desired behavior.
-    // See CoveoDeleteOlderThan for details.
-
-    // Delete older items for this specific source
     CoveoDeleteOlderThan.deleteOlderThan(
       jobConfig.CoveoOrgId__c,
       jobConfig.SourceId__c,
-      firstOrderingId
+      null // orderingId - always null without Database.Stateful
     );
 
     // Payload logs are now inserted asynchronously via CoveoPayloadLogQueueable
