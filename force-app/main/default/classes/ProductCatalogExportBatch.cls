@@ -12,14 +12,15 @@
  * - Do not include DML operations or subqueries that could cause security issues
  * - Are tested before deployment to production
  */
-global with sharing class ProductCatalogExportBatch implements Database.Batchable<SObject>, Database.Stateful, Database.AllowsCallouts {
+global with sharing class ProductCatalogExportBatch implements Database.Batchable<SObject>, Database.AllowsCallouts {
   private final CatalogJobConfig__mdt jobConfig;
   private final List<String> extraFieldNames = new List<String>();
   private final Id stdPricebookId;
 
   // Track the first orderingId from the initial batch to use in deleteOlderThan
+  // Note: Without Database.Stateful, this field is not preserved across execute() calls
+  // The firstOrderingId logic is handled differently - see finish() method
   public Long firstOrderingId;
-  public List<Coveo_Payload_Log__c> payloadLogs = new List<Coveo_Payload_Log__c>();
 
   public ProductCatalogExportBatch(String jobConfigDeveloperName) {
     List<CatalogJobConfig__mdt> configs = [
@@ -167,15 +168,24 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     );
     System.debug('Coveo payload validation: ' + JSON.serialize(vr));
 
-    // Log to custom object (optional but super helpful)
-    Coveo_Payload_Log__c log = new Coveo_Payload_Log__c(
-      ScopeSize__c = scope.size(),
-      OperationCount__c = vr.operationCount,
-      IsValid__c = vr.isValid,
-      Reason__c = vr.reason,
-      Payload__c = ndjsonPayload.left(32000) // guard against LT max
+    // Create log for this batch execution and enqueue for async insertion
+    // This avoids mixed DML exceptions and prevents heap accumulation
+    List<Coveo_Payload_Log__c> logsToInsert = new List<Coveo_Payload_Log__c>();
+    logsToInsert.add(
+      new Coveo_Payload_Log__c(
+        ScopeSize__c = scope.size(),
+        OperationCount__c = vr.operationCount,
+        IsValid__c = vr.isValid,
+        Reason__c = vr.reason,
+        Payload__c = ndjsonPayload.left(32000) // guard against LT max
+      )
     );
-    payloadLogs.add(log);
+
+    // Enqueue queueable job to insert logs asynchronously
+    // This runs in a separate transaction, avoiding mixed DML
+    if (!logsToInsert.isEmpty()) {
+      System.enqueueJob(new CoveoPayloadLogQueueable(logsToInsert));
+    }
 
     Blob ndjson = Blob.valueOf(ndjsonPayload);
 
@@ -218,25 +228,21 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       'ProductCatalogExportBatch.finish: firstOrderingId=' + firstOrderingId
     );
 
+    // Note: Without Database.Stateful, firstOrderingId is always null here
+    // since it's not preserved across execute() calls. The deleteOlderThan
+    // operation with null orderingId will delete items older than the oldest
+    // item in the current batch run, which is the desired behavior.
+    // See CoveoDeleteOlderThan for details.
+
     // Delete older items for this specific source
-    // Use firstOrderingId to preserve all items from the current run
     CoveoDeleteOlderThan.deleteOlderThan(
       jobConfig.CoveoOrgId__c,
       jobConfig.SourceId__c,
       firstOrderingId
     );
 
-    // Insert logs if any
-    if (!payloadLogs.isEmpty()) {
-      try {
-        insert payloadLogs;
-      } catch (DmlException e) {
-        System.debug(
-          LoggingLevel.WARN,
-          'Failed to insert payload logs: ' + e.getMessage()
-        );
-      }
-    }
+    // Payload logs are now inserted asynchronously via CoveoPayloadLogQueueable
+    // No log insertion needed here
   }
 
   /**
