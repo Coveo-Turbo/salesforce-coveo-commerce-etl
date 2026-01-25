@@ -1,7 +1,7 @@
 public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuilder {
   public String buildFullUpdateNdjson(
     List<Product2> products,
-    Map<Id, PricebookEntry> pbesByProduct,
+    Map<Id, Map<String, Decimal>> pricesByProduct,
     List<String> extraFieldNames
   ) {
     if (products.isEmpty()) {
@@ -116,9 +116,10 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
       }
 
       // ---- Price & stock ----
-      Decimal price = null;
-      if (pbesByProduct.containsKey(p.Id)) {
-        price = pbesByProduct.get(p.Id).UnitPrice;
+      // Price is now a dictionary with pricebook-specific prices
+      Map<String, Decimal> prices = null;
+      if (pricesByProduct != null && pricesByProduct.containsKey(p.Id)) {
+        prices = pricesByProduct.get(p.Id);
       }
 
       Boolean inStock = SafeFieldUtil.safeGetBoolean(p, 'In_Stock__c');
@@ -139,8 +140,8 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
       item.put('ec_category', ecCategories); // <-- LIST of category/hierarchy strings
       item.put('ec_brand', customBrand);
 
-      if (price != null) {
-        item.put('ec_price', price);
+      if (prices != null && !prices.isEmpty()) {
+        item.put('ec_price', prices);
       }
       if (inStock != null) {
         item.put('ec_in_stock', inStock);

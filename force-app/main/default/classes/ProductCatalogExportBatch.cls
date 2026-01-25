@@ -137,23 +137,35 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   }
 
   global void execute(Database.BatchableContext bc, List<Product2> scope) {
-    Map<Id, PricebookEntry> pbesByProduct = new Map<Id, PricebookEntry>();
+    // Query all pricebook entries for products in scope
+    Map<Id, Map<String, Decimal>> pricesByProduct = new Map<Id, Map<String, Decimal>>();
 
     for (PricebookEntry pbe : [
-      SELECT Id, Product2Id, UnitPrice
+      SELECT Id, Product2Id, Pricebook2Id, UnitPrice
       FROM PricebookEntry
-      WHERE Pricebook2Id = :stdPricebookId AND Product2Id IN :scope
+      WHERE Product2Id IN :scope
     ]) {
-      if (pbe.Product2Id != null) {
-        pbesByProduct.put(pbe.Product2Id, pbe);
+      if (pbe.Product2Id == null) {
+        continue;
       }
+
+      if (!pricesByProduct.containsKey(pbe.Product2Id)) {
+        pricesByProduct.put(pbe.Product2Id, new Map<String, Decimal>());
+      }
+
+      // Use empty string for standard pricebook, PricebookId string for others
+      String key = (pbe.Pricebook2Id == stdPricebookId)
+        ? ''
+        : String.valueOf(pbe.Pricebook2Id);
+      pricesByProduct.get(pbe.Product2Id).put(key, pbe.UnitPrice);
     }
+
     ICatalogJsonBuilder builder = CatalogJsonBuilderFactory.getForBuilderType(
       jobConfig.BuilderType__c
     );
     String ndjsonPayload = builder.buildFullUpdateNdjson(
       scope,
-      pbesByProduct,
+      pricesByProduct,
       extraFieldNames
     );
 

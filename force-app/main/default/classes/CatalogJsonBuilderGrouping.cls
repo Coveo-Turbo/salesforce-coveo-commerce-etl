@@ -44,7 +44,7 @@ public with sharing class CatalogJsonBuilderGrouping implements ICatalogJsonBuil
    */
   public String buildFullUpdateNdjson(
     List<Product2> products,
-    Map<Id, PricebookEntry> pbesByProduct,
+    Map<Id, Map<String, Decimal>> pricesByProduct,
     List<String> extraFieldNames
   ) {
     if (products.isEmpty()) {
@@ -163,7 +163,7 @@ public with sharing class CatalogJsonBuilderGrouping implements ICatalogJsonBuil
    */
   private Map<String, Object> buildGroupingItem(
     Product2 p,
-    Map<Id, PricebookEntry> pbesByProduct,
+    Map<Id, Map<String, Decimal>> pricesByProduct,
     List<String> extraFieldNames,
     Map<Id, String> productCodeById,
     Map<Id, List<String>> categoriesByProductId
@@ -205,9 +205,12 @@ public with sharing class CatalogJsonBuilderGrouping implements ICatalogJsonBuil
       item.put('ec_category', new List<String>{ 'Uncategorized' });
     }
 
-    // Price
-    if (pbesByProduct != null && pbesByProduct.containsKey(p.Id)) {
-      item.put('ec_price', pbesByProduct.get(p.Id).UnitPrice);
+    // Price as dictionary
+    if (pricesByProduct != null && pricesByProduct.containsKey(p.Id)) {
+      Map<String, Decimal> prices = pricesByProduct.get(p.Id);
+      if (prices != null && !prices.isEmpty()) {
+        item.put('ec_price', prices);
+      }
     }
 
     // Optional fields

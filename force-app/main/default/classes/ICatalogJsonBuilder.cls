@@ -2,7 +2,7 @@ public interface ICatalogJsonBuilder {
   /** Build a FULL update payload (JSON) for the given products */
   String buildFullUpdateNdjson(
     List<Product2> products,
-    Map<Id, PricebookEntry> pbesByProduct,
+    Map<Id, Map<String, Decimal>> pricesByProduct,
     List<String> extraFieldNames
   );
 
