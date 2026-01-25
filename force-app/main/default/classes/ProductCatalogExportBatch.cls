@@ -168,24 +168,6 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     );
     System.debug('Coveo payload validation: ' + JSON.serialize(vr));
 
-    // Conditionally create and enqueue payload log based on feature flag
-    // This avoids mixed DML exceptions and prevents heap accumulation
-    if (jobConfig.EnablePayloadLogging__c == true) {
-      Coveo_Payload_Log__c log = new Coveo_Payload_Log__c(
-        ScopeSize__c = scope.size(),
-        OperationCount__c = vr.operationCount,
-        IsValid__c = vr.isValid,
-        Reason__c = vr.reason,
-        Payload__c = ndjsonPayload.left(32000) // guard against LT max
-      );
-
-      // Enqueue queueable job to insert log asynchronously
-      // This runs in a separate transaction, avoiding mixed DML
-      System.enqueueJob(
-        new CoveoPayloadLogQueueable(new List<Coveo_Payload_Log__c>{ log })
-      );
-    }
-
     Blob ndjson = Blob.valueOf(ndjsonPayload);
 
     CoveoStreamClient client = new CoveoStreamClient(
@@ -224,6 +206,24 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       if (firstOrderingId == null) {
         firstOrderingId = oid;
       }
+    }
+
+    // Enqueue payload log AFTER callout to respect Salesforce governor limits
+    // Callout → DML ordering is required
+    if (jobConfig.EnablePayloadLogging__c == true) {
+      Coveo_Payload_Log__c log = new Coveo_Payload_Log__c(
+        ScopeSize__c = scope.size(),
+        OperationCount__c = vr.operationCount,
+        IsValid__c = vr.isValid,
+        Reason__c = vr.reason,
+        Payload__c = ndjsonPayload.left(32000) // guard against LT max
+      );
+
+      // Enqueue queueable job to insert log asynchronously
+      // This runs in a separate transaction, avoiding mixed DML
+      System.enqueueJob(
+        new CoveoPayloadLogQueueable(new List<Coveo_Payload_Log__c>{ log })
+      );
     }
   }
 
