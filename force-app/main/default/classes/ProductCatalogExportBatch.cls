@@ -137,13 +137,14 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   }
 
   global void execute(Database.BatchableContext bc, List<Product2> scope) {
-    // Query all pricebook entries for products in scope
+    // Query all active pricebook entries for products in scope
+    // Note: Only active entries with prices are included to optimize query volume
     Map<Id, Map<String, Decimal>> pricesByProduct = new Map<Id, Map<String, Decimal>>();
 
     for (PricebookEntry pbe : [
       SELECT Id, Product2Id, Pricebook2Id, UnitPrice
       FROM PricebookEntry
-      WHERE Product2Id IN :scope
+      WHERE Product2Id IN :scope AND IsActive = TRUE AND UnitPrice != NULL
     ]) {
       if (pbe.Product2Id == null) {
         continue;
