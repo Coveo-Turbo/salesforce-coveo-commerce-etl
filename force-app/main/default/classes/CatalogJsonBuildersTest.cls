@@ -357,7 +357,11 @@ private class CatalogJsonBuildersTest {
     CatalogJsonBuilderDefault builder = new CatalogJsonBuilderDefault();
 
     Test.startTest();
-    String json = builder.buildFullUpdateNdjson(products, priceMap, extraFields);
+    String json = builder.buildFullUpdateNdjson(
+      products,
+      priceMap,
+      extraFields
+    );
     Test.stopTest();
 
     // Should include extra fields with sf_ prefix
@@ -425,16 +429,16 @@ private class CatalogJsonBuildersTest {
     // Create mock price data with multiple pricebooks
     Map<Id, Map<String, Decimal>> pricesByProduct = new Map<Id, Map<String, Decimal>>();
     Map<String, Decimal> productPrices = new Map<String, Decimal>();
-    
+
     // Standard pricebook (empty key)
     productPrices.put('', 100.00);
-    
+
     // Additional pricebooks (using mock IDs)
     Id mockPricebook1 = Id.valueOf('01s000000000001AAA');
     Id mockPricebook2 = Id.valueOf('01s000000000002AAA');
     productPrices.put(String.valueOf(mockPricebook1), 95.00);
     productPrices.put(String.valueOf(mockPricebook2), 105.00);
-    
+
     pricesByProduct.put(product.Id, productPrices);
 
     CatalogJsonBuilderDefault builder = new CatalogJsonBuilderDefault();
@@ -449,7 +453,7 @@ private class CatalogJsonBuildersTest {
 
     System.assertNotEquals(null, json, 'JSON should not be null');
     System.assert(json.contains('ec_price'), 'Should contain ec_price field');
-    
+
     // Verify dictionary structure in JSON
     Map<String, Object> payload = (Map<String, Object>) JSON.deserializeUntyped(
       json
@@ -457,17 +461,17 @@ private class CatalogJsonBuildersTest {
     List<Object> items = (List<Object>) payload.get('addOrUpdate');
     System.assertNotEquals(null, items, 'Should have items');
     System.assertEquals(1, items.size(), 'Should have one item');
-    
+
     Map<String, Object> item = (Map<String, Object>) items[0];
     Object priceObj = item.get('ec_price');
     System.assertNotEquals(null, priceObj, 'Should have ec_price');
-    
+
     // ec_price should be a Map (dictionary) not a single Decimal
     System.assert(
       priceObj instanceof Map<String, Object>,
       'ec_price should be a dictionary/map'
     );
-    
+
     Map<String, Object> priceDict = (Map<String, Object>) priceObj;
     System.assertEquals(
       3,

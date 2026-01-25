@@ -187,7 +187,10 @@ public with sharing class CoveoCommerceSetupController {
 
       // Use predefined description or create a custom one
       if (builderDescriptions.containsKey(mapping.ClassName__c)) {
-        option.put('description', builderDescriptions.get(mapping.ClassName__c));
+        option.put(
+          'description',
+          builderDescriptions.get(mapping.ClassName__c)
+        );
       } else {
         option.put('description', 'Custom builder: ' + mapping.ClassName__c);
       }
