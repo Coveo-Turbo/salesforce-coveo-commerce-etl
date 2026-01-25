@@ -23,13 +23,13 @@ public with sharing class CatalogJsonBuilderDefault implements ICatalogJsonBuild
    * Products are exported as flat items without variant or grouping logic.
    *
    * @param products List of Product2 records to export
-   * @param pbesByProduct Map of Product2 Id to PricebookEntry for pricing
+   * @param pricesByProduct Map of Product2 Id to Map<String, Decimal> for pricing with multiple pricebooks
    * @param extraFieldNames List of additional Product2 field API names to include
    * @return JSON string with addOrUpdate array
    */
   public String buildFullUpdateNdjson(
     List<Product2> products,
-    Map<Id, PricebookEntry> pbesByProduct,
+    Map<Id, Map<String, Decimal>> pricesByProduct,
     List<String> extraFieldNames
   ) {
     if (products.isEmpty()) {
@@ -100,13 +100,13 @@ public with sharing class CatalogJsonBuilderDefault implements ICatalogJsonBuild
    * Builds a single product item as a Map for JSON serialization.
    *
    * @param p Product2 record
-   * @param pbesByProduct Map of Product2 Id to PricebookEntry
+   * @param pricesByProduct Map of Product2 Id to Map<String, Decimal> for pricing
    * @param extraFieldNames Additional fields to include
    * @return Map representing the product item
    */
   private Map<String, Object> buildProductItem(
     Product2 p,
-    Map<Id, PricebookEntry> pbesByProduct,
+    Map<Id, Map<String, Decimal>> pricesByProduct,
     List<String> extraFieldNames
   ) {
     // Compute product identifier
@@ -133,9 +133,12 @@ public with sharing class CatalogJsonBuilderDefault implements ICatalogJsonBuild
       item.put('ec_category', new List<String>{ 'Uncategorized' });
     }
 
-    // Price from pricebook entry
-    if (pbesByProduct != null && pbesByProduct.containsKey(p.Id)) {
-      item.put('ec_price', pbesByProduct.get(p.Id).UnitPrice);
+    // Price from pricebook entry as dictionary
+    if (pricesByProduct != null && pricesByProduct.containsKey(p.Id)) {
+      Map<String, Decimal> prices = pricesByProduct.get(p.Id);
+      if (prices != null && !prices.isEmpty()) {
+        item.put('ec_price', prices);
+      }
     }
 
     // Optional fields via SafeFieldUtil

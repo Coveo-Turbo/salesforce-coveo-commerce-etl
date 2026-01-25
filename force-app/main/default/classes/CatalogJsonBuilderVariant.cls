@@ -45,13 +45,13 @@ public with sharing class CatalogJsonBuilderVariant implements ICatalogJsonBuild
    * Variants include ec_variant_id and variant-specific attributes.
    *
    * @param products List of Product2 records (parents and variants)
-   * @param pbesByProduct Map of Product2 Id to PricebookEntry for pricing
+   * @param pricesByProduct Map of Product2 Id to Map<String, Decimal> for pricing with multiple pricebooks
    * @param extraFieldNames List of additional Product2 field API names to include
    * @return JSON string with addOrUpdate array
    */
   public String buildFullUpdateNdjson(
     List<Product2> products,
-    Map<Id, PricebookEntry> pbesByProduct,
+    Map<Id, Map<String, Decimal>> pricesByProduct,
     List<String> extraFieldNames
   ) {
     if (products.isEmpty()) {
@@ -161,7 +161,7 @@ public with sharing class CatalogJsonBuilderVariant implements ICatalogJsonBuild
    * Variants include ec_variant_id and variant attribute fields.
    *
    * @param p Product2 record
-   * @param pbesByProduct Map of Product2 Id to PricebookEntry
+   * @param pricesByProduct Map of Product2 Id to Map<String, Decimal> for pricing
    * @param extraFieldNames Additional fields to include
    * @param productCodeById Map of Product2 Id to ProductCode
    * @param categoriesByProductId Map of Product2 Id to category paths
@@ -169,7 +169,7 @@ public with sharing class CatalogJsonBuilderVariant implements ICatalogJsonBuild
    */
   private Map<String, Object> buildVariantItem(
     Product2 p,
-    Map<Id, PricebookEntry> pbesByProduct,
+    Map<Id, Map<String, Decimal>> pricesByProduct,
     List<String> extraFieldNames,
     Map<Id, String> productCodeById,
     Map<Id, List<String>> categoriesByProductId
@@ -222,9 +222,12 @@ public with sharing class CatalogJsonBuilderVariant implements ICatalogJsonBuild
       item.put('ec_category', new List<String>{ 'Uncategorized' });
     }
 
-    // Price
-    if (pbesByProduct != null && pbesByProduct.containsKey(p.Id)) {
-      item.put('ec_price', pbesByProduct.get(p.Id).UnitPrice);
+    // Price as dictionary
+    if (pricesByProduct != null && pricesByProduct.containsKey(p.Id)) {
+      Map<String, Decimal> prices = pricesByProduct.get(p.Id);
+      if (prices != null && !prices.isEmpty()) {
+        item.put('ec_price', prices);
+      }
     }
 
     // Standard optional fields

@@ -38,12 +38,12 @@ private class CatalogJsonBuildersTest {
   static void testDefaultBuilder_buildFullUpdateNdjson() {
     List<Product2> products = createTestProducts();
 
-    Map<Id, PricebookEntry> emptyPbeMap = new Map<Id, PricebookEntry>();
+    Map<Id, Map<String, Decimal>> emptyPriceMap = new Map<Id, Map<String, Decimal>>();
 
     CatalogJsonBuilderDefault builder = new CatalogJsonBuilderDefault();
 
     Test.startTest();
-    String json = builder.buildFullUpdateNdjson(products, emptyPbeMap, null);
+    String json = builder.buildFullUpdateNdjson(products, emptyPriceMap, null);
     Test.stopTest();
 
     System.assertNotEquals(null, json, 'JSON should not be null');
@@ -94,7 +94,7 @@ private class CatalogJsonBuildersTest {
     Test.startTest();
     String json = builder.buildFullUpdateNdjson(
       new List<Product2>(),
-      new Map<Id, PricebookEntry>(),
+      new Map<Id, Map<String, Decimal>>(),
       null
     );
     Test.stopTest();
@@ -113,12 +113,12 @@ private class CatalogJsonBuildersTest {
   static void testGroupingBuilder_buildFullUpdateNdjson() {
     List<Product2> products = createTestProducts();
 
-    Map<Id, PricebookEntry> emptyPbeMap = new Map<Id, PricebookEntry>();
+    Map<Id, Map<String, Decimal>> emptyPriceMap = new Map<Id, Map<String, Decimal>>();
 
     CatalogJsonBuilderGrouping builder = new CatalogJsonBuilderGrouping();
 
     Test.startTest();
-    String json = builder.buildFullUpdateNdjson(products, emptyPbeMap, null);
+    String json = builder.buildFullUpdateNdjson(products, emptyPriceMap, null);
     Test.stopTest();
 
     System.assertNotEquals(null, json, 'JSON should not be null');
@@ -156,7 +156,7 @@ private class CatalogJsonBuildersTest {
     Test.startTest();
     String json = builder.buildFullUpdateNdjson(
       new List<Product2>(),
-      new Map<Id, PricebookEntry>(),
+      new Map<Id, Map<String, Decimal>>(),
       null
     );
     Test.stopTest();
@@ -174,12 +174,12 @@ private class CatalogJsonBuildersTest {
   static void testVariantBuilder_buildFullUpdateNdjson() {
     List<Product2> products = createTestProducts();
 
-    Map<Id, PricebookEntry> emptyPbeMap = new Map<Id, PricebookEntry>();
+    Map<Id, Map<String, Decimal>> emptyPriceMap = new Map<Id, Map<String, Decimal>>();
 
     CatalogJsonBuilderVariant builder = new CatalogJsonBuilderVariant();
 
     Test.startTest();
-    String json = builder.buildFullUpdateNdjson(products, emptyPbeMap, null);
+    String json = builder.buildFullUpdateNdjson(products, emptyPriceMap, null);
     Test.stopTest();
 
     System.assertNotEquals(null, json, 'JSON should not be null');
@@ -218,7 +218,7 @@ private class CatalogJsonBuildersTest {
     Test.startTest();
     String json = builder.buildFullUpdateNdjson(
       new List<Product2>(),
-      new Map<Id, PricebookEntry>(),
+      new Map<Id, Map<String, Decimal>>(),
       null
     );
     Test.stopTest();
@@ -236,12 +236,12 @@ private class CatalogJsonBuildersTest {
   static void testGroupingWithVariantsBuilder_buildFullUpdateNdjson() {
     List<Product2> products = createTestProducts();
 
-    Map<Id, PricebookEntry> emptyPbeMap = new Map<Id, PricebookEntry>();
+    Map<Id, Map<String, Decimal>> emptyPriceMap = new Map<Id, Map<String, Decimal>>();
 
     CatalogJsonBuilderGroupingWithVariants builder = new CatalogJsonBuilderGroupingWithVariants();
 
     Test.startTest();
-    String json = builder.buildFullUpdateNdjson(products, emptyPbeMap, null);
+    String json = builder.buildFullUpdateNdjson(products, emptyPriceMap, null);
     Test.stopTest();
 
     System.assertNotEquals(null, json, 'JSON should not be null');
@@ -284,7 +284,7 @@ private class CatalogJsonBuildersTest {
     Test.startTest();
     String json = builder.buildFullUpdateNdjson(
       new List<Product2>(),
-      new Map<Id, PricebookEntry>(),
+      new Map<Id, Map<String, Decimal>>(),
       null
     );
     Test.stopTest();
@@ -306,7 +306,7 @@ private class CatalogJsonBuildersTest {
     ICatalogJsonBuilder combinedBuilder = new CatalogJsonBuilderGroupingWithVariants();
 
     List<Product2> products = createTestProducts();
-    Map<Id, PricebookEntry> pbeMap = new Map<Id, PricebookEntry>();
+    Map<Id, Map<String, Decimal>> priceMap = new Map<Id, Map<String, Decimal>>();
     List<String> extraFields = new List<String>();
 
     Test.startTest();
@@ -314,22 +314,22 @@ private class CatalogJsonBuildersTest {
     // All should produce valid JSON
     String json1 = defaultBuilder.buildFullUpdateNdjson(
       products,
-      pbeMap,
+      priceMap,
       extraFields
     );
     String json2 = groupingBuilder.buildFullUpdateNdjson(
       products,
-      pbeMap,
+      priceMap,
       extraFields
     );
     String json3 = variantBuilder.buildFullUpdateNdjson(
       products,
-      pbeMap,
+      priceMap,
       extraFields
     );
     String json4 = combinedBuilder.buildFullUpdateNdjson(
       products,
-      pbeMap,
+      priceMap,
       extraFields
     );
 
@@ -351,13 +351,17 @@ private class CatalogJsonBuildersTest {
   @IsTest
   static void testBuildersWithExtraFields() {
     List<Product2> products = createTestProducts();
-    Map<Id, PricebookEntry> pbeMap = new Map<Id, PricebookEntry>();
+    Map<Id, Map<String, Decimal>> priceMap = new Map<Id, Map<String, Decimal>>();
     List<String> extraFields = new List<String>{ 'Description', 'Family' };
 
     CatalogJsonBuilderDefault builder = new CatalogJsonBuilderDefault();
 
     Test.startTest();
-    String json = builder.buildFullUpdateNdjson(products, pbeMap, extraFields);
+    String json = builder.buildFullUpdateNdjson(
+      products,
+      priceMap,
+      extraFields
+    );
     Test.stopTest();
 
     // Should include extra fields with sf_ prefix
@@ -394,7 +398,7 @@ private class CatalogJsonBuildersTest {
     Test.startTest();
     String json = builder.buildFullUpdateNdjson(
       products,
-      new Map<Id, PricebookEntry>(),
+      new Map<Id, Map<String, Decimal>>(),
       null
     );
     Test.stopTest();
@@ -406,6 +410,77 @@ private class CatalogJsonBuildersTest {
     System.assert(
       json.contains('Uncategorized'),
       'Should fallback to Uncategorized'
+    );
+  }
+
+  /**
+   * Tests that pricing dictionary is properly structured with multiple pricebooks
+   */
+  @IsTest
+  static void testPricingDictionary() {
+    // Create a test product
+    Product2 product = new Product2(
+      Name = 'Test Product',
+      ProductCode = 'DICT-001',
+      IsActive = true
+    );
+    insert product;
+
+    // Create mock price data with multiple pricebooks
+    Map<Id, Map<String, Decimal>> pricesByProduct = new Map<Id, Map<String, Decimal>>();
+    Map<String, Decimal> productPrices = new Map<String, Decimal>();
+
+    // Standard pricebook (empty key)
+    productPrices.put('', 100.00);
+
+    // Additional pricebooks (using mock IDs)
+    Id mockPricebook1 = Id.valueOf('01s000000000001AAA');
+    Id mockPricebook2 = Id.valueOf('01s000000000002AAA');
+    productPrices.put(String.valueOf(mockPricebook1), 95.00);
+    productPrices.put(String.valueOf(mockPricebook2), 105.00);
+
+    pricesByProduct.put(product.Id, productPrices);
+
+    CatalogJsonBuilderDefault builder = new CatalogJsonBuilderDefault();
+
+    Test.startTest();
+    String json = builder.buildFullUpdateNdjson(
+      new List<Product2>{ product },
+      pricesByProduct,
+      null
+    );
+    Test.stopTest();
+
+    System.assertNotEquals(null, json, 'JSON should not be null');
+    System.assert(json.contains('ec_price'), 'Should contain ec_price field');
+
+    // Verify dictionary structure in JSON
+    Map<String, Object> payload = (Map<String, Object>) JSON.deserializeUntyped(
+      json
+    );
+    List<Object> items = (List<Object>) payload.get('addOrUpdate');
+    System.assertNotEquals(null, items, 'Should have items');
+    System.assertEquals(1, items.size(), 'Should have one item');
+
+    Map<String, Object> item = (Map<String, Object>) items[0];
+    Object priceObj = item.get('ec_price');
+    System.assertNotEquals(null, priceObj, 'Should have ec_price');
+
+    // ec_price should be a Map (dictionary) not a single Decimal
+    System.assert(
+      priceObj instanceof Map<String, Object>,
+      'ec_price should be a dictionary/map'
+    );
+
+    Map<String, Object> priceDict = (Map<String, Object>) priceObj;
+    System.assertEquals(
+      3,
+      priceDict.size(),
+      'Should have 3 price entries (standard + 2 custom)'
+    );
+    System.assert(
+      priceDict.containsKey(''),
+      'Should have standard pricebook entry with empty key'
     );
   }
 }
