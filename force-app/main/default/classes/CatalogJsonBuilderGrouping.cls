@@ -38,7 +38,7 @@ public with sharing class CatalogJsonBuilderGrouping implements ICatalogJsonBuil
    * Parent products are indexed as group heads; children reference parents via ec_item_group_id.
    *
    * @param products List of Product2 records (both parents and children)
-   * @param pbesByProduct Map of Product2 Id to PricebookEntry for pricing
+   * @param pricesByProduct Map of Product2 Id to Map<String, Decimal> for pricing with multiple pricebooks
    * @param extraFieldNames List of additional Product2 field API names to include
    * @return JSON string with addOrUpdate array
    */
@@ -155,7 +155,7 @@ public with sharing class CatalogJsonBuilderGrouping implements ICatalogJsonBuil
    * Sets ec_item_group_id to establish parent-child relationships.
    *
    * @param p Product2 record
-   * @param pbesByProduct Map of Product2 Id to PricebookEntry
+   * @param pricesByProduct Map of Product2 Id to Map<String, Decimal> for pricing
    * @param extraFieldNames Additional fields to include
    * @param productCodeById Map of Product2 Id to ProductCode for parent lookup
    * @param categoriesByProductId Map of Product2 Id to category paths
