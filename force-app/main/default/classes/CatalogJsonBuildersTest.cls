@@ -456,9 +456,8 @@ private class CatalogJsonBuildersTest {
 
     // Verify dictionary structure in JSON
     // Using JSON.deserializeUntyped() to parse the response
-    Map<String, Object> payload = (Map<String, Object>) JSON.deserializeUntyped(
-      json
-    );
+    Object deserializedData = System.JSON.deserializeUntyped(json);
+    Map<String, Object> payload = (Map<String, Object>) deserializedData;
     List<Object> items = (List<Object>) payload.get('addOrUpdate');
     System.assertNotEquals(null, items, 'Should have items');
     System.assertEquals(1, items.size(), 'Should have one item');
