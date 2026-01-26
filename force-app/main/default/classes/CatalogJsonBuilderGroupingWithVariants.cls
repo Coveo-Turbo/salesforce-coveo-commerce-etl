@@ -71,7 +71,7 @@ public with sharing class CatalogJsonBuilderGroupingWithVariants implements ICat
     for (Product2 p : products) {
       Map<String, Object> item = buildCombinedItem(
         p,
-        pbesByProduct,
+        pricesByProduct,
         extraFieldNames,
         productCodeById,
         categoriesByProductId

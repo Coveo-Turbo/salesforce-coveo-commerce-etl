@@ -455,6 +455,7 @@ private class CatalogJsonBuildersTest {
     System.assert(json.contains('ec_price'), 'Should contain ec_price field');
 
     // Verify dictionary structure in JSON
+    // Using JSON.deserializeUntyped() to parse the response
     Map<String, Object> payload = (Map<String, Object>) JSON.deserializeUntyped(
       json
     );

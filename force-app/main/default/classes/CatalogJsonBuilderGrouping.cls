@@ -97,7 +97,7 @@ public with sharing class CatalogJsonBuilderGrouping implements ICatalogJsonBuil
     for (Product2 p : products) {
       Map<String, Object> item = buildGroupingItem(
         p,
-        pbesByProduct,
+        pricesByProduct,
         extraFieldNames,
         productCodeById,
         categoriesByProductId
