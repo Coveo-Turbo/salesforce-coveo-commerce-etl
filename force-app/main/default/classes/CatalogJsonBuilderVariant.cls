@@ -103,7 +103,7 @@ public with sharing class CatalogJsonBuilderVariant implements ICatalogJsonBuild
     for (Product2 p : products) {
       Map<String, Object> item = buildVariantItem(
         p,
-        pbesByProduct,
+        pricesByProduct,
         extraFieldNames,
         productCodeById,
         categoriesByProductId

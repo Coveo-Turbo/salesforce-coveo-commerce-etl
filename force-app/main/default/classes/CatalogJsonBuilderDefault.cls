@@ -43,7 +43,7 @@ public with sharing class CatalogJsonBuilderDefault implements ICatalogJsonBuild
     for (Product2 p : products) {
       Map<String, Object> item = buildProductItem(
         p,
-        pbesByProduct,
+        pricesByProduct,
         extraFieldNames
       );
       addOrUpdate.add(item);
