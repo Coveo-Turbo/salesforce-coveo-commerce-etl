@@ -65,12 +65,13 @@ If these objects are missing, the org is **not Commerce-enabled**.
 
 
 
+
 ## 📥 Installation
 
-### Current Version: 1.1.7
+### Current Version: 1.1.8
 
-> **Released:** 2026-01-25
-> **Package Version ID:** `04tak000000LjmvAAC`
+> **Released:** 2026-01-26
+> **Package Version ID:** `04tak000000Ll5ZAAS`
 
 ### Option 1: Install via Unlocked Package (Recommended)
 
@@ -79,21 +80,21 @@ This library is distributed as an [Unlocked Package](https://developer.salesforc
 #### Install via Package Links
 
 * **Production / Developer Org:**
-  [https://login.salesforce.com/packaging/installPackage.apexp?p0=04tak000000LjmvAAC](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tak000000LjmvAAC)
+  [https://login.salesforce.com/packaging/installPackage.apexp?p0=04tak000000Ll5ZAAS](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tak000000Ll5ZAAS)
 
 * **Sandbox:**
-  [https://test.salesforce.com/packaging/installPackage.apexp?p0=04tak000000LjmvAAC](https://test.salesforce.com/packaging/installPackage.apexp?p0=04tak000000LjmvAAC)
+  [https://test.salesforce.com/packaging/installPackage.apexp?p0=04tak000000Ll5ZAAS](https://test.salesforce.com/packaging/installPackage.apexp?p0=04tak000000Ll5ZAAS)
 
 #### Install Using Salesforce CLI
 
 ```bash
-sf package install --package 04tak000000LjmvAAC --target-org <your-org-alias> --wait 10
+sf package install --package 04tak000000Ll5ZAAS --target-org <your-org-alias> --wait 10
 ```
 
 #### Optional: Compile Only the Package's Apex Code
 
 ```bash
-sf package install --apex-compile package --package 04tak000000LjmvAAC --target-org <your-org-alias> --wait 10
+sf package install --apex-compile package --package 04tak000000Ll5ZAAS --target-org <your-org-alias> --wait 10
 ```
 
 After installation, assign the permission set:
@@ -106,7 +107,7 @@ sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
 
 1. **Download the latest release:**
    ```bash
-   curl -L -o coveo-etl.zip "https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl/releases/download/v1.1.7/salesforce-coveo-commerce-etl-v1.1.7.zip"
+   curl -L -o coveo-etl.zip "https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl/releases/download/v1.1.8/salesforce-coveo-commerce-etl-v1.1.8.zip"
    unzip coveo-etl.zip -d coveo-etl
    ```
 
