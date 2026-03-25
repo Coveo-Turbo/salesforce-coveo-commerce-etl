@@ -28,10 +28,22 @@ const CONFIG_COLUMNS = [
   { label: "Catalog ID", fieldName: "catalogId", wrapText: true },
   { label: "Builder Type", fieldName: "builderType", wrapText: true },
   { label: "Coveo Org Id", fieldName: "coveoOrgId" },
-  { label: "Source Id", fieldName: "sourceId" },
+  { label: "Product Source Id", fieldName: "sourceId" },
+  {
+    label: "Availability Source Id",
+    fieldName: "availabilitySourceId",
+    wrapText: true
+  },
+  { label: "Web Store Id", fieldName: "webStoreId", wrapText: true },
   {
     label: "Active",
     fieldName: "isActive",
+    type: "boolean",
+    cellAttributes: { alignment: "center" }
+  },
+  {
+    label: "Availability Enabled",
+    fieldName: "buyerGroupAvailabilityEnabled",
     type: "boolean",
     cellAttributes: { alignment: "center" }
   },
@@ -346,6 +358,20 @@ export default class CoveoCommerceSetup extends NavigationMixin(
 
   get configAdditionalFields() {
     return this.selectedConfigRow?.additionalProductFields || "(None)";
+  }
+
+  get configAvailabilitySourceId() {
+    return this.selectedConfigRow?.availabilitySourceId || "(None)";
+  }
+
+  get configWebStoreId() {
+    return this.selectedConfigRow?.webStoreId || "(None)";
+  }
+
+  get configBuyerGroupAvailabilityEnabled() {
+    return this.selectedConfigRow?.buyerGroupAvailabilityEnabled
+      ? "Enabled"
+      : "Disabled";
   }
 
   // Utility methods

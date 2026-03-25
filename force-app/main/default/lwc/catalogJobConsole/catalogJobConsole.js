@@ -3,19 +3,47 @@ import { ShowToastEvent } from "lightning/platformShowToastEvent";
 
 import listConfigs from "@salesforce/apex/CatalogJobRunner.listConfigs";
 import runSingle from "@salesforce/apex/CatalogJobRunner.runSingle";
+import runSingleAvailability from "@salesforce/apex/CatalogJobRunner.runSingleAvailability";
+import runSingleBoth from "@salesforce/apex/CatalogJobRunner.runSingleBoth";
 import runAllActive from "@salesforce/apex/CatalogJobRunner.runAllActive";
+import runAllActiveAvailability from "@salesforce/apex/CatalogJobRunner.runAllActiveAvailability";
+import runAllActiveBoth from "@salesforce/apex/CatalogJobRunner.runAllActiveBoth";
 
 const TRUNCATE_LENGTH = 50;
 
-const ACTIONS_COL = {
-  label: "Actions",
+const RUN_PRODUCTS_COL = {
+  label: "Products",
+  type: "button",
+  initialWidth: 130,
+  typeAttributes: {
+    label: "Run Product",
+    name: "runProduct",
+    variant: "brand-outline",
+    title: "Run the product export now"
+  }
+};
+
+const RUN_AVAILABILITY_COL = {
+  label: "Availability",
+  type: "button",
+  initialWidth: 130,
+  typeAttributes: {
+    label: "Run Avail",
+    name: "runAvailability",
+    variant: "neutral",
+    title: "Run the Buyer Group availability export now"
+  }
+};
+
+const RUN_BOTH_COL = {
+  label: "Both",
   type: "button",
   initialWidth: 110,
   typeAttributes: {
-    label: "Run",
-    name: "run",
-    variant: "brand-outline",
-    title: "Run this catalog job now"
+    label: "Run Both",
+    name: "runBoth",
+    variant: "brand",
+    title: "Run both the product and availability exports now"
   }
 };
 
@@ -38,17 +66,31 @@ export default class CatalogJobConsole extends LightningElement {
   @track selectedRow = null;
 
   columns = [
-    ACTIONS_COL,
+    RUN_PRODUCTS_COL,
+    RUN_AVAILABILITY_COL,
+    RUN_BOTH_COL,
     VIEW_DETAILS_COL,
     { label: "Label", fieldName: "Label", wrapText: true },
     { label: "Locale", fieldName: "Locale__c" },
     { label: "Catalog ID", fieldName: "CatalogId__c", wrapText: true },
     { label: "Builder Type", fieldName: "BuilderType__c", wrapText: true },
     { label: "Coveo Org Id", fieldName: "CoveoOrgId__c" },
-    { label: "Source Id", fieldName: "SourceId__c" },
+    { label: "Product Source Id", fieldName: "SourceId__c" },
+    {
+      label: "Availability Source Id",
+      fieldName: "AvailabilitySourceId__c",
+      wrapText: true
+    },
+    { label: "Web Store Id", fieldName: "WebStoreId__c", wrapText: true },
     {
       label: "Active",
       fieldName: "IsActive__c",
+      type: "boolean",
+      cellAttributes: { alignment: "center" }
+    },
+    {
+      label: "Availability Enabled",
+      fieldName: "EnableBuyerGroupAvailability__c",
       type: "boolean",
       cellAttributes: { alignment: "center" }
     },
@@ -135,14 +177,52 @@ export default class CatalogJobConsole extends LightningElement {
       });
   }
 
+  handleRunAllAvailability() {
+    runAllActiveAvailability()
+      .then(() => {
+        this.showToast(
+          "Success",
+          "Started all active availability jobs",
+          "success"
+        );
+      })
+      .catch((err) => {
+        const msg = this.reduceError(err);
+        this.showToast("Error", msg, "error");
+        // eslint-disable-next-line no-console
+        console.error("runAllActiveAvailability error", err);
+      });
+  }
+
+  handleRunAllBoth() {
+    runAllActiveBoth()
+      .then(() => {
+        this.showToast(
+          "Success",
+          "Started all active product and availability jobs",
+          "success"
+        );
+      })
+      .catch((err) => {
+        const msg = this.reduceError(err);
+        this.showToast("Error", msg, "error");
+        // eslint-disable-next-line no-console
+        console.error("runAllActiveBoth error", err);
+      });
+  }
+
   handleRowAction(event) {
     const actionName = event.detail.action.name;
     const row = event.detail.row;
     // eslint-disable-next-line no-console
     console.log("Row action fired", actionName, row);
 
-    if (actionName === "run") {
+    if (actionName === "runProduct") {
       this.handleRunSingle(row.DeveloperName);
+    } else if (actionName === "runAvailability") {
+      this.handleRunSingleAvailability(row.DeveloperName);
+    } else if (actionName === "runBoth") {
+      this.handleRunSingleBoth(row.DeveloperName);
     } else if (actionName === "viewDetails") {
       this.selectedRow = row;
       this.showDetailsModal = true;
@@ -166,16 +246,68 @@ export default class CatalogJobConsole extends LightningElement {
     return this.selectedRow?.AdditionalProductFields__c || "(None)";
   }
 
+  get availabilitySourceId() {
+    return this.selectedRow?.AvailabilitySourceId__c || "(None)";
+  }
+
+  get webStoreId() {
+    return this.selectedRow?.WebStoreId__c || "(None)";
+  }
+
+  get availabilityEnabled() {
+    return this.selectedRow?.EnableBuyerGroupAvailability__c
+      ? "Enabled"
+      : "Disabled";
+  }
+
   handleRunSingle(devName) {
     runSingle({ jobConfigDeveloperName: devName })
       .then(() => {
-        this.showToast("Success", `Started catalog job: ${devName}`, "success");
+        this.showToast(
+          "Success",
+          `Started product export job: ${devName}`,
+          "success"
+        );
       })
       .catch((err) => {
         const msg = this.reduceError(err);
         this.showToast("Error", msg, "error");
         // eslint-disable-next-line no-console
         console.error("runSingle error", err);
+      });
+  }
+
+  handleRunSingleAvailability(devName) {
+    runSingleAvailability({ jobConfigDeveloperName: devName })
+      .then(() => {
+        this.showToast(
+          "Success",
+          `Started availability export job: ${devName}`,
+          "success"
+        );
+      })
+      .catch((err) => {
+        const msg = this.reduceError(err);
+        this.showToast("Error", msg, "error");
+        // eslint-disable-next-line no-console
+        console.error("runSingleAvailability error", err);
+      });
+  }
+
+  handleRunSingleBoth(devName) {
+    runSingleBoth({ jobConfigDeveloperName: devName })
+      .then(() => {
+        this.showToast(
+          "Success",
+          `Started product and availability export jobs: ${devName}`,
+          "success"
+        );
+      })
+      .catch((err) => {
+        const msg = this.reduceError(err);
+        this.showToast("Error", msg, "error");
+        // eslint-disable-next-line no-console
+        console.error("runSingleBoth error", err);
       });
   }
 

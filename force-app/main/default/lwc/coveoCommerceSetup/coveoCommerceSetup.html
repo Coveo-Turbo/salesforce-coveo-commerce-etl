@@ -272,6 +272,10 @@
                       strategy (Default, Commerce, Grouping, Variant,
                       GroupingWithVariants)
                     </li>
+                    <li>
+                      <strong>Availability Source Id</strong> – Paired Coveo
+                      availability source for Buyer Group visibility (optional)
+                    </li>
                   </ul>
                 </div>
                 <div class="slds-col slds-size_1-of-2 slds-p-left_small">
@@ -284,6 +288,14 @@
                       <strong>Additional Fields</strong> – Extra Product2 fields
                       to export (optional, comma-separated) - e.g.,
                       ProductCode,Description
+                    </li>
+                    <li>
+                      <strong>Web Store Id</strong> – Salesforce WebStore used
+                      to resolve Buyer Groups for the availability export
+                    </li>
+                    <li>
+                      <strong>Availability Enabled</strong> – Turns on the
+                      paired Buyer Group availability export
                     </li>
                     <li><strong>Active</strong> – Enable/disable the job</li>
                   </ul>
@@ -513,6 +525,34 @@
                 <div class="slds-form-element__control">
                   <div class="setup-detail-content">
                     {configAdditionalFields}
+                  </div>
+                </div>
+              </div>
+              <div class="slds-form-element slds-m-top_medium">
+                <label class="slds-form-element__label slds-text-title_bold">
+                  Availability Source Id
+                </label>
+                <div class="slds-form-element__control">
+                  <div class="setup-detail-content">
+                    {configAvailabilitySourceId}
+                  </div>
+                </div>
+              </div>
+              <div class="slds-form-element slds-m-top_medium">
+                <label class="slds-form-element__label slds-text-title_bold">
+                  Web Store Id
+                </label>
+                <div class="slds-form-element__control">
+                  <div class="setup-detail-content">{configWebStoreId}</div>
+                </div>
+              </div>
+              <div class="slds-form-element slds-m-top_medium">
+                <label class="slds-form-element__label slds-text-title_bold">
+                  Buyer Group Availability
+                </label>
+                <div class="slds-form-element__control">
+                  <div class="setup-detail-content">
+                    {configBuyerGroupAvailabilityEnabled}
                   </div>
                 </div>
               </div>

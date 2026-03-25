@@ -95,12 +95,15 @@ public with sharing class CoveoCommerceSetupController {
         MasterLabel,
         CoveoOrgId__c,
         SourceId__c,
+        AvailabilitySourceId__c,
+        WebStoreId__c,
         Locale__c,
         IsActive__c,
         ProductFilter__c,
         AdditionalProductFields__c,
         BuilderType__c,
-        CatalogId__c
+        CatalogId__c,
+        EnableBuyerGroupAvailability__c
       FROM CatalogJobConfig__mdt
       ORDER BY MasterLabel
     ]) {
@@ -110,10 +113,16 @@ public with sharing class CoveoCommerceSetupController {
       configMap.put('label', cfg.MasterLabel);
       configMap.put('coveoOrgId', cfg.CoveoOrgId__c);
       configMap.put('sourceId', cfg.SourceId__c);
+      configMap.put('availabilitySourceId', cfg.AvailabilitySourceId__c);
+      configMap.put('webStoreId', cfg.WebStoreId__c);
       configMap.put('locale', cfg.Locale__c);
       configMap.put('isActive', cfg.IsActive__c);
       configMap.put('productFilter', cfg.ProductFilter__c);
       configMap.put('additionalProductFields', cfg.AdditionalProductFields__c);
+      configMap.put(
+        'buyerGroupAvailabilityEnabled',
+        cfg.EnableBuyerGroupAvailability__c
+      );
       configMap.put(
         'builderType',
         String.isNotBlank(cfg.BuilderType__c)

@@ -7,7 +7,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 > **A Salesforce SFDX starter kit for exporting enriched commerce catalog data to Coveo using the Stream API.**
-> Supports multiple catalogs, dynamic product filters, dynamic Product2 fields, B2B Commerce category hierarchies, and a sleek Salesforce LWC admin console.
+> Supports multiple catalogs, dynamic product filters, dynamic Product2 fields, B2B Commerce category hierarchies, optional Buyer Group availability exports, and a sleek Salesforce LWC admin console.
 
 ---
 
@@ -17,30 +17,30 @@ This project provides an **unlocked Salesforce package** for direct installation
 
 It includes:
 
-* A flexible **Catalog Export Batch** implementation
-* Support for **multiple Coveo catalog sources** (one per locale or market)
-* Dynamic **Product2 filtering** (SOQL WHERE clause per catalog)
-* Dynamic **field enrichment** via Product2 fields configured in CMDT
-* Correct **Commerce payload format** (flat items, objecttype, ec_* fields)
-* **Category hierarchy resolution** using B2B Commerce’s ProductCategory model
-* Full **delete-older-than** cleanup via Stream API
-* A modern **LWC Admin Console** for triggering jobs
-* SafeFieldUtil for fault-tolerant dynamic field access
-* Scratch-org scripts + seeded sample data
+- A flexible **Catalog Export Batch** implementation
+- Support for **multiple Coveo catalog sources** (one per locale or market)
+- Dynamic **Product2 filtering** (SOQL WHERE clause per catalog)
+- Dynamic **field enrichment** via Product2 fields configured in CMDT
+- Correct **Commerce payload format** (flat items, objecttype, ec\_\* fields)
+- **Category hierarchy resolution** using B2B Commerce’s ProductCategory model
+- Optional **Buyer Group availability exports** to a paired Coveo Availability source
+- Full **delete-older-than** cleanup via Stream API
+- A modern **LWC Admin Console** for triggering jobs
+- SafeFieldUtil for fault-tolerant dynamic field access
+- Scratch-org scripts + seeded sample data
 
 ---
-
 
 ## ⚠️ Prerequisites: Salesforce B2B Commerce Dependency
 
 This package **requires Salesforce B2B Commerce** to be enabled in the target org (Scratch Org, Sandbox, or Production).
 The package references standard Commerce objects such as:
 
-* `ProductCategory`
-* `ProductCategoryProduct`
-* `ProductCatalog`
-* `Product2` (standard, used for products)
-* `Pricebook2` / `PricebookEntry` (standard pricing structure)
+- `ProductCategory`
+- `ProductCategoryProduct`
+- `ProductCatalog`
+- `Product2` (standard, used for products)
+- `Pricebook2` / `PricebookEntry` (standard pricing structure)
 
 Because these objects are part of **Salesforce B2B Commerce**, the following must be true:
 
@@ -50,22 +50,11 @@ Because these objects are part of **Salesforce B2B Commerce**, the following mus
 
 To verify, check in **Setup → Object Manager** that the following objects exist:
 
-* **ProductCategory**
-* **ProductCategoryProduct**
-* **ProductCatalog**
+- **ProductCategory**
+- **ProductCategoryProduct**
+- **ProductCatalog**
 
 If these objects are missing, the org is **not Commerce-enabled**.
-
-
-
-
-
-
-
-
-
-
-
 
 ## 📥 Installation
 
@@ -80,10 +69,10 @@ This library is distributed as an [Unlocked Package](https://developer.salesforc
 
 #### Install via Package Links
 
-* **Production / Developer Org:**
+- **Production / Developer Org:**
   [https://login.salesforce.com/packaging/installPackage.apexp?p0=04tak000000PVJxAAO](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tak000000PVJxAAO)
 
-* **Sandbox:**
+- **Sandbox:**
   [https://test.salesforce.com/packaging/installPackage.apexp?p0=04tak000000PVJxAAO](https://test.salesforce.com/packaging/installPackage.apexp?p0=04tak000000PVJxAAO)
 
 #### Install Using Salesforce CLI
@@ -107,12 +96,14 @@ sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
 ### Option 2: Deploy via Metadata Package
 
 1. **Download the latest release:**
+
    ```bash
    curl -L -o coveo-etl.zip "https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl/releases/download/v1.1.18/salesforce-coveo-commerce-etl-v1.1.18.zip"
    unzip coveo-etl.zip -d coveo-etl
    ```
 
 2. **Deploy to your Salesforce org:**
+
    ```bash
    sf project deploy start --metadata-dir coveo-etl --target-org <your-org-alias>
    ```
@@ -125,12 +116,14 @@ sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
 ### Option 3: Deploy from Source
 
 1. **Clone this repository:**
+
    ```bash
    git clone https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl.git
    cd salesforce-coveo-commerce-etl
    ```
 
 2. **Deploy to your org:**
+
    ```bash
    sf project deploy start --target-org <your-org-alias>
    ```
@@ -171,14 +164,16 @@ For detailed configuration instructions, see the [Configuration](#%EF%B8%8F-conf
 
 Use Custom Metadata (`CatalogJobConfig__mdt`) to define multiple catalogs:
 
-* Coveo Org ID
-* Source ID
-* Locale
-* **Catalog ID** (`CatalogId__c`) - Filters products to a specific ProductCatalog
-* Product filters (`ProductFilter__c`) - Additional SOQL WHERE clause filters
-* Additional Product2 fields (`AdditionalProductFields__c`)
-* Builder Type (`BuilderType__c`) - Determines how product grouping/variants are handled
-* (Optional) catalog root category
+- Coveo Org ID
+- Source ID
+- Locale
+- **Catalog ID** (`CatalogId__c`) - Filters products to a specific ProductCatalog
+- Product filters (`ProductFilter__c`) - Additional SOQL WHERE clause filters
+- Additional Product2 fields (`AdditionalProductFields__c`)
+- Builder Type (`BuilderType__c`) - Determines how product grouping/variants are handled
+- (Optional) paired Availability source (`AvailabilitySourceId__c`) for Buyer Group visibility
+- (Optional) Web Store ID (`WebStoreId__c`) used to resolve Buyer Groups
+- (Optional) `EnableBuyerGroupAvailability__c` flag to turn on the availability export
 
 ### 🔎 Per-Catalog Product Filtering
 
@@ -235,19 +230,19 @@ Each item sent to Coveo looks like:
 
 `SafeFieldUtil` prevents Apex errors:
 
-* Missing fields → safe `null`
-* Unqueried fields → safe `null`
-* Dynamic enrichment support
-* Org-agnostic and customer-safe
+- Missing fields → safe `null`
+- Unqueried fields → safe `null`
+- Dynamic enrichment support
+- Org-agnostic and customer-safe
 
 ### 🌳 Full Category Hierarchy
 
 We resolve B2B Commerce category chains:
 
-* `ProductCategoryProduct`
-* `ProductCategory`
-* Parent categories up to root
-* Producing arrays like:
+- `ProductCategoryProduct`
+- `ProductCategory`
+- Parent categories up to root
+- Producing arrays like:
 
 ```json
 [
@@ -262,21 +257,33 @@ We resolve B2B Commerce category chains:
 
 Supports:
 
-* `addOrUpdate` — full updates
-* `addOrMerge` — incremental updates
-* `stream/deleteolderthan` — full replacement cleanup
-* File container upload (S3 PUT)
-* OrderingId extraction
+- `addOrUpdate` — full updates
+- `addOrMerge` — incremental updates
+- `stream/deleteolderthan` — full replacement cleanup
+- File container upload (S3 PUT)
+- OrderingId extraction
+
+### 👥 Buyer Group Availability Export
+
+When `EnableBuyerGroupAvailability__c` is turned on, the package can export a second Stream payload to a paired Availability source. Each Salesforce Buyer Group becomes one `Availability` item, and its `ec_available_items` list contains the entitled product identifiers for the configured `WebStoreId__c`.
+
+Buyer Groups with no entitled products are still exported with an empty `ec_available_items` array so a full refresh can safely clear stale availability state from Coveo.
+
+This supports the hybrid Coveo pattern where:
+
+- the main catalog source stores products and variants
+- the paired availability source stores Buyer Group visibility
+- search tokens filter on `@ec_availability_id`
 
 ### 🧰 LWC Admin Console
 
 A modern Experience-enabled admin UI that:
 
-* Lists catalog configurations
-* Shows stats (# active, # inactive)
-* Provides “Run All Active” and “Run” per job
-* Displays dynamic fields & filters
-* Styled with SLDS + custom enhancements
+- Lists catalog configurations
+- Shows stats (# active, # inactive)
+- Provides “Run Product”, “Run Availability”, and “Run Both” per job
+- Displays dynamic fields, availability settings, and filters
+- Styled with SLDS + custom enhancements
 
 ---
 
@@ -337,8 +344,8 @@ After installing the package, use the **Coveo Commerce ETL Setup** page to confi
 
 Navigate to one of the following URLs in your Salesforce org:
 
-* **Tab URL:** `/lightning/n/Coveo_ETL_Setup`
-* **App Page URL:** `/lightning/page/setup/Coveo_Commerce_ETL_Setup`
+- **Tab URL:** `/lightning/n/Coveo_ETL_Setup`
+- **App Page URL:** `/lightning/page/setup/Coveo_Commerce_ETL_Setup`
 
 Or search for "Coveo ETL Setup" in the App Launcher.
 
@@ -381,15 +388,18 @@ Go to:
 
 For each catalog, create something like:
 
-| Field                      | Example                      |
-| -------------------------- | ---------------------------- |
-| Developer Name             | `EN_US_Catalog`              |
-| CoveoOrgId__c              | `mycoveoorg123`              |
-| SourceId__c                | `mycoveoorg123-en-us-source` |
-| Locale__c                  | `en-US`                      |
-| IsActive__c                | ✔                           |
-| ProductFilter__c           | `Family = 'Generators'`      |
-| AdditionalProductFields__c | `Brand__c, Color__c`         |
+| Field                             | Example                      |
+| --------------------------------- | ---------------------------- |
+| Developer Name                    | `EN_US_Catalog`              |
+| CoveoOrgId\_\_c                   | `mycoveoorg123`              |
+| SourceId\_\_c                     | `mycoveoorg123-en-us-source` |
+| AvailabilitySourceId\_\_c         | `mycoveoorg123-en-us-avail`  |
+| WebStoreId\_\_c                   | `0ZE5g000000AbCDEAZ`         |
+| Locale\_\_c                       | `en-US`                      |
+| IsActive\_\_c                     | ✔                           |
+| EnableBuyerGroupAvailability\_\_c | ✔                           |
+| ProductFilter\_\_c                | `Family = 'Generators'`      |
+| AdditionalProductFields\_\_c      | `Brand__c, Color__c`         |
 
 ---
 
@@ -403,15 +413,27 @@ Database.executeBatch(new ProductCatalogExportBatch('EN_US_Catalog'), 50);
 
 > **Note**: The batch size defaults to 50 but can be configured via the `BatchSize__c` field in the `CatalogJobConfig__mdt` metadata record. Use lower values (25-50) for large `AdditionalProductFields__c` payloads to avoid Apex heap size limits.
 
+## Run one availability export
+
+```apex
+Database.executeBatch(new BuyerGroupAvailabilityExportBatch('EN_US_Catalog'), 50);
+```
+
 ## Run all active catalogs
 
 ```apex
 CatalogJobRunner.runAllActive();
 ```
 
+## Run all active availability exports
+
+```apex
+CatalogJobRunner.runAllActiveAvailability();
+```
+
 ## From LWC Console
 
-Open the “Catalog Job Console” app page → click **Run** or **Run All Active**.
+Open the “Catalog Job Console” app page → click **Run Product**, **Run Availability**, **Run Both**, or the corresponding run-all button.
 
 ---
 
@@ -439,6 +461,31 @@ Each export produces a **Stream API** payload:
   ]
 }
 ```
+
+### Availability Payload
+
+When Buyer Group availability is enabled, the paired Availability source receives payloads like:
+
+```json
+{
+  "addOrUpdate": [
+    {
+      "objecttype": "Availability",
+      "documentId": "availability://0YDb00000000001AAA",
+      "ec_availability_id": "0YDb00000000001AAA",
+      "ec_available_items": ["SKU123", "SKU456"],
+      "sf_webstore_id": "0ZE5g000000AbCDEAZ",
+      "sf_buyergroup_name": "Contract Buyers"
+    }
+  ]
+}
+```
+
+Use this with a paired catalog configuration where:
+
+- the product source remains the main catalog source
+- the availability source is configured with `ec_availability_id` as the Availability ID field
+- search tokens include `@ec_availability_id=="<buyer-group-id>"` or an OR list for multi-group users
 
 ---
 
@@ -471,10 +518,10 @@ String color   = SafeFieldUtil.safeGetString(p, 'Color__c');
 
 Includes:
 
-* Mocked callouts for file container / S3 / stream update
-* Tests for SafeFieldUtil
-* Batch test with fake Product2 + PricebookEntry
-* Category hierarchy test
+- Mocked callouts for file container / S3 / stream update
+- Tests for SafeFieldUtil
+- Batch test with fake Product2 + PricebookEntry
+- Category hierarchy test
 
 ---
 
@@ -484,12 +531,12 @@ Located in `/force-app/main/default/lwc/catalogJobConsole`.
 
 Features:
 
-* Modern SLDS layout
-* Stats bar (total jobs, active jobs, inactive jobs)
-* Run All Active
-* Row-level Run
-* Display of filters, extra fields, locale, source Id
-* Error panel + loading state
+- Modern SLDS layout
+- Stats bar (total jobs, active jobs, inactive jobs)
+- Run All Products / Availability / Both
+- Row-level Run Product / Run Availability / Run Both
+- Display of filters, extra fields, locale, product source id, availability source id, and web store id
+- Error panel + loading state
 
 ---
 
@@ -501,21 +548,23 @@ This ETL supports multiple catalog organization strategies through dedicated bui
 
 ### Available Builder Types
 
-| Builder Type | Class Name | Use Case |
-|-------------|-----------|----------|
-| `Default` | `CatalogJsonBuilderDefault` | Simple products without grouping/variant logic |
-| `Commerce` | `CatalogJsonBuilderCommerce` | Standard commerce with B2B category hierarchy (default) |
-| `Grouping` | `CatalogJsonBuilderGrouping` | Product families with parent-child grouping relationships |
-| `Variant` | `CatalogJsonBuilderVariant` | Product variants (size, color, material, etc.) |
-| `GroupingWithVariants` | `CatalogJsonBuilderGroupingWithVariants` | Combined grouping and variant support |
+| Builder Type           | Class Name                               | Use Case                                                  |
+| ---------------------- | ---------------------------------------- | --------------------------------------------------------- |
+| `Default`              | `CatalogJsonBuilderDefault`              | Simple products without grouping/variant logic            |
+| `Commerce`             | `CatalogJsonBuilderCommerce`             | Standard commerce with B2B category hierarchy (default)   |
+| `Grouping`             | `CatalogJsonBuilderGrouping`             | Product families with parent-child grouping relationships |
+| `Variant`              | `CatalogJsonBuilderVariant`              | Product variants (size, color, material, etc.)            |
+| `GroupingWithVariants` | `CatalogJsonBuilderGroupingWithVariants` | Combined grouping and variant support                     |
 
 ### Product Grouping Use Case
 
 Use `CatalogJsonBuilderGrouping` when your catalog has product families where:
+
 - Parent products represent product families/groups
 - Child products reference parents via `Parent_Product__c` lookup field
 
 **Example Payload:**
+
 ```json
 {
   "objecttype": "Product",
@@ -529,11 +578,13 @@ Use `CatalogJsonBuilderGrouping` when your catalog has product families where:
 ### Product Variant Use Case
 
 Use `CatalogJsonBuilderVariant` when products have SKU-level variants:
+
 - Variant products have `Type = 'Variation'`
 - Variants reference parent via `Parent_Product__c`
 - Variant attributes (color, size) stored on variant records
 
 **Example Payload:**
+
 ```json
 {
   "objecttype": "Product",
@@ -557,6 +608,7 @@ Product Group (Family)
 ```
 
 **Example Payload:**
+
 ```json
 {
   "objecttype": "Product",
@@ -573,14 +625,14 @@ Product Group (Family)
 
 Set the `BuilderType__c` field in your `CatalogJobConfig__mdt` records:
 
-| Field | Value |
-|-------|-------|
+| Field            | Value      |
+| ---------------- | ---------- |
 | `BuilderType__c` | `Grouping` |
 
 Or use the full class name:
 
-| Field | Value |
-|-------|-------|
+| Field            | Value                        |
+| ---------------- | ---------------------------- |
 | `BuilderType__c` | `CatalogJsonBuilderGrouping` |
 
 ### Creating Custom Builders
@@ -616,10 +668,10 @@ public class MyCustomBuilder implements ICatalogJsonBuilder {
 
 You can further extend this starter kit by adding:
 
-* Per-locale pricebooks
-* Field mapping UI (CMDT → ec_* target mapping)
-* Apex Scheduler for nightly runs
-* Custom variant attribute mappings
+- Per-locale pricebooks
+- Field mapping UI (CMDT → ec\_\* target mapping)
+- Apex Scheduler for nightly runs
+- Custom variant attribute mappings
 
 ---
 
@@ -627,7 +679,7 @@ You can further extend this starter kit by adding:
 
 This project gives you everything needed to build a **robust, flexible, enterprise-ready** Salesforce → Coveo Commerce ETL pipeline, fully aligned with:
 
-* Coveo Stream API best practices
-* Proper commerce catalog payloads
-* Salesforce multi-catalog patterns
-* Clean LWC UX for administrators
+- Coveo Stream API best practices
+- Proper commerce catalog payloads
+- Salesforce multi-catalog patterns
+- Clean LWC UX for administrators

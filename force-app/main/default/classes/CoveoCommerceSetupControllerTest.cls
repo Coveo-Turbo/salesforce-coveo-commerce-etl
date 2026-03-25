@@ -175,6 +175,14 @@ private class CoveoCommerceSetupControllerTest {
         'Config should have sourceId key'
       );
       System.assert(
+        config.containsKey('availabilitySourceId'),
+        'Config should have availabilitySourceId key'
+      );
+      System.assert(
+        config.containsKey('webStoreId'),
+        'Config should have webStoreId key'
+      );
+      System.assert(
         config.containsKey('locale'),
         'Config should have locale key'
       );
@@ -189,6 +197,10 @@ private class CoveoCommerceSetupControllerTest {
       System.assert(
         config.containsKey('additionalProductFields'),
         'Config should have additionalProductFields key'
+      );
+      System.assert(
+        config.containsKey('buyerGroupAvailabilityEnabled'),
+        'Config should have buyerGroupAvailabilityEnabled key'
       );
     }
   }

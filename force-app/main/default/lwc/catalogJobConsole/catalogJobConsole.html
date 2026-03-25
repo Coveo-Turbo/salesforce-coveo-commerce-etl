@@ -10,9 +10,23 @@
         </div>
         <div class="slds-col slds-size_1-of-2 slds-text-align_right">
           <lightning-button
-            label="Run All Active"
+            label="Run All Products"
             variant="brand"
             onclick={handleRunAll}
+            class="slds-m-left_x-small"
+          >
+          </lightning-button>
+          <lightning-button
+            label="Run All Availability"
+            variant="neutral"
+            onclick={handleRunAllAvailability}
+            class="slds-m-left_x-small"
+          >
+          </lightning-button>
+          <lightning-button
+            label="Run All Both"
+            variant="brand-outline"
+            onclick={handleRunAllBoth}
             class="slds-m-left_x-small"
           >
           </lightning-button>
@@ -117,6 +131,30 @@
                 </label>
                 <div class="slds-form-element__control">
                   <div class="cc-detail-content">{additionalFields}</div>
+                </div>
+              </div>
+              <div class="slds-form-element slds-m-top_medium">
+                <label class="slds-form-element__label slds-text-title_bold">
+                  Availability Source Id
+                </label>
+                <div class="slds-form-element__control">
+                  <div class="cc-detail-content">{availabilitySourceId}</div>
+                </div>
+              </div>
+              <div class="slds-form-element slds-m-top_medium">
+                <label class="slds-form-element__label slds-text-title_bold">
+                  Web Store Id
+                </label>
+                <div class="slds-form-element__control">
+                  <div class="cc-detail-content">{webStoreId}</div>
+                </div>
+              </div>
+              <div class="slds-form-element slds-m-top_medium">
+                <label class="slds-form-element__label slds-text-title_bold">
+                  Buyer Group Availability
+                </label>
+                <div class="slds-form-element__control">
+                  <div class="cc-detail-content">{availabilityEnabled}</div>
                 </div>
               </div>
             </div>
