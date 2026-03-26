@@ -331,10 +331,22 @@ salesforce-coveo-commerce-etl/
 ## Create scratch org, push source, import sample data
 
 ```
-bash scripts/orgInit.sh
+npm run setup:org
 ```
 
-## Optional: seed Buyer Group availability demo data
+## Create a B2B scratch org with Buyer Group entitlement demo data
+
+```bash
+npm run setup:org:b2b
+```
+
+Pass a custom alias if needed:
+
+```bash
+npm run setup:org:b2b -- my-alias
+```
+
+## Optional: seed Buyer Group availability demo data manually
 
 After the sample catalog data is loaded, seed a minimal B2B Commerce entitlement model:
 

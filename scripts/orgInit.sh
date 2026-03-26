@@ -35,6 +35,11 @@ bash scripts/reset-commerce-data.sh "$alias" || true
 
 echo "➡️  Optional: seed Buyer Group availability demo data"
 echo "    bash scripts/seed-buyer-group-availability.sh \"$alias\""
+echo "    or npm run setup:org:b2b -- \"$alias\""
 
-echo "➡️  Opening org"
-sf org open --target-org "$alias"
+if [[ "${SKIP_OPEN:-false}" == "true" ]]; then
+  echo "➡️  Skipping org open"
+else
+  echo "➡️  Opening org"
+  sf org open --target-org "$alias"
+fi

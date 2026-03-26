@@ -151,7 +151,13 @@ Database.executeBatch(new ProductCatalogExportBatch('YourConfigName'), 50);
 
 ## Buyer Group Availability Scratch-Org Recipe
 
-To test the Buyer Group availability export in a scratch org, first load the normal commerce sample data and then run:
+For the fastest setup, create a B2B-ready scratch org and seed the entitlement demo data in one step:
+
+```bash
+npm run setup:org:b2b
+```
+
+If you already have a scratch org with the normal commerce sample data loaded, run the seed step separately:
 
 ```bash
 bash scripts/seed-buyer-group-availability.sh <alias>

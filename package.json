@@ -16,6 +16,7 @@
   "main": "index.js",
   "scripts": {
     "setup:org": "scripts/orgInit.sh",
+    "setup:org:b2b": "bash scripts/orgInitB2B.sh",
     "reset:data": "scripts/reset-commerce-data.sh",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
