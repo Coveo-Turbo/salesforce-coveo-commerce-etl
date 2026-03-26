@@ -174,8 +174,8 @@ The seed script creates a minimal entitlement model on top of the existing demo 
 
 Expected demo visibility after seeding:
 
-- `Demo Buyer Group - All Products` can view two products
-- `Demo Buyer Group - Limited Products` can view one product
+- `Demo Buyer Group - All Products` can view every SKU in `Demo Catalog - Simple Products`
+- `Demo Buyer Group - Limited Products` can view the first three simple-catalog SKUs
 - `Demo Buyer Group - Empty` exports an empty `ec_available_items` array
 
 After the seed runs, copy the printed `WebStoreId` into your `CatalogJobConfig__mdt` record, set `EnableBuyerGroupAvailability__c = true`, and provide an `AvailabilitySourceId__c` before running `BuyerGroupAvailabilityExportBatch`.

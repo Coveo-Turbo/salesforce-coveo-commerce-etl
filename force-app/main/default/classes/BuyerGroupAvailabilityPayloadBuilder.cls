@@ -26,6 +26,7 @@ public with sharing class BuyerGroupAvailabilityPayloadBuilder {
       item.put('sf_webstore_id', webStoreId);
 
       if (String.isNotBlank(buyerGroupName)) {
+        item.put('ec_name', buyerGroupName);
         item.put('sf_buyergroup_name', buyerGroupName);
       }
 

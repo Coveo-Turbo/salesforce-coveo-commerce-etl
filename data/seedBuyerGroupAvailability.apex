@@ -17,31 +17,72 @@ String emptyGroupName = 'Demo Buyer Group - Empty';
 String allPolicyName = 'Demo Entitlement Policy - All Products';
 String limitedPolicyName = 'Demo Entitlement Policy - Limited Products';
 String emptyPolicyName = 'Demo Entitlement Policy - Empty';
+String simpleCatalogName = 'Demo Catalog - Simple Products';
+Integer limitedProductCount = 3;
+
+List<ProductCatalog> catalogs = [
+  SELECT Id, Name
+  FROM ProductCatalog
+  WHERE Name = :simpleCatalogName
+  LIMIT 1
+];
+
+System.assert(
+  !catalogs.isEmpty(),
+  'The demo ProductCatalog "' +
+    simpleCatalogName +
+    '" was not found. Run bash scripts/orgInit.sh <alias> or bash scripts/reset-commerce-data.sh <alias> first.'
+);
+
+ProductCatalog simpleCatalog = catalogs[0];
+
+List<ProductCategory> simpleCatalogCategories = [
+  SELECT Id
+  FROM ProductCategory
+  WHERE CatalogId = :simpleCatalog.Id
+];
+
+System.assert(
+  !simpleCatalogCategories.isEmpty(),
+  'No ProductCategory records were found for the demo ProductCatalog "' +
+    simpleCatalogName +
+    '".'
+);
+
+Set<Id> simpleCatalogCategoryIds = new Map<Id, ProductCategory>(
+  simpleCatalogCategories
+)
+  .keySet();
+Set<Id> simpleCatalogProductIds = new Set<Id>();
+
+for (
+  ProductCategoryProduct categoryProductLink : [
+    SELECT ProductId
+    FROM ProductCategoryProduct
+    WHERE ProductCategoryId IN :simpleCatalogCategoryIds
+  ]
+) {
+  simpleCatalogProductIds.add(categoryProductLink.ProductId);
+}
 
 List<Product2> demoProducts = [
   SELECT Id, Name, ProductCode
   FROM Product2
-  WHERE ProductCode IN ('SKU-DRL-001', 'SKU-DRL-002', 'SKU-SAW-001')
+  WHERE Id IN :simpleCatalogProductIds AND IsActive = TRUE
   ORDER BY ProductCode
 ];
 
-if (demoProducts.size() < 2) {
-  demoProducts = [
-    SELECT Id, Name, ProductCode
-    FROM Product2
-    WHERE IsActive = TRUE AND ProductCode LIKE 'SKU-%'
-    ORDER BY ProductCode
-    LIMIT 3
-  ];
-}
-
 System.assert(
-  demoProducts.size() >= 2,
-  'At least two active demo products are required. Run bash scripts/orgInit.sh <alias> or bash scripts/reset-commerce-data.sh <alias> first.'
+  !demoProducts.isEmpty(),
+  'No active demo products were found for the ProductCatalog "' +
+    simpleCatalogName +
+    '".'
 );
 
-Product2 primaryProduct = demoProducts[0];
-Product2 secondaryProduct = demoProducts[1];
+List<Product2> limitedProducts = new List<Product2>();
+for (Integer i = 0; i < Math.min(limitedProductCount, demoProducts.size()); i++) {
+  limitedProducts.add(demoProducts[i]);
+}
 
 WebStore ensureWebStore(String name) {
   List<WebStore> stores = [
@@ -163,18 +204,41 @@ void ensurePolicyBuyerGroup(Id policyId, Id buyerGroupId) {
   }
 }
 
-void ensurePolicyProduct(Id policyId, Id productId) {
-  List<SObject> links = Database.query(
-    'SELECT Id FROM CommerceEntitlementProduct WHERE PolicyId = :policyId AND ProductId = :productId LIMIT 1'
+void syncPolicyProducts(Id policyId, Set<Id> desiredProductIds) {
+  List<SObject> existingLinks = Database.query(
+    'SELECT Id, ProductId FROM CommerceEntitlementProduct WHERE PolicyId = :policyId'
   );
+  Map<Id, SObject> existingLinksByProductId = new Map<Id, SObject>();
 
-  if (links.isEmpty()) {
-    SObject link = Schema.getGlobalDescribe()
-      .get('CommerceEntitlementProduct')
-      .newSObject();
-    link.put('PolicyId', policyId);
-    link.put('ProductId', productId);
-    insert link;
+  for (SObject existingLink : existingLinks) {
+    existingLinksByProductId.put((Id) existingLink.get('ProductId'), existingLink);
+  }
+
+  List<SObject> linksToInsert = new List<SObject>();
+  for (Id desiredProductId : desiredProductIds) {
+    if (!existingLinksByProductId.containsKey(desiredProductId)) {
+      SObject link = Schema.getGlobalDescribe()
+        .get('CommerceEntitlementProduct')
+        .newSObject();
+      link.put('PolicyId', policyId);
+      link.put('ProductId', desiredProductId);
+      linksToInsert.add(link);
+    }
+  }
+
+  List<SObject> linksToDelete = new List<SObject>();
+  for (Id existingProductId : existingLinksByProductId.keySet()) {
+    if (!desiredProductIds.contains(existingProductId)) {
+      linksToDelete.add(existingLinksByProductId.get(existingProductId));
+    }
+  }
+
+  if (!linksToInsert.isEmpty()) {
+    insert linksToInsert;
+  }
+
+  if (!linksToDelete.isEmpty()) {
+    delete linksToDelete;
   }
 }
 
@@ -201,26 +265,38 @@ ensurePolicyBuyerGroup(
   (Id) emptyBuyerGroup.get('Id')
 );
 
-ensurePolicyProduct((Id) allPolicy.get('Id'), primaryProduct.Id);
-ensurePolicyProduct((Id) allPolicy.get('Id'), secondaryProduct.Id);
-ensurePolicyProduct((Id) limitedPolicy.get('Id'), primaryProduct.Id);
+Set<Id> allProductIds = new Map<Id, Product2>(demoProducts).keySet();
+Set<Id> limitedProductIds = new Map<Id, Product2>(limitedProducts).keySet();
+
+syncPolicyProducts((Id) allPolicy.get('Id'), allProductIds);
+syncPolicyProducts((Id) limitedPolicy.get('Id'), limitedProductIds);
+syncPolicyProducts((Id) emptyPolicy.get('Id'), new Set<Id>());
+
+List<String> allProductCodes = new List<String>();
+for (Product2 product : demoProducts) {
+  allProductCodes.add(product.ProductCode);
+}
+
+List<String> limitedProductCodes = new List<String>();
+for (Product2 product : limitedProducts) {
+  limitedProductCodes.add(product.ProductCode);
+}
 
 Map<String, Object> summary = new Map<String, Object>{
+  'catalogName' => simpleCatalog.Name,
+  'catalogId' => simpleCatalog.Id,
   'webStoreName' => webStore.Name,
   'webStoreId' => webStore.Id,
   'buyerGroups' => new List<Object>{
     new Map<String, Object>{
       'name' => (String) allBuyerGroup.get('Name'),
       'id' => (Id) allBuyerGroup.get('Id'),
-      'productCodes' => new List<String>{
-        primaryProduct.ProductCode,
-        secondaryProduct.ProductCode
-      }
+      'productCodes' => allProductCodes
     },
     new Map<String, Object>{
       'name' => (String) limitedBuyerGroup.get('Name'),
       'id' => (Id) limitedBuyerGroup.get('Id'),
-      'productCodes' => new List<String>{ primaryProduct.ProductCode }
+      'productCodes' => limitedProductCodes
     },
     new Map<String, Object>{
       'name' => (String) emptyBuyerGroup.get('Name'),

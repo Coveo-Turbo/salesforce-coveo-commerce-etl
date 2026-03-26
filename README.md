@@ -361,7 +361,8 @@ This creates:
 - three `CommerceEntitlementPolicy` records
 - store-to-buyer-group links
 - buyer-group-to-policy links
-- entitlement links for two existing demo products
+- entitlement links for every SKU in `Demo Catalog - Simple Products`
+- a limited subset of the first three simple-catalog SKUs for the limited group
 
 The script prints the created `WebStoreId` and Buyer Group ids. Use that `WebStoreId` in `CatalogJobConfig__mdt.WebStoreId__c`, set `EnableBuyerGroupAvailability__c = true`, and add your Coveo `AvailabilitySourceId__c`.
 
@@ -504,6 +505,7 @@ When Buyer Group availability is enabled, the paired Availability source receive
       "objecttype": "Availability",
       "documentId": "availability://0YDb00000000001AAA",
       "ec_availability_id": "0YDb00000000001AAA",
+      "ec_name": "Contract Buyers",
       "ec_available_items": ["SKU123", "SKU456"],
       "sf_webstore_id": "0ZE5g000000AbCDEAZ",
       "sf_buyergroup_name": "Contract Buyers"

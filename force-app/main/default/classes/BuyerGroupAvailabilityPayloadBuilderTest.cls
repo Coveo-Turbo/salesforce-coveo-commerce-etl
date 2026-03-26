@@ -35,6 +35,7 @@ private class BuyerGroupAvailabilityPayloadBuilderTest {
       item.get('ec_availability_id')
     );
     System.assertEquals('0ZE000000000001AAA', item.get('sf_webstore_id'));
+    System.assertEquals('Contract Buyers', item.get('ec_name'));
     System.assertEquals('Contract Buyers', item.get('sf_buyergroup_name'));
 
     List<Object> availableItems = (List<Object>) item.get('ec_available_items');
@@ -73,6 +74,7 @@ private class BuyerGroupAvailabilityPayloadBuilderTest {
       'availability://' + String.valueOf(buyerGroupId),
       item.get('documentId')
     );
+    System.assertEquals('No Products', item.get('ec_name'));
     List<Object> availableItems = (List<Object>) item.get('ec_available_items');
     System.assertEquals(
       0,
