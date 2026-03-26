@@ -5,6 +5,7 @@ This directory contains test data for different Coveo Commerce catalog organizat
 ## Data Files Overview
 
 ### Base Data (Used by All Plans)
+
 - **ProductCatalog.json** - Main demo catalog
 - **ProductCatalog-UseCases.json** - Additional catalogs for each use case (Default, Grouping, Variant, Combined)
 - **ProductCategory.json**, **ProductCategory2-4.json** - Category hierarchy for main catalog
@@ -17,11 +18,13 @@ This directory contains test data for different Coveo Commerce catalog organizat
 ### Use Case-Specific Product Data
 
 #### 1. Product Grouping Use Case
+
 **File:** `Product2-Grouping.json`
 **Plan:** `commerce-plan-grouping.json`
 **Builder:** `CatalogJsonBuilderGrouping`
 
 Demonstrates product families where parent products group related child products:
+
 - **GROUP-PWR-001**: Professional Power Tools Collection
   - SKU-GRP-DRL-001: Heavy-Duty Drill (child)
   - SKU-GRP-IMP-001: Impact Driver (child)
@@ -31,15 +34,18 @@ Demonstrates product families where parent products group related child products
   - SKU-GRP-PLR-001: Pliers Set (child)
 
 **Key Fields:**
+
 - `Parent_Product__c`: Links child products to parent group
 - Results in `ec_item_group_id` in Coveo payload
 
 #### 2. Product Variant Use Case
+
 **File:** `Product2-Variant.json`
 **Plan:** `commerce-plan-variant.json`
 **Builder:** `CatalogJsonBuilderVariant`
 
 Demonstrates product variants with different attributes (size, color, material):
+
 - **BASE-SHIRT-001**: Coveo Pro Work Shirt (base product)
   - SKU-SHIRT-BLU-S: Blue / Small
   - SKU-SHIRT-BLU-M: Blue / Medium
@@ -51,17 +57,20 @@ Demonstrates product variants with different attributes (size, color, material):
   - SKU-GLOVE-SYN-S: Synthetic / Small
 
 **Key Fields:**
+
 - `Type`: "Base" for parent products, "Variation" for variants
 - `Parent_Product__c`: Links variants to base product
 - `Variant_Color__c`, `Variant_Size__c`, `Variant_Material__c`: Variant attributes
 - Results in `ec_variant_id`, `ec_variant_color`, `ec_variant_size` in Coveo payload
 
 #### 3. Combined Grouping with Variants Use Case
+
 **File:** `Product2-GroupingWithVariants.json`
 **Plan:** `commerce-plan-grouping-with-variants.json`
 **Builder:** `CatalogJsonBuilderGroupingWithVariants`
 
 Demonstrates three-tier hierarchy: Group → Product → Variant
+
 - **FAMILY-SAFETY-001**: Professional Safety Equipment Collection (group)
   - **PROD-HELMET-001**: Safety Helmet (product in group)
     - SKU-HELM-WHT-S: White / Small (variant)
@@ -73,6 +82,7 @@ Demonstrates three-tier hierarchy: Group → Product → Variant
     - SKU-VEST-ORG-L: Orange / Large (variant)
 
 **Key Fields:**
+
 - `Product_Group__c`: Links products and variants to their family/group
 - `Parent_Product__c`: Links variants to their parent product
 - `Type`: "Base" for products, "Variation" for variants
@@ -82,34 +92,42 @@ Demonstrates three-tier hierarchy: Group → Product → Variant
 ## Import Plans
 
 ### commerce-plan.json (Default - All Use Cases)
+
 Imports ALL test data including:
+
 - All catalog records (main + use case catalogs)
 - All product data files (Product2.json + all use case product files)
 - All category associations for all catalogs
-This is the comprehensive plan loaded by `scripts/orgInit.sh` and provides all test data in one import.
+  This is the comprehensive plan loaded by `scripts/orgInit.sh` and provides all test data in one import.
 
 ### commerce-plan-grouping.json
+
 Imports grouping test data. Use for testing the Grouping builder.
 
 ### commerce-plan-variant.json
+
 Imports variant test data. Use for testing the Variant builder.
 
 ### commerce-plan-grouping-with-variants.json
+
 Imports combined test data. Use for testing the GroupingWithVariants builder.
 
 ## Usage Examples
 
 ### Import Grouping Test Data
+
 ```bash
 sf data import tree --target-org <alias> --plan data/commerce-plan-grouping.json
 ```
 
 ### Import Variant Test Data
+
 ```bash
 sf data import tree --target-org <alias> --plan data/commerce-plan-variant.json
 ```
 
 ### Import Combined Test Data
+
 ```bash
 sf data import tree --target-org <alias> --plan data/commerce-plan-grouping-with-variants.json
 ```
@@ -118,17 +136,43 @@ sf data import tree --target-org <alias> --plan data/commerce-plan-grouping-with
 
 After importing the appropriate test data, create a `CatalogJobConfig__mdt` record with the corresponding `BuilderType__c`:
 
-| Use Case | BuilderType__c Value | Test Data Plan |
-|----------|---------------------|----------------|
-| Default | `Default` | commerce-plan.json |
-| Grouping | `Grouping` | commerce-plan-grouping.json |
-| Variant | `Variant` | commerce-plan-variant.json |
+| Use Case | BuilderType\_\_c Value | Test Data Plan                            |
+| -------- | ---------------------- | ----------------------------------------- |
+| Default  | `Default`              | commerce-plan.json                        |
+| Grouping | `Grouping`             | commerce-plan-grouping.json               |
+| Variant  | `Variant`              | commerce-plan-variant.json                |
 | Combined | `GroupingWithVariants` | commerce-plan-grouping-with-variants.json |
 
 Then run the catalog export batch job:
+
 ```apex
 Database.executeBatch(new ProductCatalogExportBatch('YourConfigName'), 50);
 ```
+
+## Buyer Group Availability Scratch-Org Recipe
+
+To test the Buyer Group availability export in a scratch org, first load the normal commerce sample data and then run:
+
+```bash
+bash scripts/seed-buyer-group-availability.sh <alias>
+```
+
+The seed script creates a minimal entitlement model on top of the existing demo products:
+
+- `Demo B2B Entitlement Store`
+- `Demo Buyer Group - All Products`
+- `Demo Buyer Group - Limited Products`
+- `Demo Buyer Group - Empty`
+- matching `CommerceEntitlementPolicy` records
+- `WebStoreBuyerGroup`, `CommerceEntitlementBuyerGroup`, and `CommerceEntitlementProduct` links
+
+Expected demo visibility after seeding:
+
+- `Demo Buyer Group - All Products` can view two products
+- `Demo Buyer Group - Limited Products` can view one product
+- `Demo Buyer Group - Empty` exports an empty `ec_available_items` array
+
+After the seed runs, copy the printed `WebStoreId` into your `CatalogJobConfig__mdt` record, set `EnableBuyerGroupAvailability__c = true`, and provide an `AvailabilitySourceId__c` before running `BuyerGroupAvailabilityExportBatch`.
 
 > **Note**: The batch size defaults to 50 but can be configured via the `BatchSize__c` field in the `CatalogJobConfig__mdt` metadata record. Use lower values (25-50) for large `AdditionalProductFields__c` payloads to avoid Apex heap size limits.
 
@@ -137,6 +181,7 @@ Database.executeBatch(new ProductCatalogExportBatch('YourConfigName'), 50);
 For the variant and combined use cases, custom fields are required on Product2. These are automatically created when running `scripts/orgInit.sh` for scratch orgs.
 
 ### Auto-Created Fields (via setup-product2-fields.sh)
+
 - `Parent_Product__c` (Lookup to Product2) - Links variants/children to parent products
 - `Product_Group__c` (Lookup to Product2) - Links products to their family/group (combined use case)
 - `Type` (Text, 50 chars) - Product type: "Base" or "Variation"
@@ -146,7 +191,9 @@ For the variant and combined use cases, custom fields are required on Product2. 
 - `Variant_Style__c` (Text, 50 chars) - Variant style attribute
 
 ### Manual Setup (for non-scratch orgs)
+
 If you're not using a scratch org, run the field setup script manually:
+
 ```bash
 bash scripts/setup-product2-fields.sh <org-alias>
 ```

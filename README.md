@@ -334,6 +334,25 @@ salesforce-coveo-commerce-etl/
 bash scripts/orgInit.sh
 ```
 
+## Optional: seed Buyer Group availability demo data
+
+After the sample catalog data is loaded, seed a minimal B2B Commerce entitlement model:
+
+```bash
+bash scripts/seed-buyer-group-availability.sh <alias>
+```
+
+This creates:
+
+- one demo `WebStore`
+- three demo `BuyerGroup` records
+- three `CommerceEntitlementPolicy` records
+- store-to-buyer-group links
+- buyer-group-to-policy links
+- entitlement links for two existing demo products
+
+The script prints the created `WebStoreId` and Buyer Group ids. Use that `WebStoreId` in `CatalogJobConfig__mdt.WebStoreId__c`, set `EnableBuyerGroupAvailability__c = true`, and add your Coveo `AvailabilitySourceId__c`.
+
 ---
 
 # 🔧 Configuration Landing Page

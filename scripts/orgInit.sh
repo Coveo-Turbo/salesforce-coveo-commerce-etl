@@ -33,5 +33,8 @@ sf org assign permset \
 echo "➡️  Importing Commerce sample data"
 bash scripts/reset-commerce-data.sh "$alias" || true
 
+echo "➡️  Optional: seed Buyer Group availability demo data"
+echo "    bash scripts/seed-buyer-group-availability.sh \"$alias\""
+
 echo "➡️  Opening org"
 sf org open --target-org "$alias"

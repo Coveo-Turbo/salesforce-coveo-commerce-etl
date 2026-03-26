@@ -1,46 +1,19 @@
 @IsTest
 private class BuyerGroupAvailabilityPayloadBuilderTest {
-  private static Id makeBuyerGroupId(Integer sequence) {
-    String keyPrefix = BuyerGroup.SObjectType.getDescribe().getKeyPrefix();
-    String id15 = keyPrefix + String.valueOf(sequence).leftPad(12, '0');
-    return Id.valueOf(to18CharId(id15));
-  }
-
-  private static String to18CharId(String id15) {
-    String suffixChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ012345';
-    String suffix = '';
-
-    for (Integer blockIndex = 0; blockIndex < 3; blockIndex++) {
-      Integer flags = 0;
-
-      for (Integer charIndex = 0; charIndex < 5; charIndex++) {
-        Integer offset = (blockIndex * 5) + charIndex;
-        String ch = id15.substring(offset, offset + 1);
-        if (ch.equals(ch.toUpperCase()) && !ch.equals(ch.toLowerCase())) {
-          flags += 1 << charIndex;
-        }
-      }
-
-      suffix += suffixChars.substring(flags, flags + 1);
-    }
-
-    return id15 + suffix;
-  }
-
   @IsTest
   static void testBuildFullUpdateNdjson_buildsAvailabilityItems() {
-    Id buyerGroupId = makeBuyerGroupId(1);
-    BuyerGroup buyerGroup = new BuyerGroup(
+    Id buyerGroupId = Id.valueOf('001000000000001AAA');
+    SObject buyerGroup = new Account(
       Id = buyerGroupId,
       Name = 'Contract Buyers'
     );
 
     Map<Id, Set<String>> itemIdsByBuyerGroup = new Map<Id, Set<String>>{
-      buyerGroup.Id => new Set<String>{ 'SKU-200', 'SKU-100' }
+      buyerGroupId => new Set<String>{ 'SKU-200', 'SKU-100' }
     };
 
     String payload = BuyerGroupAvailabilityPayloadBuilder.buildFullUpdateNdjson(
-      new List<BuyerGroup>{ buyerGroup },
+      new List<SObject>{ buyerGroup },
       itemIdsByBuyerGroup,
       '0ZE000000000001AAA'
     );
@@ -76,15 +49,12 @@ private class BuyerGroupAvailabilityPayloadBuilderTest {
 
   @IsTest
   static void testBuildFullUpdateNdjson_keepsEmptyBuyerGroups() {
-    Id buyerGroupId = makeBuyerGroupId(2);
-    BuyerGroup buyerGroup = new BuyerGroup(
-      Id = buyerGroupId,
-      Name = 'No Products'
-    );
+    Id buyerGroupId = Id.valueOf('001000000000002AAA');
+    SObject buyerGroup = new Account(Id = buyerGroupId, Name = 'No Products');
 
     String payload = BuyerGroupAvailabilityPayloadBuilder.buildFullUpdateNdjson(
-      new List<BuyerGroup>{ buyerGroup },
-      new Map<Id, Set<String>>{ buyerGroup.Id => new Set<String>() },
+      new List<SObject>{ buyerGroup },
+      new Map<Id, Set<String>>{ buyerGroupId => new Set<String>() },
       '0ZE000000000001AAA'
     );
 

@@ -27,15 +27,6 @@ private class CatalogJobRunnerTest {
    */
   @IsTest
   static void testRunSingle_executesWithoutError() {
-    // Create test data that the batch job might need
-    Product2 testProduct = new Product2(
-      Name = 'Test Product for RunSingle',
-      IsActive = true,
-      ProductCode = 'TEST-RS-001',
-      Item_Number__c = 'ITEM-RS-001'
-    );
-    insert testProduct;
-
     Boolean exceptionThrown = false;
     String exceptionMessage = '';
 
@@ -134,25 +125,6 @@ private class CatalogJobRunnerTest {
 
   @IsTest
   static void testRunAllActive_executesWithoutError() {
-    // Create test data that might be needed by batch jobs
-    Product2 testProduct = new Product2(
-      Name = 'Test Product for RunAllActive',
-      IsActive = true,
-      ProductCode = 'TEST-RAA-001',
-      Item_Number__c = 'ITEM-RAA-001'
-    );
-    insert testProduct;
-
-    // Create standard pricebook entry for the test
-    Id stdPricebookId = Test.getStandardPricebookId();
-    PricebookEntry pbe = new PricebookEntry(
-      Pricebook2Id = stdPricebookId,
-      Product2Id = testProduct.Id,
-      UnitPrice = 100.00,
-      IsActive = true
-    );
-    insert pbe;
-
     Boolean exceptionThrown = false;
     String exceptionMessage = '';
 

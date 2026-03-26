@@ -55,20 +55,17 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
       );
     }
 
-    return Database.getQueryLocator(
-      [
-        SELECT Id, Name
-        FROM BuyerGroup
-        WHERE Id IN :buyerGroupIds
-        ORDER BY Name
-      ]
-    );
+    String query =
+      'SELECT Id, Name FROM BuyerGroup WHERE Id IN (' +
+      buildIdInClause(buyerGroupIds) +
+      ') ORDER BY Name';
+    return Database.getQueryLocator(query);
   }
 
-  global void execute(Database.BatchableContext bc, List<BuyerGroup> scope) {
+  global void execute(Database.BatchableContext bc, List<SObject> scope) {
     Set<Id> buyerGroupIds = new Set<Id>();
-    for (BuyerGroup buyerGroup : scope) {
-      buyerGroupIds.add(buyerGroup.Id);
+    for (SObject buyerGroup : scope) {
+      buyerGroupIds.add((Id) buyerGroup.get('Id'));
     }
 
     Map<Id, Set<Id>> visiblePolicyIdsByBuyerGroup = getVisiblePolicyIdsByBuyerGroup(
@@ -173,6 +170,16 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
     }
 
     return buyerGroupIds;
+  }
+
+  private static String buildIdInClause(Set<Id> recordIds) {
+    List<String> tokens = new List<String>();
+    for (Id recordId : recordIds) {
+      tokens.add(
+        '\'' + String.escapeSingleQuotes(String.valueOf(recordId)) + '\''
+      );
+    }
+    return String.join(tokens, ',');
   }
 
   @TestVisible
