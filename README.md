@@ -13,7 +13,7 @@
 
 # 📦 Overview
 
-This project provides an **unmanaged Salesforce package** that extracts product data from Salesforce and pushes it to **Coveo Commerce Catalog sources** using the **Stream API** (`addOrUpdate` / `addOrMerge`).
+This project provides an **unlocked Salesforce package** for direct installation, plus a **metadata deployment package** for source-based deployments. It extracts product data from Salesforce and pushes it to **Coveo Commerce Catalog sources** using the **Stream API** (`addOrUpdate` / `addOrMerge`).
 
 It includes:
 
