@@ -161,12 +161,13 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
   private static Set<Id> getBuyerGroupIdsForWebStore(String webStoreId) {
     Set<Id> buyerGroupIds = new Set<Id>();
 
-    for (WebStoreBuyerGroup link : [
-      SELECT BuyerGroupId
-      FROM WebStoreBuyerGroup
-      WHERE WebStoreId = :webStoreId AND BuyerGroupId != NULL
-    ]) {
-      buyerGroupIds.add(link.BuyerGroupId);
+    String query =
+      'SELECT BuyerGroupId FROM WebStoreBuyerGroup WHERE WebStoreId = \'' +
+      String.escapeSingleQuotes(webStoreId) +
+      '\' AND BuyerGroupId != NULL';
+
+    for (SObject link : Database.query(query)) {
+      buyerGroupIds.add((Id) link.get('BuyerGroupId'));
     }
 
     return buyerGroupIds;
@@ -192,37 +193,42 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
       return policyIdsByBuyerGroup;
     }
 
-    List<CommerceEntitlementBuyerGroup> links = [
-      SELECT PolicyId, BuyerGroupId
-      FROM CommerceEntitlementBuyerGroup
-      WHERE BuyerGroupId IN :buyerGroupIds AND PolicyId != NULL
-    ];
+    List<SObject> links = Database.query(
+      'SELECT PolicyId, BuyerGroupId FROM CommerceEntitlementBuyerGroup WHERE BuyerGroupId IN (' +
+        buildIdInClause(buyerGroupIds) +
+        ') AND PolicyId != NULL'
+    );
 
     Set<Id> policyIds = new Set<Id>();
-    for (CommerceEntitlementBuyerGroup link : links) {
-      policyIds.add(link.PolicyId);
+    for (SObject link : links) {
+      policyIds.add((Id) link.get('PolicyId'));
     }
 
     Set<Id> visiblePolicyIds = new Set<Id>();
     if (!policyIds.isEmpty()) {
-      for (CommerceEntitlementPolicy policy : [
-        SELECT Id
-        FROM CommerceEntitlementPolicy
-        WHERE Id IN :policyIds AND CanViewProduct = TRUE
-      ]) {
-        visiblePolicyIds.add(policy.Id);
+      for (
+        SObject policy : Database.query(
+          'SELECT Id FROM CommerceEntitlementPolicy WHERE Id IN (' +
+            buildIdInClause(policyIds) +
+            ') AND CanViewProduct = TRUE'
+        )
+      ) {
+        visiblePolicyIds.add((Id) policy.get('Id'));
       }
     }
 
-    for (CommerceEntitlementBuyerGroup link : links) {
-      if (!visiblePolicyIds.contains(link.PolicyId)) {
+    for (SObject link : links) {
+      Id policyId = (Id) link.get('PolicyId');
+      Id buyerGroupId = (Id) link.get('BuyerGroupId');
+
+      if (!visiblePolicyIds.contains(policyId)) {
         continue;
       }
 
-      if (!policyIdsByBuyerGroup.containsKey(link.BuyerGroupId)) {
-        policyIdsByBuyerGroup.put(link.BuyerGroupId, new Set<Id>());
+      if (!policyIdsByBuyerGroup.containsKey(buyerGroupId)) {
+        policyIdsByBuyerGroup.put(buyerGroupId, new Set<Id>());
       }
-      policyIdsByBuyerGroup.get(link.BuyerGroupId).add(link.PolicyId);
+      policyIdsByBuyerGroup.get(buyerGroupId).add(policyId);
     }
 
     return policyIdsByBuyerGroup;
@@ -254,14 +260,19 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
     Set<Id> productIds = new Set<Id>();
     Map<Id, Set<Id>> rawProductIdsByBuyerGroup = new Map<Id, Set<Id>>();
 
-    for (CommerceEntitlementProduct link : [
-      SELECT PolicyId, ProductId
-      FROM CommerceEntitlementProduct
-      WHERE PolicyId IN :policyIds AND ProductId != NULL
-    ]) {
-      productIds.add(link.ProductId);
+    for (
+      SObject link : Database.query(
+        'SELECT PolicyId, ProductId FROM CommerceEntitlementProduct WHERE PolicyId IN (' +
+          buildIdInClause(policyIds) +
+          ') AND ProductId != NULL'
+      )
+    ) {
+      Id policyId = (Id) link.get('PolicyId');
+      Id productId = (Id) link.get('ProductId');
 
-      Set<Id> linkedBuyerGroupIds = buyerGroupIdsByPolicy.get(link.PolicyId);
+      productIds.add(productId);
+
+      Set<Id> linkedBuyerGroupIds = buyerGroupIdsByPolicy.get(policyId);
       if (linkedBuyerGroupIds == null) {
         continue;
       }
@@ -270,7 +281,7 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
         if (!rawProductIdsByBuyerGroup.containsKey(buyerGroupId)) {
           rawProductIdsByBuyerGroup.put(buyerGroupId, new Set<Id>());
         }
-        rawProductIdsByBuyerGroup.get(buyerGroupId).add(link.ProductId);
+        rawProductIdsByBuyerGroup.get(buyerGroupId).add(productId);
       }
     }
 

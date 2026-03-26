@@ -93,29 +93,26 @@ SObject ensureBuyerGroup(String name) {
   return buyerGroup;
 }
 
-CommerceEntitlementPolicy ensurePolicy(
+SObject ensurePolicy(
   String name,
   Boolean canViewProduct,
   Boolean canViewPrice
 ) {
-  List<CommerceEntitlementPolicy> policies = [
-    SELECT Id, Name, CanViewProduct, CanViewPrice
-    FROM CommerceEntitlementPolicy
-    WHERE Name = :name
-    LIMIT 1
-  ];
+  List<SObject> policies = Database.query(
+    'SELECT Id, Name, CanViewProduct, CanViewPrice FROM CommerceEntitlementPolicy WHERE Name = :name LIMIT 1'
+  );
 
   if (!policies.isEmpty()) {
-    CommerceEntitlementPolicy existing = policies[0];
+    SObject existing = policies[0];
     Boolean needsUpdate = false;
 
-    if (existing.CanViewProduct != canViewProduct) {
-      existing.CanViewProduct = canViewProduct;
+    if ((Boolean) existing.get('CanViewProduct') != canViewProduct) {
+      existing.put('CanViewProduct', canViewProduct);
       needsUpdate = true;
     }
 
-    if (existing.CanViewPrice != canViewPrice) {
-      existing.CanViewPrice = canViewPrice;
+    if ((Boolean) existing.get('CanViewPrice') != canViewPrice) {
+      existing.put('CanViewPrice', canViewPrice);
       needsUpdate = true;
     }
 
@@ -126,60 +123,58 @@ CommerceEntitlementPolicy ensurePolicy(
     return existing;
   }
 
-  CommerceEntitlementPolicy policy = new CommerceEntitlementPolicy(
-    Name = name,
-    CanViewProduct = canViewProduct,
-    CanViewPrice = canViewPrice
-  );
+  SObject policy = Schema.getGlobalDescribe()
+    .get('CommerceEntitlementPolicy')
+    .newSObject();
+  policy.put('Name', name);
+  policy.put('CanViewProduct', canViewProduct);
+  policy.put('CanViewPrice', canViewPrice);
   insert policy;
   return policy;
 }
 
 void ensureWebStoreBuyerGroup(Id webStoreId, Id buyerGroupId) {
-  List<WebStoreBuyerGroup> links = [
-    SELECT Id
-    FROM WebStoreBuyerGroup
-    WHERE WebStoreId = :webStoreId AND BuyerGroupId = :buyerGroupId
-    LIMIT 1
-  ];
+  List<SObject> links = Database.query(
+    'SELECT Id FROM WebStoreBuyerGroup WHERE WebStoreId = :webStoreId AND BuyerGroupId = :buyerGroupId LIMIT 1'
+  );
 
   if (links.isEmpty()) {
-    insert new WebStoreBuyerGroup(
-      WebStoreId = webStoreId,
-      BuyerGroupId = buyerGroupId
-    );
+    SObject link = Schema.getGlobalDescribe()
+      .get('WebStoreBuyerGroup')
+      .newSObject();
+    link.put('WebStoreId', webStoreId);
+    link.put('BuyerGroupId', buyerGroupId);
+    insert link;
   }
 }
 
 void ensurePolicyBuyerGroup(Id policyId, Id buyerGroupId) {
-  List<CommerceEntitlementBuyerGroup> links = [
-    SELECT Id
-    FROM CommerceEntitlementBuyerGroup
-    WHERE PolicyId = :policyId AND BuyerGroupId = :buyerGroupId
-    LIMIT 1
-  ];
+  List<SObject> links = Database.query(
+    'SELECT Id FROM CommerceEntitlementBuyerGroup WHERE PolicyId = :policyId AND BuyerGroupId = :buyerGroupId LIMIT 1'
+  );
 
   if (links.isEmpty()) {
-    insert new CommerceEntitlementBuyerGroup(
-      PolicyId = policyId,
-      BuyerGroupId = buyerGroupId
-    );
+    SObject link = Schema.getGlobalDescribe()
+      .get('CommerceEntitlementBuyerGroup')
+      .newSObject();
+    link.put('PolicyId', policyId);
+    link.put('BuyerGroupId', buyerGroupId);
+    insert link;
   }
 }
 
 void ensurePolicyProduct(Id policyId, Id productId) {
-  List<CommerceEntitlementProduct> links = [
-    SELECT Id
-    FROM CommerceEntitlementProduct
-    WHERE PolicyId = :policyId AND ProductId = :productId
-    LIMIT 1
-  ];
+  List<SObject> links = Database.query(
+    'SELECT Id FROM CommerceEntitlementProduct WHERE PolicyId = :policyId AND ProductId = :productId LIMIT 1'
+  );
 
   if (links.isEmpty()) {
-    insert new CommerceEntitlementProduct(
-      PolicyId = policyId,
-      ProductId = productId
-    );
+    SObject link = Schema.getGlobalDescribe()
+      .get('CommerceEntitlementProduct')
+      .newSObject();
+    link.put('PolicyId', policyId);
+    link.put('ProductId', productId);
+    insert link;
   }
 }
 
@@ -188,29 +183,27 @@ SObject allBuyerGroup = ensureBuyerGroup(allGroupName);
 SObject limitedBuyerGroup = ensureBuyerGroup(limitedGroupName);
 SObject emptyBuyerGroup = ensureBuyerGroup(emptyGroupName);
 
-CommerceEntitlementPolicy allPolicy = ensurePolicy(allPolicyName, true, true);
-CommerceEntitlementPolicy limitedPolicy = ensurePolicy(
-  limitedPolicyName,
-  true,
-  true
-);
-CommerceEntitlementPolicy emptyPolicy = ensurePolicy(
-  emptyPolicyName,
-  true,
-  false
-);
+SObject allPolicy = ensurePolicy(allPolicyName, true, true);
+SObject limitedPolicy = ensurePolicy(limitedPolicyName, true, true);
+SObject emptyPolicy = ensurePolicy(emptyPolicyName, true, false);
 
 ensureWebStoreBuyerGroup(webStore.Id, (Id) allBuyerGroup.get('Id'));
 ensureWebStoreBuyerGroup(webStore.Id, (Id) limitedBuyerGroup.get('Id'));
 ensureWebStoreBuyerGroup(webStore.Id, (Id) emptyBuyerGroup.get('Id'));
 
-ensurePolicyBuyerGroup(allPolicy.Id, (Id) allBuyerGroup.get('Id'));
-ensurePolicyBuyerGroup(limitedPolicy.Id, (Id) limitedBuyerGroup.get('Id'));
-ensurePolicyBuyerGroup(emptyPolicy.Id, (Id) emptyBuyerGroup.get('Id'));
+ensurePolicyBuyerGroup((Id) allPolicy.get('Id'), (Id) allBuyerGroup.get('Id'));
+ensurePolicyBuyerGroup(
+  (Id) limitedPolicy.get('Id'),
+  (Id) limitedBuyerGroup.get('Id')
+);
+ensurePolicyBuyerGroup(
+  (Id) emptyPolicy.get('Id'),
+  (Id) emptyBuyerGroup.get('Id')
+);
 
-ensurePolicyProduct(allPolicy.Id, primaryProduct.Id);
-ensurePolicyProduct(allPolicy.Id, secondaryProduct.Id);
-ensurePolicyProduct(limitedPolicy.Id, primaryProduct.Id);
+ensurePolicyProduct((Id) allPolicy.get('Id'), primaryProduct.Id);
+ensurePolicyProduct((Id) allPolicy.get('Id'), secondaryProduct.Id);
+ensurePolicyProduct((Id) limitedPolicy.get('Id'), primaryProduct.Id);
 
 Map<String, Object> summary = new Map<String, Object>{
   'webStoreName' => webStore.Name,
