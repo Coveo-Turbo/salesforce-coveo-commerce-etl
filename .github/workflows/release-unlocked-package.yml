@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ""
+      dry_run:
+        description: "Validate package creation without promotion or GitHub release publishing (still creates a beta package version in Dev Hub)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -98,40 +103,106 @@ jobs:
         id: create-version
         env:
           INSTALLATION_KEY: ${{ inputs.installation_key }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          # This workflow creates public install instructions, so the package
-          # version must always be release-ready and promotable.
-          echo "Creating released package version ${{ inputs.version }} with code coverage..."
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Creating dry-run package version ${{ inputs.version }} with code coverage..."
+          else
+            # This workflow creates public install instructions, so the package
+            # version must always be release-ready and promotable.
+            echo "Creating released package version ${{ inputs.version }} with code coverage..."
+          fi
           
           # Read package name from sfdx-project.json
           PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
           echo "Package name: $PACKAGE_NAME"
-          
-          # Build the package version command with proper argument handling
-          if [ -n "$INSTALLATION_KEY" ]; then
-            RESULT=$(sf package version create \
-              --package "$PACKAGE_NAME" \
-              --target-dev-hub DevHub \
-              --wait 20 \
-              --code-coverage \
-              --installation-key "$INSTALLATION_KEY" \
-              --json)
-          else
-            RESULT=$(sf package version create \
-              --package "$PACKAGE_NAME" \
-              --target-dev-hub DevHub \
-              --wait 20 \
-              --code-coverage \
-              --installation-key-bypass \
-              --json)
+          DEFINITION_FILE="config/project-scratch-def.json"
+
+          if [ ! -f "$DEFINITION_FILE" ]; then
+            echo "Error: definition file not found at $DEFINITION_FILE"
+            exit 1
           fi
-          
-          echo "Package version creation result:"
-          echo "$RESULT" | jq .
-          
+
+          echo "Using definition file: $DEFINITION_FILE"
+
+          SF_STDOUT=$(mktemp)
+          SF_STDERR=$(mktemp)
+          cleanup() {
+            rm -f "$SF_STDOUT" "$SF_STDERR"
+          }
+          trap cleanup EXIT
+
+          SF_ARGS=(
+            package version create
+            --package "$PACKAGE_NAME"
+            --target-dev-hub DevHub
+            --wait 20
+            --code-coverage
+            --definition-file "$DEFINITION_FILE"
+            --json
+          )
+
+          if [ -n "$INSTALLATION_KEY" ]; then
+            SF_ARGS+=(--installation-key "$INSTALLATION_KEY")
+          else
+            SF_ARGS+=(--installation-key-bypass)
+          fi
+
+          set +e
+          sf "${SF_ARGS[@]}" >"$SF_STDOUT" 2>"$SF_STDERR"
+          SF_EXIT=$?
+          set -e
+
+          RESULT=$(cat "$SF_STDOUT")
+          STDERR_OUTPUT=$(cat "$SF_STDERR")
+
+          echo "Package version creation stdout:"
+          if [ -n "$RESULT" ]; then
+            if echo "$RESULT" | jq . >/dev/null 2>&1; then
+              echo "$RESULT" | jq .
+            else
+              echo "$RESULT"
+            fi
+          else
+            echo "(empty)"
+          fi
+
+          if [ -n "$STDERR_OUTPUT" ]; then
+            echo "Package version creation stderr:"
+            echo "$STDERR_OUTPUT"
+          fi
+
+          if [ "$SF_EXIT" -ne 0 ]; then
+            echo "Error: sf package version create failed with exit code $SF_EXIT"
+            if [ -n "$RESULT" ] && echo "$RESULT" | jq . >/dev/null 2>&1; then
+              echo "Message: $(echo "$RESULT" | jq -r '.message // "unknown error"')"
+              STACK=$(echo "$RESULT" | jq -r '.stack // empty')
+              if [ -n "$STACK" ]; then
+                echo "Stack: $STACK"
+              fi
+            fi
+            exit 1
+          fi
+
+          if ! echo "$RESULT" | jq . >/dev/null 2>&1; then
+            echo "Error: sf package version create did not return valid JSON"
+            exit 1
+          fi
+
+          STATUS=$(echo "$RESULT" | jq -r '.status // 1')
+          if [ "$STATUS" != "0" ]; then
+            echo "Error: sf CLI reported a non-zero status"
+            echo "Message: $(echo "$RESULT" | jq -r '.message // "unknown error"')"
+            STACK=$(echo "$RESULT" | jq -r '.stack // empty')
+            if [ -n "$STACK" ]; then
+              echo "Stack: $STACK"
+            fi
+            exit 1
+          fi
+
           # Extract the subscriber package version ID (04t...)
           PACKAGE_VERSION_ID=$(echo "$RESULT" | jq -r '.result.SubscriberPackageVersionId')
-          
+
           if [ -z "$PACKAGE_VERSION_ID" ] || [ "$PACKAGE_VERSION_ID" == "null" ]; then
             echo "Error: Failed to extract package version ID"
             echo "$RESULT"
@@ -148,7 +219,14 @@ jobs:
           echo "Package Version ID: $VERSION_ID"
           echo "package_version_id=$VERSION_ID" >> $GITHUB_OUTPUT
 
+      - name: Dry-run summary
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "Dry run created package version: ${{ steps.get-version-id.outputs.package_version_id }}"
+          echo "Skipping package promotion, alias updates, README/package.json changes, and GitHub release creation."
+
       - name: Promote package version
+        if: ${{ !inputs.dry_run }}
         run: |
           echo "Promoting package version to released..."
           sf package version promote \
@@ -157,6 +235,7 @@ jobs:
             --no-prompt
 
       - name: Update sfdx-project.json with version alias
+        if: ${{ !inputs.dry_run }}
         run: |
           # Read package name from sfdx-project.json
           PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
@@ -186,6 +265,7 @@ jobs:
           echo "Package created: release/${{ env.PACKAGE_FILENAME }}"
 
       - name: Update README with installation instructions
+        if: ${{ !inputs.dry_run }}
         env:
           VERSION: ${{ inputs.version }}
           REPO_URL: https://github.com/${{ github.repository }}
@@ -195,10 +275,12 @@ jobs:
           ./scripts/update-readme-install.sh
 
       - name: Update package.json version
+        if: ${{ !inputs.dry_run }}
         run: |
           npm version ${{ inputs.version }} --no-git-tag-version --allow-same-version
 
       - name: Commit and push changes
+        if: ${{ !inputs.dry_run }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -213,6 +295,7 @@ jobs:
           fi
 
       - name: Create GitHub Release
+        if: ${{ !inputs.dry_run }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.version }}

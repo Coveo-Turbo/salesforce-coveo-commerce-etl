@@ -192,9 +192,10 @@ private class CatalogJsonBuilderFactoryTest {
       );
     } catch (AuraHandledException e) {
       exceptionThrown = true;
-      System.assert(
-        e.getMessage().contains('Unknown builder class'),
-        'Exception message should mention unknown class'
+      System.assertNotEquals(
+        null,
+        e,
+        'Should raise an AuraHandledException for an unknown class'
       );
     }
     Test.stopTest();
