@@ -94,13 +94,14 @@ jobs:
              sfdx-project.json > sfdx-project.json.tmp
           mv sfdx-project.json.tmp sfdx-project.json
 
-      - name: Create package version (with code coverage)
-        id: create-version-validated
-        if: ${{ inputs.release_notes != '' }}
+      - name: Create package version
+        id: create-version
         env:
           INSTALLATION_KEY: ${{ inputs.installation_key }}
         run: |
-          echo "Creating package version ${{ inputs.version }} with code coverage..."
+          # This workflow creates public install instructions, so the package
+          # version must always be release-ready and promotable.
+          echo "Creating released package version ${{ inputs.version }} with code coverage..."
           
           # Read package name from sfdx-project.json
           PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
@@ -140,66 +141,14 @@ jobs:
           echo "Package Version ID: $PACKAGE_VERSION_ID"
           echo "package_version_id=$PACKAGE_VERSION_ID" >> $GITHUB_OUTPUT
 
-      - name: Create package version (skip validation)
-        id: create-version-skip-validation
-        if: ${{ inputs.release_notes == '' }}
-        env:
-          INSTALLATION_KEY: ${{ inputs.installation_key }}
-        run: |
-          echo "Creating package version ${{ inputs.version }} without validation (no release notes provided)..."
-          
-          # Read package name from sfdx-project.json
-          PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
-          echo "Package name: $PACKAGE_NAME"
-          
-          # Build the package version command with skip-validation
-          if [ -n "$INSTALLATION_KEY" ]; then
-            RESULT=$(sf package version create \
-              --package "$PACKAGE_NAME" \
-              --target-dev-hub DevHub \
-              --wait 20 \
-              --skip-validation \
-              --installation-key "$INSTALLATION_KEY" \
-              --json)
-          else
-            RESULT=$(sf package version create \
-              --package "$PACKAGE_NAME" \
-              --target-dev-hub DevHub \
-              --wait 20 \
-              --skip-validation \
-              --installation-key-bypass \
-              --json)
-          fi
-          
-          echo "Package version creation result:"
-          echo "$RESULT" | jq .
-          
-          # Extract the subscriber package version ID (04t...)
-          PACKAGE_VERSION_ID=$(echo "$RESULT" | jq -r '.result.SubscriberPackageVersionId')
-          
-          if [ -z "$PACKAGE_VERSION_ID" ] || [ "$PACKAGE_VERSION_ID" == "null" ]; then
-            echo "Error: Failed to extract package version ID"
-            echo "$RESULT"
-            exit 1
-          fi
-          
-          echo "Package Version ID: $PACKAGE_VERSION_ID"
-          echo "package_version_id=$PACKAGE_VERSION_ID" >> $GITHUB_OUTPUT
-
       - name: Get package version ID
         id: get-version-id
         run: |
-          # Get the package version ID from whichever step ran
-          if [ -n "${{ steps.create-version-validated.outputs.package_version_id }}" ]; then
-            VERSION_ID="${{ steps.create-version-validated.outputs.package_version_id }}"
-          else
-            VERSION_ID="${{ steps.create-version-skip-validation.outputs.package_version_id }}"
-          fi
+          VERSION_ID="${{ steps.create-version.outputs.package_version_id }}"
           echo "Package Version ID: $VERSION_ID"
           echo "package_version_id=$VERSION_ID" >> $GITHUB_OUTPUT
 
       - name: Promote package version
-        if: ${{ inputs.release_notes != '' }}
         run: |
           echo "Promoting package version to released..."
           sf package version promote \
