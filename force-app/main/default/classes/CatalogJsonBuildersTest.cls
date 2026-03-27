@@ -35,12 +35,21 @@ private class CatalogJsonBuildersTest {
     String code,
     String family
   ) {
+    return createPersistedCommerceProduct(code, family, null);
+  }
+
+  private static Product2 createPersistedCommerceProduct(
+    String code,
+    String family,
+    String productType
+  ) {
     Product2 product = new Product2(
       Name = 'Commerce Product ' + code,
       ProductCode = code,
       Description = 'Description for ' + code,
       Family = family,
-      IsActive = true
+      IsActive = true,
+      Type = productType
     );
     insert product;
     return product;
@@ -271,6 +280,43 @@ private class CatalogJsonBuildersTest {
   }
 
   @IsTest
+  static void testGroupingBuilder_buildFullUpdateNdjson_usesCategoryHierarchy() {
+    Product2 product = createPersistedCommerceProduct('GROUP-001', 'Shoes');
+    createCatalogHierarchy(product);
+
+    CatalogJsonBuilderGrouping builder = new CatalogJsonBuilderGrouping();
+
+    Test.startTest();
+    String payloadJson = builder.buildFullUpdateNdjson(
+      new List<Product2>{ product },
+      new Map<Id, Map<String, Decimal>>{
+        product.Id => new Map<String, Decimal>{ '' => 49.99 }
+      },
+      new List<String>{ 'Description', 'Family' }
+    );
+    Test.stopTest();
+
+    Map<String, Object> payload = (Map<String, Object>) System.JSON.deserializeUntyped(
+      payloadJson
+    );
+    Map<String, Object> item = (Map<String, Object>) ((List<Object>) payload.get(
+      'addOrUpdate'
+    ))[0];
+    List<Object> categories = (List<Object>) item.get('ec_category');
+    Map<String, Object> prices = (Map<String, Object>) item.get('ec_price');
+
+    System.assertEquals('GROUP-001', (String) item.get('ec_item_group_id'));
+    System.assert(categories.contains('Root Category'));
+    System.assert(categories.contains('Root Category|Child Category'));
+    System.assertEquals(
+      'Description for GROUP-001',
+      (String) item.get('sf_description')
+    );
+    System.assertEquals('Shoes', (String) item.get('sf_family'));
+    System.assertEquals(1, prices.size());
+  }
+
+  @IsTest
   static void testGroupingBuilder_buildPartialMergeNdjson() {
     Map<String, Decimal> priceMap = new Map<String, Decimal>{
       'SKU-001' => 99.99
@@ -329,6 +375,40 @@ private class CatalogJsonBuildersTest {
       'Should contain ec_item_group_id'
     );
     System.assert(json.contains('PARENT-001'), 'Should contain product code');
+  }
+
+  @IsTest
+  static void testVariantBuilder_buildFullUpdateNdjson_usesCategoryHierarchy() {
+    Product2 product = createPersistedCommerceProduct('VAR-001', 'Shoes');
+    createCatalogHierarchy(product);
+
+    CatalogJsonBuilderVariant builder = new CatalogJsonBuilderVariant();
+
+    Test.startTest();
+    String payloadJson = builder.buildFullUpdateNdjson(
+      new List<Product2>{ product },
+      new Map<Id, Map<String, Decimal>>{
+        product.Id => new Map<String, Decimal>{ '' => 64.99 }
+      },
+      new List<String>{ 'Description', 'Family' }
+    );
+    Test.stopTest();
+
+    Map<String, Object> payload = (Map<String, Object>) System.JSON.deserializeUntyped(
+      payloadJson
+    );
+    Map<String, Object> item = (Map<String, Object>) ((List<Object>) payload.get(
+      'addOrUpdate'
+    ))[0];
+    List<Object> categories = (List<Object>) item.get('ec_category');
+
+    System.assertEquals('VAR-001', (String) item.get('ec_item_group_id'));
+    System.assert(categories.contains('Root Category|Child Category'));
+    System.assertEquals(
+      'Description for VAR-001',
+      (String) item.get('sf_description')
+    );
+    System.assertEquals(false, item.containsKey('ec_variant_id'));
   }
 
   @IsTest
@@ -391,6 +471,40 @@ private class CatalogJsonBuildersTest {
       'Should contain ec_item_group_id'
     );
     System.assert(json.contains('PARENT-001'), 'Should contain product code');
+  }
+
+  @IsTest
+  static void testGroupingWithVariantsBuilder_buildFullUpdateNdjson_usesCategoryHierarchy() {
+    Product2 product = createPersistedCommerceProduct('GWV-001', 'Shoes');
+    createCatalogHierarchy(product);
+
+    CatalogJsonBuilderGroupingWithVariants builder = new CatalogJsonBuilderGroupingWithVariants();
+
+    Test.startTest();
+    String payloadJson = builder.buildFullUpdateNdjson(
+      new List<Product2>{ product },
+      new Map<Id, Map<String, Decimal>>{
+        product.Id => new Map<String, Decimal>{ '' => 74.99 }
+      },
+      new List<String>{ 'Description', 'Family' }
+    );
+    Test.stopTest();
+
+    Map<String, Object> payload = (Map<String, Object>) System.JSON.deserializeUntyped(
+      payloadJson
+    );
+    Map<String, Object> item = (Map<String, Object>) ((List<Object>) payload.get(
+      'addOrUpdate'
+    ))[0];
+    List<Object> categories = (List<Object>) item.get('ec_category');
+
+    System.assertEquals('GWV-001', (String) item.get('ec_item_group_id'));
+    System.assert(categories.contains('Root Category|Child Category'));
+    System.assertEquals(
+      'Description for GWV-001',
+      (String) item.get('sf_description')
+    );
+    System.assertEquals(false, item.containsKey('ec_variant_id'));
   }
 
   @IsTest
