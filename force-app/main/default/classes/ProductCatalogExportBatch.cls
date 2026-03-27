@@ -22,6 +22,26 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   public Long firstOrderingId;
 
   public ProductCatalogExportBatch(String jobConfigDeveloperName) {
+    this(loadJobConfig(jobConfigDeveloperName), getStandardPricebookId());
+  }
+
+  @TestVisible
+  private ProductCatalogExportBatch(
+    CatalogJobConfig__mdt jobConfig,
+    Id stdPricebookId
+  ) {
+    if (jobConfig == null) {
+      throw new CatalogJobException('Catalog job config is required.');
+    }
+
+    this.jobConfig = jobConfig;
+    this.stdPricebookId = stdPricebookId;
+    populateExtraFieldNames(jobConfig.AdditionalProductFields__c);
+  }
+
+  private static CatalogJobConfig__mdt loadJobConfig(
+    String jobConfigDeveloperName
+  ) {
     List<CatalogJobConfig__mdt> configs = [
       SELECT
         DeveloperName,
@@ -47,23 +67,28 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
         jobConfigDeveloperName
       );
     }
-    this.jobConfig = configs[0];
+    return configs[0];
+  }
 
-    if (!String.isBlank(jobConfig.AdditionalProductFields__c)) {
-      for (String f : jobConfig.AdditionalProductFields__c.split(',')) {
-        String trimmed = f.trim();
-        if (String.isNotBlank(trimmed) && !extraFieldNames.contains(trimmed)) {
-          extraFieldNames.add(trimmed);
-        }
-      }
-    }
-    this.stdPricebookId = [
+  private static Id getStandardPricebookId() {
+    return [
       SELECT Id
       FROM Pricebook2
       WHERE IsStandard = TRUE
       LIMIT 1
     ]
     .Id;
+  }
+
+  private void populateExtraFieldNames(String additionalProductFields) {
+    if (!String.isBlank(additionalProductFields)) {
+      for (String f : additionalProductFields.split(',')) {
+        String trimmed = f.trim();
+        if (String.isNotBlank(trimmed) && !extraFieldNames.contains(trimmed)) {
+          extraFieldNames.add(trimmed);
+        }
+      }
+    }
   }
 
   /**
