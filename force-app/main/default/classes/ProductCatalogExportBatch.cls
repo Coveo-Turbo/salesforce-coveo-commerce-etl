@@ -245,4 +245,65 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     // Payload logs are inserted asynchronously via CoveoPayloadLogQueueable
     // when EnablePayloadLogging__c is enabled
   }
+
+  @TestVisible
+  static Set<Id> getProductIdsForCatalog(Id catalogId) {
+    Set<Id> productIds = new Set<Id>();
+
+    if (catalogId == null) {
+      return productIds;
+    }
+
+    for (ProductCategoryProduct pcp : [
+      SELECT ProductId
+      FROM ProductCategoryProduct
+      WHERE ProductCategory.CatalogId = :catalogId AND ProductId != NULL
+    ]) {
+      productIds.add(pcp.ProductId);
+    }
+
+    return productIds;
+  }
+
+  @TestVisible
+  static String validateAndSanitizeFilter(String filter) {
+    if (String.isBlank(filter)) {
+      return filter;
+    }
+
+    String trimmedFilter = filter.trim();
+    String normalizedFilter = trimmedFilter.replaceAll('[\\t\\n\\r]+', ' ')
+      .toUpperCase();
+
+    List<String> dmlPatterns = new List<String>{
+      'INSERT ',
+      'UPDATE ',
+      'DELETE ',
+      'UPSERT ',
+      'MERGE ',
+      'UNDELETE '
+    };
+
+    for (String pattern : dmlPatterns) {
+      if (normalizedFilter.contains(pattern)) {
+        throw new CatalogJobException(
+          'Invalid ProductFilter__c value: contains DML keyword "' +
+            pattern.trim() +
+            '". Only valid SOQL WHERE clause fragments are allowed.'
+        );
+      }
+    }
+
+    if (
+      normalizedFilter.contains('SELECT ') &&
+      normalizedFilter.contains(' FROM ')
+    ) {
+      throw new CatalogJobException(
+        'Invalid ProductFilter__c value: contains subquery pattern. ' +
+        'Only simple SOQL WHERE clause fragments are allowed.'
+      );
+    }
+
+    return trimmedFilter;
+  }
 }
