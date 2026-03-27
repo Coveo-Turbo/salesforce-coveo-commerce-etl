@@ -57,24 +57,23 @@ private class BuyerGroupAvailabilityExportBatchTest {
     );
   }
 
-  private static WebStore createWebStore(String name) {
-    WebStore store = new WebStore(
-      Name = name,
-      OptionsAutoFacetingEnabled = false,
-      OptionsCartAsyncProcessingEnabled = false,
-      OptionsCartCalculateEnabled = false,
-      OptionsCartToOrderAutoCustomFieldMapping = false,
-      OptionsCommerceEinsteinActivitiesTracked = false,
-      OptionsCommerceEinsteinDeployed = false,
-      OptionsDuplicateCartItemsEnabled = false,
-      OptionsGuestBrowsingEnabled = false,
-      OptionsGuestCartEnabled = false,
-      OptionsGuestCheckoutEnabled = false,
-      OptionsPreserveGuestCartEnabled = false,
-      OptionsSkipAdditionalEntitlementCheckForSearch = false,
-      OptionsSkuDetectionEnabled = false,
-      OptionsSplitShipmentEnabled = false
-    );
+  private static SObject createWebStore(String name) {
+    SObject store = Schema.getGlobalDescribe().get('WebStore').newSObject();
+    store.put('Name', name);
+    store.put('OptionsAutoFacetingEnabled', false);
+    store.put('OptionsCartAsyncProcessingEnabled', false);
+    store.put('OptionsCartCalculateEnabled', false);
+    store.put('OptionsCartToOrderAutoCustomFieldMapping', false);
+    store.put('OptionsCommerceEinsteinActivitiesTracked', false);
+    store.put('OptionsCommerceEinsteinDeployed', false);
+    store.put('OptionsDuplicateCartItemsEnabled', false);
+    store.put('OptionsGuestBrowsingEnabled', false);
+    store.put('OptionsGuestCartEnabled', false);
+    store.put('OptionsGuestCheckoutEnabled', false);
+    store.put('OptionsPreserveGuestCartEnabled', false);
+    store.put('OptionsSkipAdditionalEntitlementCheckForSearch', false);
+    store.put('OptionsSkuDetectionEnabled', false);
+    store.put('OptionsSplitShipmentEnabled', false);
     insert store;
     return store;
   }
@@ -179,37 +178,39 @@ private class BuyerGroupAvailabilityExportBatchTest {
 
   @IsTest
   static void testConstructorValidation_requiresEnabledAvailabilityAndFields() {
-    WebStore store = createWebStore('Validation Store');
+    SObject store = createWebStore('Validation Store');
+    Id storeId = (Id) store.get('Id');
 
-    CatalogJobConfig__mdt disabledConfig = createConfig(store.Id);
+    CatalogJobConfig__mdt disabledConfig = createConfig(storeId);
     disabledConfig.EnableBuyerGroupAvailability__c = false;
     assertConfigFailure(
       disabledConfig,
       'EnableBuyerGroupAvailability__c must be true'
     );
 
-    CatalogJobConfig__mdt missingSourceConfig = createConfig(store.Id);
+    CatalogJobConfig__mdt missingSourceConfig = createConfig(storeId);
     missingSourceConfig.AvailabilitySourceId__c = null;
     assertConfigFailure(
       missingSourceConfig,
       'AvailabilitySourceId__c is required'
     );
 
-    CatalogJobConfig__mdt missingStoreConfig = createConfig(store.Id);
+    CatalogJobConfig__mdt missingStoreConfig = createConfig(storeId);
     missingStoreConfig.WebStoreId__c = null;
     assertConfigFailure(missingStoreConfig, 'WebStoreId__c is required');
   }
 
   @IsTest
   static void testStart_returnsBuyerGroupsForConfiguredStore() {
-    WebStore store = createWebStore('Availability Start Store');
+    SObject store = createWebStore('Availability Start Store');
+    Id storeId = (Id) store.get('Id');
     SObject alphaBuyerGroup = createBuyerGroup('Alpha Buyers');
     SObject betaBuyerGroup = createBuyerGroup('Beta Buyers');
-    linkWebStoreBuyerGroup(store.Id, (Id) alphaBuyerGroup.get('Id'));
-    linkWebStoreBuyerGroup(store.Id, (Id) betaBuyerGroup.get('Id'));
+    linkWebStoreBuyerGroup(storeId, (Id) alphaBuyerGroup.get('Id'));
+    linkWebStoreBuyerGroup(storeId, (Id) betaBuyerGroup.get('Id'));
 
     BuyerGroupAvailabilityExportBatch batch =
-      new BuyerGroupAvailabilityExportBatch(createConfig(store.Id));
+      new BuyerGroupAvailabilityExportBatch(createConfig(storeId));
 
     List<String> names = readQueryLocatorNames(batch.start(null));
 
@@ -222,11 +223,12 @@ private class BuyerGroupAvailabilityExportBatchTest {
 
   @IsTest
   static void testStart_throwsWhenStoreHasNoBuyerGroups() {
-    WebStore store = createWebStore('Empty Availability Store');
+    SObject store = createWebStore('Empty Availability Store');
+    Id storeId = (Id) store.get('Id');
 
     Boolean exceptionThrown = false;
     try {
-      new BuyerGroupAvailabilityExportBatch(createConfig(store.Id)).start(null);
+      new BuyerGroupAvailabilityExportBatch(createConfig(storeId)).start(null);
     } catch (CatalogJobConfigException ex) {
       exceptionThrown = true;
       System.assert(ex.getMessage().contains('No BuyerGroup records found'));
@@ -248,9 +250,10 @@ private class BuyerGroupAvailabilityExportBatchTest {
       new List<Product2>{ hardwareProduct, plumbingProduct }
     );
 
-    WebStore store = createWebStore('Availability Helper Store');
+    SObject store = createWebStore('Availability Helper Store');
+    Id storeId = (Id) store.get('Id');
     SObject buyerGroup = createBuyerGroup('Helper Buyers');
-    linkWebStoreBuyerGroup(store.Id, (Id) buyerGroup.get('Id'));
+    linkWebStoreBuyerGroup(storeId, (Id) buyerGroup.get('Id'));
 
     SObject visiblePolicy = createPolicy('Visible Policy', true, false);
     SObject hiddenPolicy = createPolicy('Hidden Policy', false, false);
@@ -261,7 +264,7 @@ private class BuyerGroupAvailabilityExportBatchTest {
     linkPolicyProduct((Id) visiblePolicy.get('Id'), outsideCatalogProduct.Id);
     linkPolicyProduct((Id) hiddenPolicy.get('Id'), hardwareProduct.Id);
 
-    CatalogJobConfig__mdt config = createConfig(store.Id);
+    CatalogJobConfig__mdt config = createConfig(storeId);
     config.CatalogId__c = String.valueOf(catalog.Id);
 
     BuyerGroupAvailabilityExportBatch batch =
@@ -308,11 +311,12 @@ private class BuyerGroupAvailabilityExportBatchTest {
       new List<Product2>{ hardwareProduct, plumbingProduct }
     );
 
-    WebStore store = createWebStore('Availability Execute Store');
+    SObject store = createWebStore('Availability Execute Store');
+    Id storeId = (Id) store.get('Id');
     SObject allBuyerGroup = createBuyerGroup('All Buyers');
     SObject filteredBuyerGroup = createBuyerGroup('Filtered Buyers');
-    linkWebStoreBuyerGroup(store.Id, (Id) allBuyerGroup.get('Id'));
-    linkWebStoreBuyerGroup(store.Id, (Id) filteredBuyerGroup.get('Id'));
+    linkWebStoreBuyerGroup(storeId, (Id) allBuyerGroup.get('Id'));
+    linkWebStoreBuyerGroup(storeId, (Id) filteredBuyerGroup.get('Id'));
 
     SObject allPolicy = createPolicy('All Buyers Policy', true, true);
     SObject filteredPolicy = createPolicy('Filtered Buyers Policy', true, false);
@@ -325,7 +329,7 @@ private class BuyerGroupAvailabilityExportBatchTest {
     linkPolicyProduct((Id) allPolicy.get('Id'), plumbingProduct.Id);
     linkPolicyProduct((Id) filteredPolicy.get('Id'), plumbingProduct.Id);
 
-    CatalogJobConfig__mdt config = createConfig(store.Id);
+    CatalogJobConfig__mdt config = createConfig(storeId);
     config.CatalogId__c = String.valueOf(catalog.Id);
 
     BuyerGroupAvailabilityExportBatch batch =
@@ -395,8 +399,8 @@ private class BuyerGroupAvailabilityExportBatchTest {
   static void testFinish_deletesOlderItemsWhenOrderingIdPresent() {
     recordedRequests.clear();
 
-    WebStore store = createWebStore('Availability Finish Store');
-    CatalogJobConfig__mdt config = createConfig(store.Id);
+    SObject store = createWebStore('Availability Finish Store');
+    CatalogJobConfig__mdt config = createConfig((Id) store.get('Id'));
     config.EnablePayloadLogging__c = false;
 
     BuyerGroupAvailabilityExportBatch batch =
