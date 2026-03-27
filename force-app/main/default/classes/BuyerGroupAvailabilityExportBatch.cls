@@ -4,6 +4,20 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
   public Long firstOrderingId;
 
   public BuyerGroupAvailabilityExportBatch(String jobConfigDeveloperName) {
+    this(loadJobConfig(jobConfigDeveloperName));
+  }
+
+  @TestVisible
+  private BuyerGroupAvailabilityExportBatch(CatalogJobConfig__mdt jobConfig) {
+    if (jobConfig == null) {
+      throw new CatalogJobException('Catalog job config is required.');
+    }
+
+    this.jobConfig = jobConfig;
+    validateConfig();
+  }
+
+  private static CatalogJobConfig__mdt loadJobConfig(String jobConfigDeveloperName) {
     List<CatalogJobConfig__mdt> configs = [
       SELECT
         DeveloperName,
@@ -32,8 +46,7 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
       );
     }
 
-    this.jobConfig = configs[0];
-    validateConfig();
+    return configs[0];
   }
 
   public Integer getBatchSize() {
