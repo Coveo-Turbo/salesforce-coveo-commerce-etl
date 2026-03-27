@@ -1,4 +1,4 @@
-import { LightningElement, wire, track } from "lwc";
+import { LightningElement, wire } from "lwc";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 
 import listConfigs from "@salesforce/apex/CatalogJobRunner.listConfigs";
@@ -8,121 +8,44 @@ import runSingleBoth from "@salesforce/apex/CatalogJobRunner.runSingleBoth";
 import runAllActive from "@salesforce/apex/CatalogJobRunner.runAllActive";
 import runAllActiveAvailability from "@salesforce/apex/CatalogJobRunner.runAllActiveAvailability";
 import runAllActiveBoth from "@salesforce/apex/CatalogJobRunner.runAllActiveBoth";
+import getRunSnapshots from "@salesforce/apex/CatalogJobRunner.getRunSnapshots";
 
-const TRUNCATE_LENGTH = 50;
-
-const RUN_PRODUCTS_COL = {
-  label: "Products",
-  type: "button",
-  initialWidth: 130,
-  typeAttributes: {
-    label: "Run Product",
-    name: "runProduct",
-    variant: "brand-outline",
-    title: "Run the product export now"
-  }
-};
-
-const RUN_AVAILABILITY_COL = {
-  label: "Availability",
-  type: "button",
-  initialWidth: 130,
-  typeAttributes: {
-    label: "Run Avail",
-    name: "runAvailability",
-    variant: "neutral",
-    title: "Run the Buyer Group availability export now"
-  }
-};
-
-const RUN_BOTH_COL = {
-  label: "Both",
-  type: "button",
-  initialWidth: 110,
-  typeAttributes: {
-    label: "Run Both",
-    name: "runBoth",
-    variant: "brand",
-    title: "Run both the product and availability exports now"
-  }
-};
-
-const VIEW_DETAILS_COL = {
-  label: "Details",
-  type: "button",
-  initialWidth: 90,
-  typeAttributes: {
-    label: "View",
-    name: "viewDetails",
-    variant: "neutral",
-    title: "View full field details"
-  }
-};
+const POLL_INTERVAL_MS = 4000;
+const RUN_STORAGE_KEY = "catalogJobConsoleRuns:v1";
+const ACTIVITY_STORAGE_KEY = "catalogJobConsoleActivity:v1";
+const MAX_RUNS = 8;
+const MAX_ACTIVITY_ITEMS = 18;
 
 export default class CatalogJobConsole extends LightningElement {
-  @track configs;
-  @track error;
-  @track showDetailsModal = false;
-  @track selectedRow = null;
+  configs;
+  error;
+  selectedConfigId;
+  runSessions = [];
+  activityFeed = [];
+  pollTimerId;
+  isPolling = false;
 
-  columns = [
-    RUN_PRODUCTS_COL,
-    RUN_AVAILABILITY_COL,
-    RUN_BOTH_COL,
-    VIEW_DETAILS_COL,
-    { label: "Label", fieldName: "Label", wrapText: true },
-    { label: "Locale", fieldName: "Locale__c" },
-    { label: "Catalog ID", fieldName: "CatalogId__c", wrapText: true },
-    { label: "Builder Type", fieldName: "BuilderType__c", wrapText: true },
-    { label: "Coveo Org Id", fieldName: "CoveoOrgId__c" },
-    { label: "Product Source Id", fieldName: "SourceId__c" },
-    {
-      label: "Availability Source Id",
-      fieldName: "AvailabilitySourceId__c",
-      wrapText: true
-    },
-    { label: "Web Store Id", fieldName: "WebStoreId__c", wrapText: true },
-    {
-      label: "Active",
-      fieldName: "IsActive__c",
-      type: "boolean",
-      cellAttributes: { alignment: "center" }
-    },
-    {
-      label: "Availability Enabled",
-      fieldName: "EnableBuyerGroupAvailability__c",
-      type: "boolean",
-      cellAttributes: { alignment: "center" }
-    },
-    {
-      label: "Product Filter",
-      fieldName: "ProductFilter__c_truncated",
-      wrapText: false,
-      cellAttributes: { class: "slds-truncate" }
-    },
-    {
-      label: "Extra Fields",
-      fieldName: "AdditionalProductFields__c_truncated",
-      wrapText: false,
-      cellAttributes: { class: "slds-truncate" }
-    }
-  ];
+  connectedCallback() {
+    this.restoreRunState();
+    this.startPollingIfNeeded();
+  }
+
+  disconnectedCallback() {
+    this.stopPolling();
+  }
 
   @wire(listConfigs)
   wiredConfigs({ data, error }) {
     if (data) {
-      // Add truncated versions of large text fields
-      this.configs = data.map((config) => ({
-        ...config,
-        ProductFilter__c_truncated: this.truncateText(
-          config.ProductFilter__c,
-          TRUNCATE_LENGTH
-        ),
-        AdditionalProductFields__c_truncated: this.truncateText(
-          config.AdditionalProductFields__c,
-          TRUNCATE_LENGTH
-        )
-      }));
+      const nextSelectedId = data.some(
+        (config) => config.DeveloperName === this.selectedConfigId
+      )
+        ? this.selectedConfigId
+        : data[0]?.DeveloperName;
+      this.configs = data.map((config) =>
+        this.decorateConfig(config, nextSelectedId)
+      );
+      this.selectedConfigId = this.configs.length ? nextSelectedId : null;
       this.error = undefined;
     } else if (error) {
       this.error = error;
@@ -130,185 +53,693 @@ export default class CatalogJobConsole extends LightningElement {
     }
   }
 
-  truncateText(text, maxLength) {
-    if (!text) return "";
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + "...";
+  get hasConfigs() {
+    return Array.isArray(this.configs) && this.configs.length > 0;
   }
 
-  get errorMessage() {
-    if (!this.error) return "";
-    if (Array.isArray(this.error.body)) {
-      return this.error.body.map((e) => e.message).join(", ");
+  get selectedConfig() {
+    if (!this.hasConfigs || !this.selectedConfigId) {
+      return null;
     }
-    if (this.error.body && this.error.body.message) {
-      return this.error.body.message;
-    }
-    return "Unknown error";
+    return (
+      this.configs.find((config) => config.id === this.selectedConfigId) || null
+    );
   }
 
-  // Small stats for header
+  get hasSelectedConfig() {
+    return !!this.selectedConfig;
+  }
+
+  get selectedConfigStatusClass() {
+    return (
+      this.selectedConfig?.activeStatusClass || "cc-badge cc-badge--neutral"
+    );
+  }
+
+  get selectedConfigAvailabilityClass() {
+    return (
+      this.selectedConfig?.availabilityStatusClass ||
+      "cc-badge cc-badge--neutral"
+    );
+  }
+
   get totalJobs() {
     return this.configs ? this.configs.length : 0;
   }
 
   get activeJobs() {
-    return this.configs ? this.configs.filter((c) => c.IsActive__c).length : 0;
+    return this.configs
+      ? this.configs.filter((config) => config.IsActive__c).length
+      : 0;
   }
 
-  get inactiveJobs() {
-    return this.configs ? this.configs.filter((c) => !c.IsActive__c).length : 0;
+  get availabilityReadyJobs() {
+    return this.configs
+      ? this.configs.filter((config) => config.EnableBuyerGroupAvailability__c)
+          .length
+      : 0;
+  }
+
+  get liveRunsCount() {
+    return this.runSessions.filter((session) => !session.isTerminal).length;
+  }
+
+  get hasRunSessions() {
+    return this.runSessions.length > 0;
+  }
+
+  get visibleRunSessions() {
+    return this.runSessions.slice(0, MAX_RUNS);
+  }
+
+  get hasActivityFeed() {
+    return this.activityFeed.length > 0;
+  }
+
+  get visibleActivityFeed() {
+    return this.activityFeed.slice(0, MAX_ACTIVITY_ITEMS);
+  }
+
+  get hasIncompleteRuns() {
+    return this.getIncompleteJobIds().length > 0;
   }
 
   get isLoading() {
     return !this.configs && !this.error;
   }
 
-  handleRunAll() {
-    runAllActive()
-      .then(() => {
-        this.showToast("Success", "Started all active catalog jobs", "success");
-      })
-      .catch((err) => {
-        const msg = this.reduceError(err);
-        this.showToast("Error", msg, "error");
-        // eslint-disable-next-line no-console
-        console.error("runAllActive error", err);
-      });
+  get errorMessage() {
+    if (!this.error) {
+      return "";
+    }
+    if (Array.isArray(this.error.body)) {
+      return this.error.body.map((item) => item.message).join(", ");
+    }
+    if (this.error.body?.message) {
+      return this.error.body.message;
+    }
+    return "Unknown error";
   }
 
-  handleRunAllAvailability() {
-    runAllActiveAvailability()
-      .then(() => {
+  get selectedConfigFactRows() {
+    if (!this.selectedConfig) {
+      return [];
+    }
+
+    return [
+      {
+        label: "Catalog",
+        value: this.selectedConfig.catalogLabel
+      },
+      {
+        label: "Locale",
+        value: this.selectedConfig.localeLabel
+      },
+      {
+        label: "Builder",
+        value: this.selectedConfig.builderSummary
+      },
+      {
+        label: "Product Source",
+        value: this.selectedConfig.productSourceLabel
+      },
+      {
+        label: "Availability Source",
+        value: this.selectedConfig.availabilitySourceLabel
+      },
+      {
+        label: "Web Store",
+        value: this.selectedConfig.webStoreLabel
+      },
+      {
+        label: "Filter",
+        value: this.selectedConfig.scopeSummary
+      },
+      {
+        label: "Extra Fields",
+        value: this.selectedConfig.extraFieldsSummary
+      }
+    ];
+  }
+
+  get runMonitorSubtitle() {
+    if (!this.hasRunSessions) {
+      return "Launch a sync to start tracking live batch progress here.";
+    }
+
+    if (this.hasIncompleteRuns) {
+      return "Auto-refreshing every 4 seconds while active runs are in progress.";
+    }
+
+    return "Recent run history from this console session.";
+  }
+
+  get selectedRunHeading() {
+    if (!this.selectedConfig) {
+      return "Select a catalog job";
+    }
+    return this.selectedConfig.label;
+  }
+
+  get selectedRunSubtitle() {
+    if (!this.selectedConfig) {
+      return "Choose a configuration to launch products or availability syncs.";
+    }
+    return `${this.selectedConfig.catalogLabel} • ${this.selectedConfig.localeLabel} • ${this.selectedConfig.builderLabel}`;
+  }
+
+  get availabilityDisabledMessage() {
+    if (this.selectedConfig?.EnableBuyerGroupAvailability__c) {
+      return "";
+    }
+    return "Buyer Group availability is disabled for this configuration.";
+  }
+
+  handleSelectConfig(event) {
+    const configId = event.currentTarget?.dataset?.configId;
+    if (!configId || configId === this.selectedConfigId) {
+      return;
+    }
+
+    this.selectedConfigId = configId;
+    this.configs = this.configs.map((config) =>
+      this.decorateConfig(config, this.selectedConfigId)
+    );
+  }
+
+  async handleRunSelectedProducts() {
+    if (!this.selectedConfig) {
+      return;
+    }
+
+    await this.launchRuns(
+      () =>
+        runSingle({
+          jobConfigDeveloperName: this.selectedConfig.developerName
+        }),
+      `${this.selectedConfig.label}: started product sync`
+    );
+  }
+
+  async handleRunSelectedAvailability() {
+    if (!this.selectedConfig) {
+      return;
+    }
+
+    await this.launchRuns(
+      () =>
+        runSingleAvailability({
+          jobConfigDeveloperName: this.selectedConfig.developerName
+        }),
+      `${this.selectedConfig.label}: started availability sync`
+    );
+  }
+
+  async handleRunSelectedBoth() {
+    if (!this.selectedConfig) {
+      return;
+    }
+
+    await this.launchRuns(
+      () =>
+        runSingleBoth({
+          jobConfigDeveloperName: this.selectedConfig.developerName
+        }),
+      `${this.selectedConfig.label}: started products and availability syncs`
+    );
+  }
+
+  async handleRunAllProducts() {
+    await this.launchRuns(
+      () => runAllActive(),
+      "Started product syncs for all active configurations"
+    );
+  }
+
+  async handleRunAllAvailability() {
+    await this.launchRuns(
+      () => runAllActiveAvailability(),
+      "Started availability syncs for active Buyer Group-enabled configurations"
+    );
+  }
+
+  async handleRunAllBoth() {
+    await this.launchRuns(
+      () => runAllActiveBoth(),
+      "Started syncs for all active configurations"
+    );
+  }
+
+  async launchRuns(requestFn, successMessage) {
+    try {
+      const response = await requestFn();
+      const launches = this.normalizeLaunches(response);
+
+      if (!launches.length) {
         this.showToast(
-          "Success",
-          "Started all active availability jobs",
-          "success"
+          "No jobs started",
+          "There were no eligible catalog jobs to launch.",
+          "info"
         );
-      })
-      .catch((err) => {
-        const msg = this.reduceError(err);
-        this.showToast("Error", msg, "error");
-        // eslint-disable-next-line no-console
-        console.error("runAllActiveAvailability error", err);
-      });
-  }
+        return;
+      }
 
-  handleRunAllBoth() {
-    runAllActiveBoth()
-      .then(() => {
-        this.showToast(
-          "Success",
-          "Started all active product and availability jobs",
-          "success"
-        );
-      })
-      .catch((err) => {
-        const msg = this.reduceError(err);
-        this.showToast("Error", msg, "error");
-        // eslint-disable-next-line no-console
-        console.error("runAllActiveBoth error", err);
-      });
-  }
-
-  handleRowAction(event) {
-    const actionName = event.detail.action.name;
-    const row = event.detail.row;
-    // eslint-disable-next-line no-console
-    console.log("Row action fired", actionName, row);
-
-    if (actionName === "runProduct") {
-      this.handleRunSingle(row.DeveloperName);
-    } else if (actionName === "runAvailability") {
-      this.handleRunSingleAvailability(row.DeveloperName);
-    } else if (actionName === "runBoth") {
-      this.handleRunSingleBoth(row.DeveloperName);
-    } else if (actionName === "viewDetails") {
-      this.selectedRow = row;
-      this.showDetailsModal = true;
+      this.recordLaunches(launches);
+      this.showToast("Sync started", successMessage, "success");
+      await this.pollRunSnapshots();
+      this.startPollingIfNeeded();
+    } catch (error) {
+      const message = this.reduceError(error);
+      this.showToast("Error", message, "error");
+      // eslint-disable-next-line no-console
+      console.error("Catalog job launch error", error);
     }
   }
 
-  handleCloseModal() {
-    this.showDetailsModal = false;
-    this.selectedRow = null;
+  normalizeLaunches(response) {
+    if (!response) {
+      return [];
+    }
+    return Array.isArray(response) ? response : [response];
   }
 
-  get modalTitle() {
-    return this.selectedRow ? `Details: ${this.selectedRow.Label}` : "Details";
+  recordLaunches(launches) {
+    const nextRuns = launches.map((launch) => this.createRunSession(launch));
+    nextRuns.forEach((launch) => {
+      this.addActivity(
+        `${launch.label}: ${this.describeLaunchMode(launch.mode)} started`
+      );
+    });
+
+    this.runSessions = [...nextRuns, ...this.runSessions]
+      .slice(0, MAX_RUNS)
+      .map((session) => this.decorateRunSession(session));
+
+    this.persistRunState();
   }
 
-  get productFilter() {
-    return this.selectedRow?.ProductFilter__c || "(None)";
+  createRunSession(launch) {
+    return {
+      runKey: launch.runKey,
+      developerName: launch.developerName,
+      label: launch.label,
+      mode: launch.mode,
+      availabilityEnabled: launch.availabilityEnabled,
+      launchedAt: launch.launchedAt,
+      jobs: (launch.jobs || []).map((job) => ({
+        jobId: job.jobId,
+        channel: job.channel,
+        label: job.label,
+        status: "Queued",
+        jobItemsProcessed: 0,
+        totalJobItems: 0,
+        numberOfErrors: 0,
+        extendedStatus: "",
+        isTerminal: false,
+        createdDate: launch.launchedAt,
+        completedDate: null
+      }))
+    };
   }
 
-  get additionalFields() {
-    return this.selectedRow?.AdditionalProductFields__c || "(None)";
+  async pollRunSnapshots() {
+    const pendingJobIds = this.getIncompleteJobIds();
+    if (!pendingJobIds.length || this.isPolling) {
+      return;
+    }
+
+    this.isPolling = true;
+
+    try {
+      const snapshots = await getRunSnapshots({ jobIds: pendingJobIds });
+      if (snapshots?.length) {
+        this.mergeSnapshots(snapshots);
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("getRunSnapshots error", error);
+    } finally {
+      this.isPolling = false;
+      if (!this.getIncompleteJobIds().length) {
+        this.stopPolling();
+      }
+    }
   }
 
-  get availabilitySourceId() {
-    return this.selectedRow?.AvailabilitySourceId__c || "(None)";
-  }
+  mergeSnapshots(snapshots) {
+    const snapshotByJobId = new Map(
+      snapshots.map((snapshot) => [snapshot.jobId, snapshot])
+    );
 
-  get webStoreId() {
-    return this.selectedRow?.WebStoreId__c || "(None)";
-  }
+    const nextRuns = this.runSessions.map((runSession) => {
+      const nextJobs = runSession.jobs.map((job) => {
+        const snapshot = snapshotByJobId.get(job.jobId);
+        if (!snapshot) {
+          return job;
+        }
 
-  get availabilityEnabled() {
-    return this.selectedRow?.EnableBuyerGroupAvailability__c
-      ? "Enabled"
-      : "Disabled";
-  }
+        if (job.status !== snapshot.status) {
+          this.addActivity(
+            `${runSession.label}: ${this.describeStageChange(job.channel, snapshot.status)}`
+          );
+        }
 
-  handleRunSingle(devName) {
-    runSingle({ jobConfigDeveloperName: devName })
-      .then(() => {
-        this.showToast(
-          "Success",
-          `Started product export job: ${devName}`,
-          "success"
-        );
-      })
-      .catch((err) => {
-        const msg = this.reduceError(err);
-        this.showToast("Error", msg, "error");
-        // eslint-disable-next-line no-console
-        console.error("runSingle error", err);
+        return {
+          ...job,
+          ...snapshot
+        };
       });
+
+      return this.decorateRunSession({
+        ...runSession,
+        jobs: nextJobs
+      });
+    });
+
+    this.runSessions = nextRuns;
+    this.persistRunState();
   }
 
-  handleRunSingleAvailability(devName) {
-    runSingleAvailability({ jobConfigDeveloperName: devName })
-      .then(() => {
-        this.showToast(
-          "Success",
-          `Started availability export job: ${devName}`,
-          "success"
-        );
-      })
-      .catch((err) => {
-        const msg = this.reduceError(err);
-        this.showToast("Error", msg, "error");
-        // eslint-disable-next-line no-console
-        console.error("runSingleAvailability error", err);
-      });
+  startPollingIfNeeded() {
+    if (!this.getIncompleteJobIds().length || this.pollTimerId) {
+      return;
+    }
+
+    this.pollTimerId = window.setInterval(() => {
+      this.pollRunSnapshots();
+    }, POLL_INTERVAL_MS);
   }
 
-  handleRunSingleBoth(devName) {
-    runSingleBoth({ jobConfigDeveloperName: devName })
-      .then(() => {
-        this.showToast(
-          "Success",
-          `Started product and availability export jobs: ${devName}`,
-          "success"
-        );
-      })
-      .catch((err) => {
-        const msg = this.reduceError(err);
-        this.showToast("Error", msg, "error");
-        // eslint-disable-next-line no-console
-        console.error("runSingleBoth error", err);
+  stopPolling() {
+    if (this.pollTimerId) {
+      window.clearInterval(this.pollTimerId);
+      this.pollTimerId = null;
+    }
+  }
+
+  getIncompleteJobIds() {
+    return this.runSessions.reduce((jobIds, runSession) => {
+      runSession.jobs.forEach((job) => {
+        if (!job.isTerminal && job.jobId) {
+          jobIds.push(job.jobId);
+        }
       });
+      return jobIds;
+    }, []);
+  }
+
+  addActivity(message) {
+    const entry = {
+      key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      message,
+      timestamp: new Date().toISOString(),
+      timestampLabel: this.formatTimestamp(new Date().toISOString())
+    };
+
+    this.activityFeed = [entry, ...this.activityFeed].slice(
+      0,
+      MAX_ACTIVITY_ITEMS
+    );
+  }
+
+  persistRunState() {
+    try {
+      window.sessionStorage.setItem(
+        RUN_STORAGE_KEY,
+        JSON.stringify(this.runSessions)
+      );
+      window.sessionStorage.setItem(
+        ACTIVITY_STORAGE_KEY,
+        JSON.stringify(this.activityFeed)
+      );
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("Unable to persist run-center state", error);
+    }
+  }
+
+  restoreRunState() {
+    try {
+      const storedRuns = window.sessionStorage.getItem(RUN_STORAGE_KEY);
+      const storedActivity =
+        window.sessionStorage.getItem(ACTIVITY_STORAGE_KEY);
+
+      if (storedRuns) {
+        const parsedRuns = JSON.parse(storedRuns);
+        this.runSessions = Array.isArray(parsedRuns)
+          ? parsedRuns.map((session) => this.decorateRunSession(session))
+          : [];
+      }
+
+      if (storedActivity) {
+        const parsedActivity = JSON.parse(storedActivity);
+        this.activityFeed = Array.isArray(parsedActivity) ? parsedActivity : [];
+      }
+    } catch (error) {
+      this.runSessions = [];
+      this.activityFeed = [];
+    }
+  }
+
+  decorateConfig(config, selectedConfigId) {
+    const filterText = this.normalizeText(
+      config.ProductFilter__c,
+      "No product filter"
+    );
+    const extraFields = this.splitCsv(config.AdditionalProductFields__c);
+    const isSelected = config.DeveloperName === selectedConfigId;
+
+    return {
+      ...config,
+      id: config.DeveloperName,
+      developerName: config.DeveloperName,
+      label: config.Label,
+      cardClass: this.getConfigCardClass(isSelected),
+      catalogLabel: this.normalizeText(config.CatalogId__c, "Catalog not set"),
+      localeLabel: this.normalizeText(config.Locale__c, "Default locale"),
+      builderLabel: this.normalizeText(config.BuilderType__c, "Default"),
+      builderSummary: this.describeBuilder(config.BuilderType__c),
+      productSourceLabel: this.normalizeText(
+        config.SourceId__c,
+        "No product source"
+      ),
+      availabilitySourceLabel: config.EnableBuyerGroupAvailability__c
+        ? this.normalizeText(
+            config.AvailabilitySourceId__c,
+            "Availability source missing"
+          )
+        : "Not enabled",
+      webStoreLabel: config.EnableBuyerGroupAvailability__c
+        ? this.normalizeText(config.WebStoreId__c, "Web store missing")
+        : "Not required",
+      scopeSummary: filterText,
+      extraFieldsSummary: extraFields.length
+        ? `${extraFields.length} extra field${extraFields.length === 1 ? "" : "s"}`
+        : "No extra fields",
+      extraFieldsTitle: extraFields.length
+        ? extraFields.join(", ")
+        : "No extra fields",
+      activeStatusLabel: config.IsActive__c ? "Active" : "Inactive",
+      activeStatusClass: config.IsActive__c
+        ? "cc-badge cc-badge--success"
+        : "cc-badge cc-badge--neutral",
+      availabilityStatusLabel: config.EnableBuyerGroupAvailability__c
+        ? "Availability On"
+        : "Availability Off",
+      availabilityStatusClass: config.EnableBuyerGroupAvailability__c
+        ? "cc-badge cc-badge--info"
+        : "cc-badge cc-badge--neutral",
+      availabilityDisabled: config.EnableBuyerGroupAvailability__c !== true
+    };
+  }
+
+  decorateRunSession(runSession) {
+    const stages = runSession.jobs.map((job) => this.decorateRunStage(job));
+    const hasFailure = stages.some(
+      (stage) => stage.status === "Failed" || stage.status === "Aborted"
+    );
+    const isComplete =
+      stages.length > 0 && stages.every((stage) => stage.isTerminal);
+    const isInProgress = stages.some((stage) => stage.status === "Processing");
+    const progressPercent = Math.round(
+      stages.reduce((sum, stage) => sum + stage.progressPercent, 0) /
+        Math.max(stages.length, 1)
+    );
+
+    let overallStatusLabel = "Queued";
+    let overallStatusClass = "cc-badge cc-badge--neutral";
+
+    if (hasFailure) {
+      overallStatusLabel = "Attention Required";
+      overallStatusClass = "cc-badge cc-badge--danger";
+    } else if (isComplete) {
+      overallStatusLabel = "Complete";
+      overallStatusClass = "cc-badge cc-badge--success";
+    } else if (isInProgress) {
+      overallStatusLabel = "In Progress";
+      overallStatusClass = "cc-badge cc-badge--brand";
+    }
+
+    return {
+      ...runSession,
+      stages,
+      progressPercent,
+      isTerminal: isComplete || hasFailure,
+      overallStatusLabel,
+      overallStatusClass,
+      launchedAtLabel: this.formatTimestamp(runSession.launchedAt),
+      cardClass: hasFailure
+        ? "cc-run-card cc-run-card--error"
+        : isComplete
+          ? "cc-run-card cc-run-card--complete"
+          : "cc-run-card"
+    };
+  }
+
+  decorateRunStage(job) {
+    const status = job.status || "Queued";
+    const progressPercent = this.getJobProgressPercent(job);
+    const batchesLabel =
+      job.totalJobItems > 0
+        ? `${job.jobItemsProcessed || 0} / ${job.totalJobItems} batches`
+        : "Waiting for batch metrics";
+
+    return {
+      ...job,
+      status,
+      progressPercent,
+      statusLabel: this.describeStageChange(job.channel, status),
+      statusClass: this.getStageStatusClass(status),
+      batchesLabel
+    };
+  }
+
+  getJobProgressPercent(job) {
+    if (job.status === "Completed") {
+      return 100;
+    }
+
+    if (job.status === "Failed" || job.status === "Aborted") {
+      return Math.max(
+        5,
+        this.safePercent(job.jobItemsProcessed, job.totalJobItems)
+      );
+    }
+
+    if (job.totalJobItems > 0) {
+      return this.safePercent(job.jobItemsProcessed, job.totalJobItems);
+    }
+
+    if (job.status === "Processing") {
+      return 35;
+    }
+
+    return 0;
+  }
+
+  safePercent(processed, total) {
+    if (!total) {
+      return 0;
+    }
+    return Math.max(
+      0,
+      Math.min(100, Math.round(((processed || 0) / total) * 100))
+    );
+  }
+
+  getStageStatusClass(status) {
+    switch (status) {
+      case "Completed":
+        return "cc-stage-badge cc-stage-badge--success";
+      case "Processing":
+        return "cc-stage-badge cc-stage-badge--brand";
+      case "Failed":
+      case "Aborted":
+        return "cc-stage-badge cc-stage-badge--danger";
+      default:
+        return "cc-stage-badge cc-stage-badge--neutral";
+    }
+  }
+
+  describeLaunchMode(mode) {
+    switch (mode) {
+      case "availability":
+        return "availability sync";
+      case "both":
+        return "product and availability syncs";
+      default:
+        return "product sync";
+    }
+  }
+
+  describeStageChange(channel, status) {
+    const subject =
+      channel === "availability" ? "Syncing availability" : "Syncing products";
+
+    switch (status) {
+      case "Completed":
+        return `${subject} complete`;
+      case "Processing":
+        return subject;
+      case "Failed":
+        return `${subject} failed`;
+      case "Aborted":
+        return `${subject} aborted`;
+      default:
+        return `${subject} queued`;
+    }
+  }
+
+  describeBuilder(builderType) {
+    switch (builderType) {
+      case "Commerce":
+        return "Commerce catalog builder";
+      case "Variant":
+        return "Variant-aware builder";
+      case "Grouping":
+        return "Grouping builder";
+      case "GroupingWithVariants":
+        return "Grouping + variant builder";
+      default:
+        return this.normalizeText(
+          builderType,
+          "Default - Simple products without grouping/variant logic"
+        );
+    }
+  }
+
+  getConfigCardClass(isSelected) {
+    return isSelected
+      ? "cc-config-card cc-config-card--selected"
+      : "cc-config-card";
+  }
+
+  splitCsv(value) {
+    return (value || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  normalizeText(value, fallback) {
+    return value && String(value).trim() ? value : fallback;
+  }
+
+  formatTimestamp(isoValue) {
+    if (!isoValue) {
+      return "Just now";
+    }
+
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+      }).format(new Date(isoValue));
+    } catch (error) {
+      return isoValue;
+    }
   }
 
   showToast(title, message, variant) {
@@ -321,13 +752,10 @@ export default class CatalogJobConsole extends LightningElement {
     );
   }
 
-  reduceError(err) {
-    let message = "Unknown error";
-    if (Array.isArray(err?.body)) {
-      message = err.body.map((e) => e.message).join(", ");
-    } else if (err?.body?.message) {
-      message = err.body.message;
+  reduceError(error) {
+    if (Array.isArray(error?.body)) {
+      return error.body.map((item) => item.message).join(", ");
     }
-    return message;
+    return error?.body?.message || "Unknown error";
   }
 }

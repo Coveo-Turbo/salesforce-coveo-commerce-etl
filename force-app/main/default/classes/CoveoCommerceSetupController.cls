@@ -8,6 +8,19 @@ public with sharing class CoveoCommerceSetupController {
   private static final String EXTERNAL_CREDENTIAL_NAME = 'CoveoPushAuthCred';
   private static final String API_KEY_PARAMETER_NAME = 'API_KEY';
   private static final Integer MAX_ERROR_MESSAGE_LENGTH = 200;
+  private static final Integer OPTION_QUERY_LIMIT = 200;
+  private static final Set<String> EXCLUDED_PRODUCT_FIELD_API_NAMES = new Set<String>{
+    'CreatedById',
+    'CreatedDate',
+    'Id',
+    'IsDeleted',
+    'LastModifiedById',
+    'LastModifiedDate',
+    'LastReferencedDate',
+    'LastViewedDate',
+    'MasterRecordId',
+    'SystemModstamp'
+  };
 
   /**
    * Gets the status of the Coveo_Push Named Credential.
@@ -137,6 +150,153 @@ public with sharing class CoveoCommerceSetupController {
   }
 
   /**
+   * Gets selector data used by the guided catalog job setup workspace.
+   */
+  @AuraEnabled(cacheable=true)
+  public static Map<String, Object> getSetupWorkspaceOptions() {
+    Map<String, Object> result = new Map<String, Object>();
+    result.put(
+      'webStores',
+      loadNamedRecordOptions(
+        'WebStore',
+        'SELECT Id, Name FROM WebStore ORDER BY Name LIMIT ' +
+        OPTION_QUERY_LIMIT
+      )
+    );
+    result.put(
+      'productCatalogs',
+      loadNamedRecordOptions(
+        'ProductCatalog',
+        'SELECT Id, Name FROM ProductCatalog ORDER BY Name LIMIT ' +
+        OPTION_QUERY_LIMIT
+      )
+    );
+    result.put(
+      'builderTypeOptions',
+      CatalogJsonBuilderFactory.getAvailableBuilderTypes()
+    );
+    result.put('productFieldOptions', getProductFieldOptions());
+    return result;
+  }
+
+  /**
+   * Builds a preflight preview for a draft catalog job configuration.
+   */
+  @AuraEnabled
+  public static Map<String, Object> previewCatalogJobDraft(
+    String label,
+    String developerName,
+    String coveoOrgId,
+    String sourceId,
+    String availabilitySourceId,
+    String catalogId,
+    String webStoreId,
+    String locale,
+    String builderType,
+    Boolean enableBuyerGroupAvailability,
+    String productFilter,
+    List<String> additionalProductFields
+  ) {
+    Map<String, Object> result = new Map<String, Object>();
+    List<String> validationMessages = new List<String>();
+    List<String> warningMessages = new List<String>();
+    Integer selectedFieldCount = additionalProductFields == null
+      ? 0
+      : additionalProductFields.size();
+    Boolean availabilityEnabled = enableBuyerGroupAvailability == true;
+
+    if (String.isBlank(label)) {
+      validationMessages.add('Job label is required.');
+    }
+    if (String.isBlank(developerName)) {
+      validationMessages.add(
+        'Developer Name is required. It can be generated from the job label.'
+      );
+    }
+    if (String.isBlank(coveoOrgId)) {
+      validationMessages.add('Coveo Org Id is required.');
+    }
+    if (String.isBlank(sourceId)) {
+      validationMessages.add('Product Source Id is required.');
+    }
+    if (String.isBlank(locale)) {
+      validationMessages.add('Locale is required.');
+    }
+    if (availabilityEnabled && String.isBlank(availabilitySourceId)) {
+      validationMessages.add(
+        'Availability Source Id is required when Buyer Group availability is enabled.'
+      );
+    }
+    if (availabilityEnabled && String.isBlank(webStoreId)) {
+      validationMessages.add(
+        'Web Store is required when Buyer Group availability is enabled.'
+      );
+    }
+
+    if (String.isBlank(catalogId)) {
+      warningMessages.add(
+        'No catalog is selected, so the product sync will use all active products that match the optional filter.'
+      );
+    }
+    if (selectedFieldCount > 12) {
+      warningMessages.add(
+        'A large number of extra fields can slow down exports and increase payload size.'
+      );
+    }
+    if (String.isBlank(builderType)) {
+      warningMessages.add(
+        'No Builder Type is selected, so this job will fall back to the global default builder.'
+      );
+    }
+
+    Integer estimatedProductCount = 0;
+    Integer buyerGroupCount = 0;
+
+    try {
+      estimatedProductCount = getEstimatedProductCount(
+        catalogId,
+        productFilter
+      );
+      if (estimatedProductCount == 0) {
+        warningMessages.add(
+          'The current catalog and filter settings resolve to zero active products.'
+        );
+      } else if (estimatedProductCount > 10000) {
+        warningMessages.add(
+          'This job targets a large catalog. Consider tuning batch size and monitoring throughput before the first full sync.'
+        );
+      }
+    } catch (Exception e) {
+      validationMessages.add(
+        'Unable to estimate product count: ' + e.getMessage()
+      );
+    }
+
+    if (availabilityEnabled && String.isNotBlank(webStoreId)) {
+      try {
+        buyerGroupCount = getBuyerGroupCountForWebStore(webStoreId);
+        if (buyerGroupCount == 0) {
+          warningMessages.add(
+            'The selected Web Store currently has no linked Buyer Groups.'
+          );
+        }
+      } catch (Exception e) {
+        validationMessages.add(
+          'Unable to evaluate Buyer Group coverage: ' + e.getMessage()
+        );
+      }
+    }
+
+    result.put('estimatedProductCount', estimatedProductCount);
+    result.put('buyerGroupCount', buyerGroupCount);
+    result.put('selectedFieldCount', selectedFieldCount);
+    result.put('validationMessages', validationMessages);
+    result.put('warningMessages', warningMessages);
+    result.put('isReady', validationMessages.isEmpty());
+    return result;
+  }
+
+  /**
    * Gets the current active builder mapping.
    */
   @AuraEnabled(cacheable=true)
@@ -208,6 +368,157 @@ public with sharing class CoveoCommerceSetupController {
     }
 
     return options;
+  }
+
+  private static List<Map<String, String>> getProductFieldOptions() {
+    List<Map<String, String>> options = new List<Map<String, String>>();
+    Map<String, Schema.SObjectField> fields = Product2.SObjectType.getDescribe()
+      .fields.getMap();
+    List<String> sortKeys = new List<String>();
+    Map<String, String> apiNameBySortKey = new Map<String, String>();
+
+    for (String apiName : fields.keySet()) {
+      if (EXCLUDED_PRODUCT_FIELD_API_NAMES.contains(apiName)) {
+        continue;
+      }
+
+      Schema.DescribeFieldResult describe = fields.get(apiName).getDescribe();
+      if (!describe.isAccessible()) {
+        continue;
+      }
+
+      String sortKey = describe.getLabel().toLowerCase() + '|' + apiName;
+      sortKeys.add(sortKey);
+      apiNameBySortKey.put(sortKey, apiName);
+    }
+
+    sortKeys.sort();
+
+    for (String sortKey : sortKeys) {
+      String apiName = apiNameBySortKey.get(sortKey);
+      Schema.DescribeFieldResult describe = fields.get(apiName).getDescribe();
+
+      options.add(
+        new Map<String, String>{
+          'value' => apiName,
+          'label' => describe.getLabel() +
+          ' (' +
+          apiName +
+          ')'
+        }
+      );
+    }
+
+    return options;
+  }
+
+  private static List<Map<String, String>> loadNamedRecordOptions(
+    String objectApiName,
+    String soql
+  ) {
+    List<Map<String, String>> options = new List<Map<String, String>>();
+    if (!Schema.getGlobalDescribe().containsKey(objectApiName)) {
+      return options;
+    }
+
+    for (SObject record : Database.query(soql)) {
+      options.add(
+        new Map<String, String>{
+          'value' => String.valueOf(record.get('Id')),
+          'label' => String.valueOf(record.get('Name')),
+          'description' => String.valueOf(record.get('Id'))
+        }
+      );
+    }
+
+    return options;
+  }
+
+  private static Integer getEstimatedProductCount(
+    String catalogId,
+    String productFilter
+  ) {
+    String query = 'SELECT COUNT() FROM Product2 WHERE IsActive = true';
+
+    if (String.isNotBlank(catalogId)) {
+      Set<Id> productIdsInCatalog = getProductIdsForCatalog(catalogId);
+      if (productIdsInCatalog.isEmpty()) {
+        return 0;
+      }
+      query += ' AND Id IN :productIdsInCatalog';
+    }
+
+    if (String.isNotBlank(productFilter)) {
+      String sanitizedFilter = validateAndSanitizeFilter(productFilter);
+      query += ' AND (' + sanitizedFilter + ')';
+    }
+
+    return Database.countQuery(query);
+  }
+
+  private static Set<Id> getProductIdsForCatalog(String catalogId) {
+    Set<Id> productIds = new Set<Id>();
+
+    for (ProductCategoryProduct catalogMembership : [
+      SELECT ProductId
+      FROM ProductCategoryProduct
+      WHERE ProductCategory.CatalogId = :catalogId AND ProductId != NULL
+    ]) {
+      productIds.add(catalogMembership.ProductId);
+    }
+
+    return productIds;
+  }
+
+  private static String validateAndSanitizeFilter(String filter) {
+    if (String.isBlank(filter)) {
+      return filter;
+    }
+
+    String trimmedFilter = filter.trim();
+    String normalizedFilter = trimmedFilter.replaceAll('[\\t\\n\\r]+', ' ')
+      .toUpperCase();
+
+    List<String> dmlPatterns = new List<String>{
+      'INSERT ',
+      'UPDATE ',
+      'DELETE ',
+      'UPSERT ',
+      'MERGE ',
+      'UNDELETE '
+    };
+
+    for (String pattern : dmlPatterns) {
+      if (normalizedFilter.contains(pattern)) {
+        throw new CatalogJobException(
+          'Invalid ProductFilter__c value: contains DML keyword "' +
+            pattern.trim() +
+            '". Only valid SOQL WHERE clause fragments are allowed.'
+        );
+      }
+    }
+
+    if (
+      normalizedFilter.contains('SELECT ') &&
+      normalizedFilter.contains(' FROM ')
+    ) {
+      throw new CatalogJobException(
+        'Invalid ProductFilter__c value: contains subquery pattern. ' +
+        'Only simple SOQL WHERE clause fragments are allowed.'
+      );
+    }
+
+    return trimmedFilter;
+  }
+
+  private static Integer getBuyerGroupCountForWebStore(String webStoreId) {
+    if (!Schema.getGlobalDescribe().containsKey('WebStoreBuyerGroup')) {
+      return 0;
+    }
+
+    return Database.countQuery(
+      'SELECT COUNT() FROM WebStoreBuyerGroup WHERE WebStoreId = :webStoreId'
+    );
   }
 
   /**

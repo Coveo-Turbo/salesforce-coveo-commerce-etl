@@ -1,174 +1,320 @@
 <template>
-  <lightning-card title="Coveo Catalog Jobs" icon-name="standard:product">
-    <div class="cc-container slds-p-around_medium">
-      <!-- Header row -->
-      <div class="cc-header slds-grid slds-wrap slds-m-bottom_small">
-        <div class="slds-col slds-size_1-of-2 slds-p-right_small">
+  <lightning-card title="Catalog Sync Run Center" icon-name="standard:product">
+    <div class="cc-shell">
+      <div class="cc-hero">
+        <div>
+          <p class="cc-kicker">Run Center</p>
+          <h2 class="cc-heading">Launch and monitor catalog syncs</h2>
           <p class="cc-subtitle">
-            Manage and trigger catalog exports from Salesforce to Coveo.
+            Start product and Buyer Group availability exports, then follow live
+            batch progress without leaving Salesforce.
           </p>
         </div>
-        <div class="slds-col slds-size_1-of-2 slds-text-align_right">
+        <div class="cc-hero__actions">
           <lightning-button
             label="Run All Products"
             variant="brand"
-            onclick={handleRunAll}
-            class="slds-m-left_x-small"
-          >
-          </lightning-button>
+            onclick={handleRunAllProducts}
+          ></lightning-button>
           <lightning-button
             label="Run All Availability"
             variant="neutral"
             onclick={handleRunAllAvailability}
-            class="slds-m-left_x-small"
-          >
-          </lightning-button>
+          ></lightning-button>
           <lightning-button
-            label="Run All Both"
+            label="Run All Syncs"
             variant="brand-outline"
             onclick={handleRunAllBoth}
-            class="slds-m-left_x-small"
-          >
-          </lightning-button>
+          ></lightning-button>
         </div>
       </div>
 
-      <!-- Stats row -->
-      <template if:true={configs}>
-        <div class="cc-stats slds-grid slds-wrap slds-m-bottom_small">
-          <div class="slds-col slds-size_1-of-3 slds-p-right_small">
-            <div
-              class="cc-stat-card slds-p-around_small slds-box slds-box_xx-small"
-            >
-              <div class="cc-stat-label">Total Jobs</div>
-              <div class="cc-stat-value">{totalJobs}</div>
-            </div>
-          </div>
-          <div class="slds-col slds-size_1-of-3 slds-p-horizontal_small">
-            <div
-              class="cc-stat-card slds-p-around_small slds-box slds-box_xx-small"
-            >
-              <div class="cc-stat-label">Active Jobs</div>
-              <div class="cc-stat-value cc-pill cc-pill--green">
-                {activeJobs}
-              </div>
-            </div>
-          </div>
-          <div class="slds-col slds-size_1-of-3 slds-p-left_small">
-            <div
-              class="cc-stat-card slds-p-around_small slds-box slds-box_xx-small"
-            >
-              <div class="cc-stat-label">Inactive Jobs</div>
-              <div class="cc-stat-value cc-pill cc-pill--grey">
-                {inactiveJobs}
-              </div>
-            </div>
-          </div>
-        </div>
-      </template>
-
-      <!-- Table -->
-      <template if:true={configs}>
-        <lightning-datatable
-          key-field="DeveloperName"
-          data={configs}
-          columns={columns}
-          hide-checkbox-column
-          onrowaction={handleRowAction}
-          class="cc-table"
-        >
-        </lightning-datatable>
-      </template>
-
-      <!-- Errors -->
-      <template if:true={error}>
-        <p class="slds-text-color_error slds-m-top_small">{errorMessage}</p>
-      </template>
-
-      <!-- Loading -->
       <template if:true={isLoading}>
-        <div class="slds-m-vertical_medium slds-text-align_center">
+        <div class="cc-loading">
           <lightning-spinner
-            alternative-text="Loading configurations"
+            alternative-text="Loading catalog jobs"
           ></lightning-spinner>
         </div>
       </template>
-    </div>
 
-    <!-- Details Modal -->
-    <template if:true={showDetailsModal}>
-      <section
-        role="dialog"
-        tabindex="-1"
-        class="slds-modal slds-fade-in-open"
-        aria-modal="true"
-      >
-        <div class="slds-modal__container">
-          <header class="slds-modal__header">
-            <lightning-button-icon
-              icon-name="utility:close"
-              variant="bare-inverse"
-              size="large"
-              onclick={handleCloseModal}
-              alternative-text="Close"
-              class="slds-modal__close"
-            ></lightning-button-icon>
-            <h2 class="slds-text-heading_medium">{modalTitle}</h2>
-          </header>
-          <div class="slds-modal__content slds-p-around_medium">
-            <div class="slds-form">
-              <div class="slds-form-element slds-m-bottom_medium">
-                <label class="slds-form-element__label slds-text-title_bold">
-                  Product Filter
-                </label>
-                <div class="slds-form-element__control">
-                  <div class="cc-detail-content">{productFilter}</div>
-                </div>
-              </div>
-              <div class="slds-form-element">
-                <label class="slds-form-element__label slds-text-title_bold">
-                  Additional Product Fields
-                </label>
-                <div class="slds-form-element__control">
-                  <div class="cc-detail-content">{additionalFields}</div>
-                </div>
-              </div>
-              <div class="slds-form-element slds-m-top_medium">
-                <label class="slds-form-element__label slds-text-title_bold">
-                  Availability Source Id
-                </label>
-                <div class="slds-form-element__control">
-                  <div class="cc-detail-content">{availabilitySourceId}</div>
-                </div>
-              </div>
-              <div class="slds-form-element slds-m-top_medium">
-                <label class="slds-form-element__label slds-text-title_bold">
-                  Web Store Id
-                </label>
-                <div class="slds-form-element__control">
-                  <div class="cc-detail-content">{webStoreId}</div>
-                </div>
-              </div>
-              <div class="slds-form-element slds-m-top_medium">
-                <label class="slds-form-element__label slds-text-title_bold">
-                  Buyer Group Availability
-                </label>
-                <div class="slds-form-element__control">
-                  <div class="cc-detail-content">{availabilityEnabled}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <footer class="slds-modal__footer">
-            <lightning-button
-              label="Close"
-              onclick={handleCloseModal}
-              variant="brand"
-            ></lightning-button>
-          </footer>
+      <template if:true={error}>
+        <div class="cc-error">{errorMessage}</div>
+      </template>
+
+      <template if:true={hasConfigs}>
+        <div class="cc-stat-grid">
+          <article class="cc-stat-card">
+            <p class="cc-stat-card__label">Total Jobs</p>
+            <p class="cc-stat-card__value">{totalJobs}</p>
+          </article>
+          <article class="cc-stat-card">
+            <p class="cc-stat-card__label">Active Jobs</p>
+            <p class="cc-stat-card__value">{activeJobs}</p>
+          </article>
+          <article class="cc-stat-card">
+            <p class="cc-stat-card__label">Availability Ready</p>
+            <p class="cc-stat-card__value">{availabilityReadyJobs}</p>
+          </article>
+          <article class="cc-stat-card">
+            <p class="cc-stat-card__label">Live Runs</p>
+            <p class="cc-stat-card__value">{liveRunsCount}</p>
+          </article>
         </div>
-      </section>
-      <div class="slds-backdrop slds-backdrop_open"></div>
-    </template>
+
+        <div class="cc-layout">
+          <section class="cc-panel">
+            <div class="cc-panel__header">
+              <div>
+                <p class="cc-section-label">Catalog Jobs</p>
+                <h3 class="cc-panel__title">Choose a sync configuration</h3>
+              </div>
+              <p class="cc-panel__meta">
+                Focus a config to launch from the run workspace.
+              </p>
+            </div>
+
+            <div class="cc-config-list">
+              <template for:each={configs} for:item="config">
+                <article key={config.id} class={config.cardClass}>
+                  <div class="cc-config-card__header">
+                    <div>
+                      <h4 class="cc-config-card__title">{config.label}</h4>
+                      <p class="cc-config-card__subtitle">
+                        {config.developerName}
+                      </p>
+                    </div>
+                    <div class="cc-badge-group">
+                      <span class={config.activeStatusClass}>
+                        {config.activeStatusLabel}
+                      </span>
+                      <span class={config.availabilityStatusClass}>
+                        {config.availabilityStatusLabel}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="cc-config-card__facts">
+                    <div>
+                      <p class="cc-config-card__label">Experience</p>
+                      <p class="cc-config-card__value">
+                        {config.catalogLabel} • {config.localeLabel}
+                      </p>
+                    </div>
+                    <div>
+                      <p class="cc-config-card__label">Builder</p>
+                      <p class="cc-config-card__value">
+                        {config.builderSummary}
+                      </p>
+                    </div>
+                    <div>
+                      <p class="cc-config-card__label">Destinations</p>
+                      <p
+                        class="cc-config-card__value"
+                        title={config.productSourceLabel}
+                      >
+                        Products: {config.productSourceLabel}
+                      </p>
+                      <p
+                        class="cc-config-card__value"
+                        title={config.availabilitySourceLabel}
+                      >
+                        Availability: {config.availabilitySourceLabel}
+                      </p>
+                    </div>
+                    <div>
+                      <p class="cc-config-card__label">Scope</p>
+                      <p
+                        class="cc-config-card__value"
+                        title={config.scopeSummary}
+                      >
+                        {config.scopeSummary}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="cc-config-card__footer">
+                    <p
+                      class="cc-config-card__supporting"
+                      title={config.extraFieldsTitle}
+                    >
+                      {config.extraFieldsSummary}
+                    </p>
+                    <lightning-button
+                      label="Focus"
+                      variant="neutral"
+                      data-config-id={config.id}
+                      onclick={handleSelectConfig}
+                    ></lightning-button>
+                  </div>
+                </article>
+              </template>
+            </div>
+          </section>
+
+          <section class="cc-panel cc-panel--workspace">
+            <div class="cc-panel__header">
+              <div>
+                <p class="cc-section-label">Selected Config</p>
+                <h3 class="cc-panel__title">{selectedRunHeading}</h3>
+                <p class="cc-panel__meta">{selectedRunSubtitle}</p>
+              </div>
+              <template if:true={hasSelectedConfig}>
+                <div class="cc-badge-group">
+                  <span class={selectedConfigStatusClass}>
+                    {selectedConfig.activeStatusLabel}
+                  </span>
+                  <span class={selectedConfigAvailabilityClass}>
+                    {selectedConfig.availabilityStatusLabel}
+                  </span>
+                </div>
+              </template>
+            </div>
+
+            <template if:true={hasSelectedConfig}>
+              <div class="cc-launchpad">
+                <div class="cc-launchpad__actions">
+                  <lightning-button
+                    label="Run Products"
+                    variant="brand"
+                    onclick={handleRunSelectedProducts}
+                  ></lightning-button>
+                  <lightning-button
+                    label="Run Availability"
+                    variant="neutral"
+                    onclick={handleRunSelectedAvailability}
+                    disabled={selectedConfig.availabilityDisabled}
+                  ></lightning-button>
+                  <lightning-button
+                    label="Run Both"
+                    variant="brand-outline"
+                    onclick={handleRunSelectedBoth}
+                    disabled={selectedConfig.availabilityDisabled}
+                  ></lightning-button>
+                </div>
+                <template if:true={availabilityDisabledMessage}>
+                  <p class="cc-launchpad__note">
+                    {availabilityDisabledMessage}
+                  </p>
+                </template>
+              </div>
+
+              <div class="cc-detail-grid">
+                <template for:each={selectedConfigFactRows} for:item="fact">
+                  <article key={fact.label} class="cc-detail-card">
+                    <p class="cc-detail-card__label">{fact.label}</p>
+                    <p class="cc-detail-card__value">{fact.value}</p>
+                  </article>
+                </template>
+              </div>
+            </template>
+
+            <div class="cc-monitor">
+              <div class="cc-monitor__header">
+                <div>
+                  <p class="cc-section-label">Live Runs</p>
+                  <h4 class="cc-monitor__title">Batch progress</h4>
+                </div>
+                <p class="cc-monitor__meta">{runMonitorSubtitle}</p>
+              </div>
+
+              <template if:true={hasRunSessions}>
+                <div class="cc-run-list">
+                  <template for:each={visibleRunSessions} for:item="run">
+                    <article key={run.runKey} class={run.cardClass}>
+                      <div class="cc-run-card__header">
+                        <div>
+                          <h5 class="cc-run-card__title">{run.label}</h5>
+                          <p class="cc-run-card__meta">
+                            {run.developerName} • Started {run.launchedAtLabel}
+                          </p>
+                        </div>
+                        <span class={run.overallStatusClass}>
+                          {run.overallStatusLabel}
+                        </span>
+                      </div>
+
+                      <lightning-progress-bar
+                        value={run.progressPercent}
+                        size="medium"
+                      ></lightning-progress-bar>
+                      <p class="cc-run-card__progress">
+                        {run.progressPercent}% complete
+                      </p>
+
+                      <div class="cc-stage-list">
+                        <template for:each={run.stages} for:item="stage">
+                          <div key={stage.jobId} class="cc-stage-card">
+                            <div class="cc-stage-card__header">
+                              <div>
+                                <p class="cc-stage-card__title">
+                                  {stage.label}
+                                </p>
+                                <p class="cc-stage-card__meta">
+                                  {stage.batchesLabel}
+                                </p>
+                              </div>
+                              <span class={stage.statusClass}>
+                                {stage.statusLabel}
+                              </span>
+                            </div>
+                            <lightning-progress-bar
+                              value={stage.progressPercent}
+                              size="x-small"
+                            ></lightning-progress-bar>
+                            <template if:true={stage.extendedStatus}>
+                              <p class="cc-stage-card__extended">
+                                {stage.extendedStatus}
+                              </p>
+                            </template>
+                          </div>
+                        </template>
+                      </div>
+                    </article>
+                  </template>
+                </div>
+              </template>
+              <template if:false={hasRunSessions}>
+                <div class="cc-empty-state">
+                  Launch a sync from the selected configuration to populate the
+                  run monitor.
+                </div>
+              </template>
+            </div>
+
+            <div class="cc-monitor cc-monitor--activity">
+              <div class="cc-monitor__header">
+                <div>
+                  <p class="cc-section-label">Recent Activity</p>
+                  <h4 class="cc-monitor__title">Console timeline</h4>
+                </div>
+                <p class="cc-monitor__meta">
+                  Session-level activity from launches and status changes.
+                </p>
+              </div>
+
+              <template if:true={hasActivityFeed}>
+                <ul class="cc-activity-list">
+                  <template for:each={visibleActivityFeed} for:item="entry">
+                    <li key={entry.key} class="cc-activity-item">
+                      <span class="cc-activity-item__time">
+                        {entry.timestampLabel}
+                      </span>
+                      <span class="cc-activity-item__message">
+                        {entry.message}
+                      </span>
+                    </li>
+                  </template>
+                </ul>
+              </template>
+              <template if:false={hasActivityFeed}>
+                <div class="cc-empty-state">
+                  Launch a run to start building the timeline.
+                </div>
+              </template>
+            </div>
+          </section>
+        </div>
+      </template>
+    </div>
   </lightning-card>
 </template>

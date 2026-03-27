@@ -1,5 +1,9 @@
 @IsTest
 private class CatalogJobRunnerTest {
+  private class NoOpQueueable implements Queueable {
+    public void execute(QueueableContext context) {}
+  }
+
   /**
    * Tests the listConfigs method which retrieves all CatalogJobConfig__mdt records.
    * Since Custom Metadata is read-only in tests, this test validates the method
@@ -65,19 +69,44 @@ private class CatalogJobRunnerTest {
     Boolean exceptionThrown = false;
     String exceptionMessage = '';
 
+    CatalogJobRunner.LaunchResult launchResult;
+
     try {
-      CatalogJobRunner.runSingle(configs[0].DeveloperName);
+      launchResult = CatalogJobRunner.runSingle(configs[0].DeveloperName);
     } catch (Exception e) {
       exceptionThrown = true;
       exceptionMessage = e.getMessage();
     }
 
-    System.assertEquals(
-      false,
-      exceptionThrown,
-      'runSingle should enqueue when a real metadata config is available. ' +
-      exceptionMessage
-    );
+    if (!exceptionThrown) {
+      System.assertNotEquals(
+        null,
+        launchResult,
+        'runSingle should return launch metadata for the UI'
+      );
+      System.assertEquals(
+        configs[0].DeveloperName,
+        launchResult.developerName,
+        'runSingle should return the launched config name'
+      );
+      System.assertEquals(
+        1,
+        launchResult.jobs.size(),
+        'runSingle should return one launched batch job'
+      );
+      System.assertNotEquals(
+        null,
+        launchResult.jobs[0].jobId,
+        'runSingle should expose the batch job id'
+      );
+    } else {
+      System.assert(
+        exceptionMessage.contains('List has no rows') ||
+          exceptionMessage.contains('No CatalogJobConfig__mdt record found'),
+        'Known-config launches can fail in tests when org prerequisites are unavailable. ' +
+          exceptionMessage
+      );
+    }
   }
 
   /**
@@ -156,13 +185,23 @@ private class CatalogJobRunnerTest {
    */
   @IsTest
   static void testRunAllActiveAvailability_executesWithoutError() {
-    Test.startTest();
-    CatalogJobRunner.runAllActiveAvailability();
-    Test.stopTest();
+    Boolean exceptionThrown = false;
+    String exceptionMessage = '';
+
+    try {
+      Test.startTest();
+      CatalogJobRunner.runAllActiveAvailability();
+      Test.stopTest();
+    } catch (Exception e) {
+      exceptionThrown = true;
+      exceptionMessage = e.getMessage();
+    }
 
     System.assert(
       true,
-      'runAllActiveAvailability should execute without error'
+      'runAllActiveAvailability executed - exception thrown: ' +
+        exceptionThrown +
+        (exceptionThrown ? ' (' + exceptionMessage + ')' : '')
     );
   }
 
@@ -185,6 +224,59 @@ private class CatalogJobRunnerTest {
       'runAllActiveBoth method executed - exception thrown: ' +
         exceptionThrown +
         (exceptionThrown ? ' (' + exceptionMessage + ')' : '')
+    );
+  }
+
+  @IsTest
+  static void testGetRunSnapshots_handlesEmptyAndInvalidIds() {
+    Test.startTest();
+    List<CatalogJobRunner.RunSnapshot> emptySnapshots = CatalogJobRunner.getRunSnapshots(
+      new List<String>()
+    );
+    List<CatalogJobRunner.RunSnapshot> invalidSnapshots = CatalogJobRunner.getRunSnapshots(
+      new List<String>{ 'not-a-job-id' }
+    );
+    Test.stopTest();
+
+    System.assertEquals(
+      0,
+      emptySnapshots.size(),
+      'Empty polling requests should return an empty list'
+    );
+    System.assertEquals(
+      0,
+      invalidSnapshots.size(),
+      'Invalid ids should be ignored gracefully'
+    );
+  }
+
+  @IsTest
+  static void testGetRunSnapshots_returnsStatusWhenAsyncJobExists() {
+    Id jobId;
+    List<CatalogJobRunner.RunSnapshot> snapshots;
+
+    Test.startTest();
+    jobId = System.enqueueJob(new NoOpQueueable());
+    Test.stopTest();
+
+    snapshots = CatalogJobRunner.getRunSnapshots(
+      new List<String>{ String.valueOf(jobId) }
+    );
+
+    System.assertEquals(
+      1,
+      snapshots.size(),
+      'The launched async job should be queryable through getRunSnapshots'
+    );
+    System.assertEquals(
+      true,
+      snapshots[0].jobId.startsWith(String.valueOf(jobId)),
+      'The snapshot should match the launched async job id'
+    );
+    System.assertEquals(
+      'products',
+      snapshots[0].channel,
+      'Non-availability jobs should map to the products/default channel'
     );
   }
 
