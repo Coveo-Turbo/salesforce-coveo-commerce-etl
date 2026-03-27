@@ -106,32 +106,84 @@ jobs:
           # Read package name from sfdx-project.json
           PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
           echo "Package name: $PACKAGE_NAME"
-          
-          # Build the package version command with proper argument handling
+
+          SF_STDOUT=$(mktemp)
+          SF_STDERR=$(mktemp)
+          cleanup() {
+            rm -f "$SF_STDOUT" "$SF_STDERR"
+          }
+          trap cleanup EXIT
+
+          SF_ARGS=(
+            package version create
+            --package "$PACKAGE_NAME"
+            --target-dev-hub DevHub
+            --wait 20
+            --code-coverage
+            --json
+          )
+
           if [ -n "$INSTALLATION_KEY" ]; then
-            RESULT=$(sf package version create \
-              --package "$PACKAGE_NAME" \
-              --target-dev-hub DevHub \
-              --wait 20 \
-              --code-coverage \
-              --installation-key "$INSTALLATION_KEY" \
-              --json)
+            SF_ARGS+=(--installation-key "$INSTALLATION_KEY")
           else
-            RESULT=$(sf package version create \
-              --package "$PACKAGE_NAME" \
-              --target-dev-hub DevHub \
-              --wait 20 \
-              --code-coverage \
-              --installation-key-bypass \
-              --json)
+            SF_ARGS+=(--installation-key-bypass)
           fi
-          
-          echo "Package version creation result:"
-          echo "$RESULT" | jq .
-          
+
+          set +e
+          sf "${SF_ARGS[@]}" >"$SF_STDOUT" 2>"$SF_STDERR"
+          SF_EXIT=$?
+          set -e
+
+          RESULT=$(cat "$SF_STDOUT")
+          STDERR_OUTPUT=$(cat "$SF_STDERR")
+
+          echo "Package version creation stdout:"
+          if [ -n "$RESULT" ]; then
+            if echo "$RESULT" | jq . >/dev/null 2>&1; then
+              echo "$RESULT" | jq .
+            else
+              echo "$RESULT"
+            fi
+          else
+            echo "(empty)"
+          fi
+
+          if [ -n "$STDERR_OUTPUT" ]; then
+            echo "Package version creation stderr:"
+            echo "$STDERR_OUTPUT"
+          fi
+
+          if [ "$SF_EXIT" -ne 0 ]; then
+            echo "Error: sf package version create failed with exit code $SF_EXIT"
+            if [ -n "$RESULT" ] && echo "$RESULT" | jq . >/dev/null 2>&1; then
+              echo "Message: $(echo "$RESULT" | jq -r '.message // "unknown error"')"
+              STACK=$(echo "$RESULT" | jq -r '.stack // empty')
+              if [ -n "$STACK" ]; then
+                echo "Stack: $STACK"
+              fi
+            fi
+            exit 1
+          fi
+
+          if ! echo "$RESULT" | jq . >/dev/null 2>&1; then
+            echo "Error: sf package version create did not return valid JSON"
+            exit 1
+          fi
+
+          STATUS=$(echo "$RESULT" | jq -r '.status // 1')
+          if [ "$STATUS" != "0" ]; then
+            echo "Error: sf CLI reported a non-zero status"
+            echo "Message: $(echo "$RESULT" | jq -r '.message // "unknown error"')"
+            STACK=$(echo "$RESULT" | jq -r '.stack // empty')
+            if [ -n "$STACK" ]; then
+              echo "Stack: $STACK"
+            fi
+            exit 1
+          fi
+
           # Extract the subscriber package version ID (04t...)
           PACKAGE_VERSION_ID=$(echo "$RESULT" | jq -r '.result.SubscriberPackageVersionId')
-          
+
           if [ -z "$PACKAGE_VERSION_ID" ] || [ "$PACKAGE_VERSION_ID" == "null" ]; then
             echo "Error: Failed to extract package version ID"
             echo "$RESULT"
