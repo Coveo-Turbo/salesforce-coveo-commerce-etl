@@ -31,6 +31,46 @@ private class CatalogJsonBuildersTest {
     return products;
   }
 
+  private static Product2 createPersistedCommerceProduct(
+    String code,
+    String family
+  ) {
+    Product2 product = new Product2(
+      Name = 'Commerce Product ' + code,
+      ProductCode = code,
+      Description = 'Description for ' + code,
+      Family = family,
+      IsActive = true
+    );
+    insert product;
+    return product;
+  }
+
+  private static ProductCatalog createCatalogHierarchy(Product2 product) {
+    ProductCatalog catalog = new ProductCatalog(Name = 'Commerce Catalog');
+    insert catalog;
+
+    ProductCategory rootCategory = new ProductCategory(
+      Name = 'Root Category',
+      CatalogId = catalog.Id
+    );
+    insert rootCategory;
+
+    ProductCategory childCategory = new ProductCategory(
+      Name = 'Child Category',
+      CatalogId = catalog.Id,
+      ParentCategoryId = rootCategory.Id
+    );
+    insert childCategory;
+
+    insert new ProductCategoryProduct(
+      ProductId = product.Id,
+      ProductCategoryId = childCategory.Id
+    );
+
+    return catalog;
+  }
+
   /**
    * Tests CatalogJsonBuilderDefault with a simple product.
    */
@@ -104,6 +144,103 @@ private class CatalogJsonBuildersTest {
       'Should contain addOrUpdate key'
     );
     System.assert(json.contains('[]'), 'Should contain empty array');
+  }
+
+  @IsTest
+  static void testCommerceBuilder_buildFullUpdateNdjson_usesCategoryHierarchy() {
+    Product2 product = createPersistedCommerceProduct('COMM-001', 'Hardware');
+    createCatalogHierarchy(product);
+
+    Map<Id, Map<String, Decimal>> pricesByProduct = new Map<Id, Map<String, Decimal>>{
+      product.Id => new Map<String, Decimal>{
+        '' => 99.99,
+        '01s000000000001AAA' => 89.99
+      }
+    };
+
+    CatalogJsonBuilderCommerce builder = new CatalogJsonBuilderCommerce();
+
+    Test.startTest();
+    String payloadJson = builder.buildFullUpdateNdjson(
+      new List<Product2>{ product },
+      pricesByProduct,
+      new List<String>{ 'Description', 'Family' }
+    );
+    Test.stopTest();
+
+    Map<String, Object> payload = (Map<String, Object>) System.JSON.deserializeUntyped(
+      payloadJson
+    );
+    List<Object> items = (List<Object>) payload.get('addOrUpdate');
+    Map<String, Object> item = (Map<String, Object>) items[0];
+    List<Object> categories = (List<Object>) item.get('ec_category');
+    Map<String, Object> prices = (Map<String, Object>) item.get('ec_price');
+
+    System.assertEquals('COMM-001', (String) item.get('ec_product_id'));
+    System.assert(categories.contains('Root Category'));
+    System.assert(categories.contains('Root Category|Child Category'));
+    System.assertEquals(
+      'Description for COMM-001',
+      (String) item.get('sf_description')
+    );
+    System.assertEquals('Hardware', (String) item.get('sf_family'));
+    System.assertEquals(2, prices.size());
+  }
+
+  @IsTest
+  static void testCommerceBuilder_fallbackCategoriesAndEmptyProducts() {
+    Product2 withFamily = createPersistedCommerceProduct('COMM-002', 'Plumbing');
+    Product2 withoutFamily = createPersistedCommerceProduct('COMM-003', null);
+    CatalogJsonBuilderCommerce builder = new CatalogJsonBuilderCommerce();
+
+    Test.startTest();
+    String populatedJson = builder.buildFullUpdateNdjson(
+      new List<Product2>{ withFamily, withoutFamily },
+      new Map<Id, Map<String, Decimal>>(),
+      null
+    );
+    String emptyJson = builder.buildFullUpdateNdjson(
+      new List<Product2>(),
+      new Map<Id, Map<String, Decimal>>(),
+      null
+    );
+    Test.stopTest();
+
+    Map<String, Object> populatedPayload = (Map<String, Object>) System.JSON.deserializeUntyped(
+      populatedJson
+    );
+    List<Object> items = (List<Object>) populatedPayload.get('addOrUpdate');
+    Map<String, Object> firstItem = (Map<String, Object>) items[0];
+    Map<String, Object> secondItem = (Map<String, Object>) items[1];
+    List<Object> firstCategories = (List<Object>) firstItem.get('ec_category');
+    List<Object> secondCategories = (List<Object>) secondItem.get('ec_category');
+
+    System.assert(firstCategories.contains('Plumbing'));
+    System.assert(secondCategories.contains('Uncategorized'));
+    System.assert(emptyJson.contains('addOrUpdate'));
+    System.assert(emptyJson.contains('[]'));
+  }
+
+  @IsTest
+  static void testCommerceBuilder_buildPartialMergeNdjson() {
+    CatalogJsonBuilderCommerce builder = new CatalogJsonBuilderCommerce();
+
+    Test.startTest();
+    String payloadJson = builder.buildPartialMergeNdjson(
+      new Map<String, Decimal>{ 'SKU-001' => 12.34 },
+      new Map<String, Boolean>{ 'SKU-001' => true, 'SKU-002' => false }
+    );
+    Test.stopTest();
+
+    Map<String, Object> payload = (Map<String, Object>) System.JSON.deserializeUntyped(
+      payloadJson
+    );
+    List<Object> items = (List<Object>) payload.get('addOrMerge');
+
+    System.assertEquals(2, items.size());
+    System.assert(payloadJson.contains('SKU-001'));
+    System.assert(payloadJson.contains('ec_price'));
+    System.assert(payloadJson.contains('ec_in_stock'));
   }
 
   /**
