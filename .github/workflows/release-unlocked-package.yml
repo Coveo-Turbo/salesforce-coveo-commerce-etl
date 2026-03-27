@@ -116,6 +116,14 @@ jobs:
           # Read package name from sfdx-project.json
           PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
           echo "Package name: $PACKAGE_NAME"
+          DEFINITION_FILE="config/project-scratch-def.json"
+
+          if [ ! -f "$DEFINITION_FILE" ]; then
+            echo "Error: definition file not found at $DEFINITION_FILE"
+            exit 1
+          fi
+
+          echo "Using definition file: $DEFINITION_FILE"
 
           SF_STDOUT=$(mktemp)
           SF_STDERR=$(mktemp)
@@ -130,6 +138,7 @@ jobs:
             --target-dev-hub DevHub
             --wait 20
             --code-coverage
+            --definition-file "$DEFINITION_FILE"
             --json
           )
 
