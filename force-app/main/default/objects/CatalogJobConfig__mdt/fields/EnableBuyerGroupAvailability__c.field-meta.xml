@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>EnableBuyerGroupAvailability__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>When enabled, the job can export Buyer Group product visibility to a paired Coveo Availability source.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>Enable a paired availability export for Buyer Group entitlements.</inlineHelpText>
+    <label>Enable Buyer Group Availability</label>
+    <type>Checkbox</type>
+</CustomField>

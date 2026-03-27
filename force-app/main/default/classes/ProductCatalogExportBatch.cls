@@ -103,7 +103,6 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   }
 
   global Database.QueryLocator start(Database.BatchableContext bc) {
-    // Base fields required for catalog
     List<String> fields = new List<String>{
       'Id',
       'Name',
@@ -116,49 +115,14 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       'Type',
       'DisplayUrl'
     };
+    Database.QueryLocator locator = CatalogJobScopeUtil.buildProductQueryLocator(
+      jobConfig,
+      fields,
+      extraFieldNames
+    );
 
-    // Add extra fields from config
-    for (String apiName : extraFieldNames) {
-      if (!fields.contains(apiName)) {
-        fields.add(apiName);
-      }
-    }
-
-    String selectClause = String.join(fields, ', ');
-
-    String baseQuery =
-      'SELECT ' +
-      selectClause +
-      ' FROM Product2 WHERE IsActive = true';
-
-    // Filter by catalog if CatalogId is specified
-    if (!String.isBlank(jobConfig.CatalogId__c)) {
-      // Get all product IDs associated with this catalog via ProductCategory → ProductCategoryProduct
-      Set<Id> productIdsInCatalog = getProductIdsForCatalog(
-        jobConfig.CatalogId__c
-      );
-      if (productIdsInCatalog.isEmpty()) {
-        System.debug(
-          LoggingLevel.WARN,
-          'No products found for CatalogId: ' + jobConfig.CatalogId__c
-        );
-        // Return empty query locator
-        return Database.getQueryLocator(
-          'SELECT Id FROM Product2 WHERE Id = null'
-        );
-      }
-      baseQuery += ' AND Id IN :productIdsInCatalog';
-    }
-
-    if (!String.isBlank(jobConfig.ProductFilter__c)) {
-      String sanitizedFilter = validateAndSanitizeFilter(
-        jobConfig.ProductFilter__c
-      );
-      baseQuery += ' AND (' + sanitizedFilter + ')';
-    }
-
-    System.debug('ProductCatalogExportBatch.start SOQL: ' + baseQuery);
-    return Database.getQueryLocator(baseQuery);
+    System.debug('ProductCatalogExportBatch.start query locator created');
+    return locator;
   }
 
   global void execute(Database.BatchableContext bc, List<Product2> scope) {
@@ -280,83 +244,5 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
 
     // Payload logs are inserted asynchronously via CoveoPayloadLogQueueable
     // when EnablePayloadLogging__c is enabled
-  }
-
-  /**
-   * Gets all Product IDs associated with a specific catalog via ProductCategory → ProductCategoryProduct.
-   *
-   * @param catalogId The Salesforce ProductCatalog ID
-   * @return Set of Product2 IDs that belong to this catalog
-   */
-  @TestVisible
-  private static Set<Id> getProductIdsForCatalog(String catalogId) {
-    Set<Id> productIds = new Set<Id>();
-
-    // Query ProductCategoryProduct records for categories in this catalog
-    for (ProductCategoryProduct pcp : [
-      SELECT ProductId
-      FROM ProductCategoryProduct
-      WHERE ProductCategory.CatalogId = :catalogId AND ProductId != NULL
-    ]) {
-      productIds.add(pcp.ProductId);
-    }
-
-    return productIds;
-  }
-
-  /**
-   * Validates and sanitizes the ProductFilter__c value before using it in dynamic SOQL.
-   * While Custom Metadata is developer-controlled, this method provides an additional
-   * layer of protection against malformed queries and potential injection patterns.
-   *
-   * @param filter The raw filter string from CatalogJobConfig__mdt.ProductFilter__c
-   * @return The validated filter string safe for use in SOQL
-   * @throws CatalogJobException if the filter contains potentially dangerous patterns
-   */
-  @TestVisible
-  private static String validateAndSanitizeFilter(String filter) {
-    if (String.isBlank(filter)) {
-      return filter;
-    }
-
-    String trimmedFilter = filter.trim();
-
-    // Normalize whitespace for pattern detection (replace tabs/newlines with spaces)
-    String normalizedFilter = trimmedFilter.replaceAll('[\\t\\n\\r]+', ' ')
-      .toUpperCase();
-
-    // Check for DML keywords that shouldn't appear in a WHERE clause filter
-    List<String> dmlPatterns = new List<String>{
-      'INSERT ',
-      'UPDATE ',
-      'DELETE ',
-      'UPSERT ',
-      'MERGE ',
-      'UNDELETE '
-    };
-
-    for (String pattern : dmlPatterns) {
-      if (normalizedFilter.contains(pattern)) {
-        throw new CatalogJobException(
-          'Invalid ProductFilter__c value: contains DML keyword "' +
-            pattern.trim() +
-            '". Only valid SOQL WHERE clause fragments are allowed.'
-        );
-      }
-    }
-
-    // Check for subqueries by looking for SELECT...FROM pattern
-    // This is a simplified check - subqueries in WHERE clauses are generally unexpected
-    if (
-      normalizedFilter.contains('SELECT ') &&
-      normalizedFilter.contains(' FROM ')
-    ) {
-      throw new CatalogJobException(
-        'Invalid ProductFilter__c value: contains subquery pattern. ' +
-        'Only simple SOQL WHERE clause fragments are allowed.'
-      );
-    }
-
-    return trimmedFilter;
   }
 }

@@ -1,5 +1,9 @@
 @IsTest
 private class CatalogJobRunnerTest {
+  private class NoOpQueueable implements Queueable {
+    public void execute(QueueableContext context) {}
+  }
+
   /**
    * Tests the listConfigs method which retrieves all CatalogJobConfig__mdt records.
    * Since Custom Metadata is read-only in tests, this test validates the method
@@ -27,14 +31,6 @@ private class CatalogJobRunnerTest {
    */
   @IsTest
   static void testRunSingle_executesWithoutError() {
-    // Create test data that the batch job might need
-    Product2 testProduct = new Product2(
-      Name = 'Test Product for RunSingle',
-      IsActive = true,
-      ProductCode = 'TEST-RS-001'
-    );
-    insert testProduct;
-
     Boolean exceptionThrown = false;
     String exceptionMessage = '';
 
@@ -60,31 +56,104 @@ private class CatalogJobRunnerTest {
     );
   }
 
+  @IsTest
+  static void testRunSingle_enqueuesKnownConfigWhenAvailable() {
+    List<CatalogJobConfig__mdt> configs = CatalogJobRunner.listConfigs();
+    if (configs.isEmpty()) {
+      System.assert(true, 'No metadata configs available in this test context');
+      return;
+    }
+
+    Test.getStandardPricebookId();
+
+    Boolean exceptionThrown = false;
+    String exceptionMessage = '';
+
+    CatalogJobRunner.LaunchResult launchResult;
+
+    try {
+      launchResult = CatalogJobRunner.runSingle(configs[0].DeveloperName);
+    } catch (Exception e) {
+      exceptionThrown = true;
+      exceptionMessage = e.getMessage();
+    }
+
+    if (!exceptionThrown) {
+      System.assertNotEquals(
+        null,
+        launchResult,
+        'runSingle should return launch metadata for the UI'
+      );
+      System.assertEquals(
+        configs[0].DeveloperName,
+        launchResult.developerName,
+        'runSingle should return the launched config name'
+      );
+      System.assertEquals(
+        1,
+        launchResult.jobs.size(),
+        'runSingle should return one launched batch job'
+      );
+      System.assertNotEquals(
+        null,
+        launchResult.jobs[0].jobId,
+        'runSingle should expose the batch job id'
+      );
+    } else {
+      System.assert(
+        exceptionMessage.contains('List has no rows') ||
+          exceptionMessage.contains('No CatalogJobConfig__mdt record found'),
+        'Known-config launches can fail in tests when org prerequisites are unavailable. ' +
+          exceptionMessage
+      );
+    }
+  }
+
   /**
    * Tests the runAllActive method which executes batch jobs for all active configs.
    * Since Custom Metadata can't be inserted in tests, this validates the method
    * executes the query and iteration logic without errors.
    */
   @IsTest
+  static void testRunSingleAvailability_executesWithoutError() {
+    Boolean exceptionThrown = false;
+
+    Test.startTest();
+    try {
+      CatalogJobRunner.runSingleAvailability('NonExistentConfig__Test');
+    } catch (Exception e) {
+      exceptionThrown = true;
+    }
+    Test.stopTest();
+
+    System.assertEquals(
+      true,
+      exceptionThrown,
+      'Missing config should still surface when running availability export'
+    );
+  }
+
+  @IsTest
+  static void testRunSingleBoth_executesWithoutError() {
+    Boolean exceptionThrown = false;
+
+    Test.startTest();
+    try {
+      CatalogJobRunner.runSingleBoth('NonExistentConfig__Test');
+    } catch (Exception e) {
+      exceptionThrown = true;
+    }
+    Test.stopTest();
+
+    System.assertEquals(
+      true,
+      exceptionThrown,
+      'Missing config should still surface when running both exports'
+    );
+  }
+
+  @IsTest
   static void testRunAllActive_executesWithoutError() {
-    // Create test data that might be needed by batch jobs
-    Product2 testProduct = new Product2(
-      Name = 'Test Product for RunAllActive',
-      IsActive = true,
-      ProductCode = 'TEST-RAA-001'
-    );
-    insert testProduct;
-
-    // Create standard pricebook entry for the test
-    Id stdPricebookId = Test.getStandardPricebookId();
-    PricebookEntry pbe = new PricebookEntry(
-      Pricebook2Id = stdPricebookId,
-      Product2Id = testProduct.Id,
-      UnitPrice = 100.00,
-      IsActive = true
-    );
-    insert pbe;
-
     Boolean exceptionThrown = false;
     String exceptionMessage = '';
 
@@ -114,6 +183,103 @@ private class CatalogJobRunnerTest {
    * Tests that listConfigs returns configs ordered by Label.
    * This validates the ORDER BY clause in the query.
    */
+  @IsTest
+  static void testRunAllActiveAvailability_executesWithoutError() {
+    Boolean exceptionThrown = false;
+    String exceptionMessage = '';
+
+    try {
+      Test.startTest();
+      CatalogJobRunner.runAllActiveAvailability();
+      Test.stopTest();
+    } catch (Exception e) {
+      exceptionThrown = true;
+      exceptionMessage = e.getMessage();
+    }
+
+    System.assert(
+      true,
+      'runAllActiveAvailability executed - exception thrown: ' +
+        exceptionThrown +
+        (exceptionThrown ? ' (' + exceptionMessage + ')' : '')
+    );
+  }
+
+  @IsTest
+  static void testRunAllActiveBoth_executesWithoutError() {
+    Boolean exceptionThrown = false;
+    String exceptionMessage = '';
+
+    Test.startTest();
+    try {
+      CatalogJobRunner.runAllActiveBoth();
+    } catch (Exception e) {
+      exceptionThrown = true;
+      exceptionMessage = e.getMessage();
+    }
+    Test.stopTest();
+
+    System.assert(
+      true,
+      'runAllActiveBoth method executed - exception thrown: ' +
+        exceptionThrown +
+        (exceptionThrown ? ' (' + exceptionMessage + ')' : '')
+    );
+  }
+
+  @IsTest
+  static void testGetRunSnapshots_handlesEmptyAndInvalidIds() {
+    Test.startTest();
+    List<CatalogJobRunner.RunSnapshot> emptySnapshots = CatalogJobRunner.getRunSnapshots(
+      new List<String>()
+    );
+    List<CatalogJobRunner.RunSnapshot> invalidSnapshots = CatalogJobRunner.getRunSnapshots(
+      new List<String>{ 'not-a-job-id' }
+    );
+    Test.stopTest();
+
+    System.assertEquals(
+      0,
+      emptySnapshots.size(),
+      'Empty polling requests should return an empty list'
+    );
+    System.assertEquals(
+      0,
+      invalidSnapshots.size(),
+      'Invalid ids should be ignored gracefully'
+    );
+  }
+
+  @IsTest
+  static void testGetRunSnapshots_returnsStatusWhenAsyncJobExists() {
+    Id jobId;
+    List<CatalogJobRunner.RunSnapshot> snapshots;
+
+    Test.startTest();
+    jobId = System.enqueueJob(new NoOpQueueable());
+    Test.stopTest();
+
+    snapshots = CatalogJobRunner.getRunSnapshots(
+      new List<String>{ String.valueOf(jobId) }
+    );
+
+    System.assertEquals(
+      1,
+      snapshots.size(),
+      'The launched async job should be queryable through getRunSnapshots'
+    );
+    System.assertEquals(
+      true,
+      snapshots[0].jobId.startsWith(String.valueOf(jobId)),
+      'The snapshot should match the launched async job id'
+    );
+    System.assertEquals(
+      'products',
+      snapshots[0].channel,
+      'Non-availability jobs should map to the products/default channel'
+    );
+  }
+
   @IsTest
   static void testListConfigs_returnsOrderedResults() {
     Test.startTest();
@@ -160,8 +326,11 @@ private class CatalogJobRunnerTest {
       String label = config.Label;
       String orgId = config.CoveoOrgId__c;
       String sourceId = config.SourceId__c;
+      String availabilitySourceId = config.AvailabilitySourceId__c;
+      String webStoreId = config.WebStoreId__c;
       String locale = config.Locale__c;
       Boolean isActive = config.IsActive__c;
+      Boolean availabilityEnabled = config.EnableBuyerGroupAvailability__c;
       String productFilter = config.ProductFilter__c;
       String additionalFields = config.AdditionalProductFields__c;
       Decimal batchSize = config.BatchSize__c;

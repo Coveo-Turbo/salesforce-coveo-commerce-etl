@@ -33,5 +33,13 @@ sf org assign permset \
 echo "➡️  Importing Commerce sample data"
 bash scripts/reset-commerce-data.sh "$alias" || true
 
-echo "➡️  Opening org"
-sf org open --target-org "$alias"
+echo "➡️  Optional: seed Buyer Group availability demo data"
+echo "    bash scripts/seed-buyer-group-availability.sh \"$alias\""
+echo "    or npm run setup:org:b2b -- \"$alias\""
+
+if [[ "${SKIP_OPEN:-false}" == "true" ]]; then
+  echo "➡️  Skipping org open"
+else
+  echo "➡️  Opening org"
+  sf org open --target-org "$alias"
+fi

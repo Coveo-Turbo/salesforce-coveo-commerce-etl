@@ -1,24 +1,20 @@
 <template>
-  <div class="setup-container slds-p-around_medium">
-    <!-- Header -->
-    <div class="setup-header slds-m-bottom_medium">
+  <div class="setup-shell">
+    <section class="setup-hero slds-m-bottom_medium">
       <div class="slds-grid slds-wrap slds-grid_vertical-align-center">
-        <div class="slds-col slds-size_1-of-1 slds-medium-size_2-of-3">
-          <h1 class="slds-text-heading_large slds-m-bottom_x-small">
-            <lightning-icon
-              icon-name="standard:settings"
-              size="medium"
-              class="slds-m-right_small"
-            ></lightning-icon>
+        <div class="slds-col slds-size_1-of-1 slds-large-size_8-of-12">
+          <p class="setup-kicker">Commerce Setup Workspace</p>
+          <h1 class="slds-text-heading_large setup-title">
             Coveo Commerce ETL Setup
           </h1>
           <p class="setup-subtitle">
-            Configure your Coveo Commerce integration. Complete each section to
-            enable catalog exports.
+            Configure your connection, draft catalog sync jobs with selectors
+            instead of raw IDs, and move into the run console when you are ready
+            to export.
           </p>
         </div>
         <div
-          class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-text-align_right slds-m-top_small"
+          class="slds-col slds-size_1-of-1 slds-large-size_4-of-12 slds-text-align_right slds-m-top_small"
         >
           <lightning-button
             label="Open Catalog Job Console"
@@ -29,67 +25,250 @@
           ></lightning-button>
         </div>
       </div>
+    </section>
+
+    <div class="workspace-summary-grid">
+      <template for:each={workspaceOverviewHighlights} for:item="highlight">
+        <article key={highlight.key} class="workspace-summary-card">
+          <p class="workspace-summary-card__label">{highlight.label}</p>
+          <h2 class="workspace-summary-card__value">{highlight.value}</h2>
+          <p class="workspace-summary-card__helper">{highlight.helper}</p>
+          <lightning-button
+            label={highlight.actionLabel}
+            variant="neutral"
+            data-workspace={highlight.target}
+            onclick={handleWorkspaceSelect}
+          ></lightning-button>
+        </article>
+      </template>
     </div>
 
-    <!-- Accordion Sections -->
-    <lightning-accordion
-      allow-multiple-sections-open
-      active-section-name="step1"
-    >
-      <!-- Step 1: Connect to Coveo -->
-      <lightning-accordion-section
-        name="step1"
-        label="Step 1 – Connect to Coveo"
-      >
-        <div class="slds-p-horizontal_medium slds-p-bottom_medium">
-          <div class="slds-grid slds-wrap slds-gutters">
-            <!-- Status Section -->
-            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
-              <div
-                class="status-card slds-box slds-box_x-small slds-m-bottom_medium"
-              >
-                <h3 class="slds-text-heading_small slds-m-bottom_small">
-                  Named Credential Status
-                </h3>
-                <template if:true={isLoadingCredential}>
-                  <lightning-spinner
-                    alternative-text="Loading"
-                    size="small"
-                  ></lightning-spinner>
-                </template>
-                <template if:false={isLoadingCredential}>
-                  <div class="slds-grid slds-wrap">
-                    <div class="slds-col slds-size_1-of-2">
-                      <p class="slds-text-title_caps slds-m-bottom_xx-small">
-                        Status
-                      </p>
-                      <lightning-badge
-                        label={credentialStatusLabel}
-                        class={credentialStatusClass}
-                      ></lightning-badge>
-                    </div>
-                    <div class="slds-col slds-size_1-of-2">
-                      <p class="slds-text-title_caps slds-m-bottom_xx-small">
-                        Endpoint
-                      </p>
-                      <p
-                        class="slds-text-body_regular slds-truncate"
-                        title={credentialEndpoint}
-                      >
-                        {credentialEndpoint}
-                      </p>
-                    </div>
+    <div class="workspace-shell">
+      <aside class="workspace-nav">
+        <div class="workspace-nav__group">
+          <p class="workspace-nav__label">Workspace</p>
+          <button
+            class={overviewNavClass}
+            type="button"
+            data-workspace="overview"
+            onclick={handleWorkspaceSelect}
+          >
+            <span class="workspace-nav__title">Overview</span>
+            <span class="workspace-nav__meta">Status and shortcuts</span>
+          </button>
+          <button
+            class={connectionNavClass}
+            type="button"
+            data-workspace="connection"
+            onclick={handleWorkspaceSelect}
+          >
+            <span class="workspace-nav__title">Connection</span>
+            <span class="workspace-nav__meta">Named Credential and auth</span>
+          </button>
+          <button
+            class={catalogJobsNavClass}
+            type="button"
+            data-workspace="catalogJobs"
+            onclick={handleWorkspaceSelect}
+          >
+            <span class="workspace-nav__title">Catalog Jobs</span>
+            <span class="workspace-nav__meta"
+              >Inventory, editor, and preflight</span
+            >
+          </button>
+          <button
+            class={advancedNavClass}
+            type="button"
+            data-workspace="advanced"
+            onclick={handleWorkspaceSelect}
+          >
+            <span class="workspace-nav__title">Advanced</span>
+            <span class="workspace-nav__meta"
+              >Builder mapping and validation</span
+            >
+          </button>
+        </div>
+
+        <div class="workspace-nav__group workspace-nav__group--support">
+          <p class="workspace-nav__label">Quick Actions</p>
+          <button
+            class="workspace-action"
+            type="button"
+            onclick={handleOpenCustomMetadata}
+          >
+            <span class="workspace-action__title">Custom Metadata</span>
+            <span class="workspace-action__meta">Manage config records</span>
+          </button>
+          <button
+            class="workspace-action"
+            type="button"
+            onclick={handleOpenJobConsole}
+          >
+            <span class="workspace-action__title">Run Console</span>
+            <span class="workspace-action__meta"
+              >Launch product and availability syncs</span
+            >
+          </button>
+        </div>
+      </aside>
+
+      <section class="workspace-main">
+        <template if:true={isOverviewView}>
+          <div class="workspace-page-header">
+            <div>
+              <p class="section-label">Overview</p>
+              <h2 class="workspace-page-title">Admin workspace summary</h2>
+              <p class="workspace-page-subtitle">
+                Start here when you want a quick read on connection health,
+                catalog job coverage, and the next place to work.
+              </p>
+            </div>
+          </div>
+
+          <div class="overview-grid">
+            <section class="workspace-card">
+              <div class="workspace-card__header">
+                <div>
+                  <p class="section-label">Connection Snapshot</p>
+                  <h3 class="slds-text-heading_small">
+                    {workspaceConnectionStatusText}
+                  </h3>
+                </div>
+                <lightning-badge
+                  label={credentialStatusLabel}
+                  class={credentialStatusClass}
+                ></lightning-badge>
+              </div>
+              <p class="workspace-card__meta overview-copy">
+                {workspaceConnectionSummary}
+              </p>
+              <div class="workspace-card__actions">
+                <lightning-button
+                  label="Open Connection"
+                  variant="neutral"
+                  data-workspace="connection"
+                  onclick={handleWorkspaceSelect}
+                ></lightning-button>
+                <lightning-button
+                  label="Test Connection"
+                  variant="brand-outline"
+                  onclick={handleTestConnection}
+                  disabled={isTestingConnection}
+                ></lightning-button>
+              </div>
+            </section>
+
+            <section class="workspace-card">
+              <div class="workspace-card__header">
+                <div>
+                  <p class="section-label">Catalog Job Coverage</p>
+                  <h3 class="slds-text-heading_small">
+                    {totalConfigs} configured jobs
+                  </h3>
+                </div>
+                <div class="setup-stat-group">
+                  <div class="setup-stat-pill setup-stat-pill--success">
+                    <span class="setup-stat-pill__label">Active</span>
+                    <span class="setup-stat-pill__value">{activeConfigs}</span>
                   </div>
-                </template>
+                  <div class="setup-stat-pill">
+                    <span class="setup-stat-pill__label">Availability</span>
+                    <span class="setup-stat-pill__value">
+                      {availabilityEnabledConfigs}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p class="workspace-card__meta overview-copy">
+                {workspaceCatalogSummary}
+              </p>
+              <div class="workspace-card__actions">
+                <lightning-button
+                  label="Open Catalog Jobs"
+                  variant="brand"
+                  data-workspace="catalogJobs"
+                  onclick={handleWorkspaceSelect}
+                ></lightning-button>
+              </div>
+            </section>
+
+            <section class="workspace-card workspace-card--shade">
+              <div class="workspace-card__header">
+                <div>
+                  <p class="section-label">Recommended Flow</p>
+                  <h3 class="slds-text-heading_small">
+                    Move through the workspace
+                  </h3>
+                </div>
+              </div>
+              <ol class="slds-list_ordered helper-list">
+                <li>Verify the Coveo Push Named Credential.</li>
+                <li>Draft or review your catalog job configurations.</li>
+                <li>Use the run center to launch and monitor syncs.</li>
+                <li>Review advanced builder mappings only when needed.</li>
+              </ol>
+            </section>
+          </div>
+        </template>
+
+        <template if:true={isConnectionView}>
+          <div class="workspace-page-header">
+            <div>
+              <p class="section-label">Connection</p>
+              <h2 class="workspace-page-title">Connect Salesforce to Coveo</h2>
+              <p class="workspace-page-subtitle">
+                Verify the Named Credential and external credential setup before
+                anyone tries to run exports.
+              </p>
+            </div>
+          </div>
+
+          <div class="workspace-two-up">
+            <section class="workspace-card">
+              <div class="workspace-card__header">
+                <div>
+                  <h3 class="slds-text-heading_small">
+                    Named Credential Status
+                  </h3>
+                  <p class="workspace-card__meta">
+                    Verify that Salesforce can reach the Coveo Push API.
+                  </p>
+                </div>
               </div>
 
-              <div class="slds-m-top_medium">
+              <template if:true={isLoadingCredential}>
+                <div class="section-spinner">
+                  <lightning-spinner
+                    alternative-text="Loading credential status"
+                    size="small"
+                  ></lightning-spinner>
+                </div>
+              </template>
+
+              <template if:false={isLoadingCredential}>
+                <div class="workspace-grid">
+                  <div>
+                    <p class="section-label">Status</p>
+                    <lightning-badge
+                      label={credentialStatusLabel}
+                      class={credentialStatusClass}
+                    ></lightning-badge>
+                  </div>
+                  <div>
+                    <p class="section-label">Endpoint</p>
+                    <p class="section-value" title={credentialEndpoint}>
+                      {credentialEndpoint}
+                    </p>
+                  </div>
+                </div>
+              </template>
+
+              <div class="workspace-card__actions">
                 <lightning-button
                   label="Test Connection"
                   variant="neutral"
                   onclick={handleTestConnection}
                   disabled={isTestingConnection}
-                  class="slds-m-right_small"
                 ></lightning-button>
                 <lightning-button
                   label="Open Named Credentials Setup"
@@ -110,89 +289,54 @@
                   {connectionTestMessage}
                 </div>
               </template>
-            </div>
+            </section>
 
-            <!-- Help Section -->
-            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
-              <div class="help-card slds-box slds-box_x-small slds-theme_shade">
-                <h3 class="slds-text-heading_small slds-m-bottom_small">
-                  <lightning-icon
-                    icon-name="utility:info"
-                    size="x-small"
-                    class="slds-m-right_x-small"
-                  ></lightning-icon>
-                  Setup Instructions
-                </h3>
-                <ol class="slds-list_ordered">
-                  <li class="slds-m-bottom_x-small">
-                    Go to <strong>Setup → Named Credentials</strong>
-                  </li>
-                  <li class="slds-m-bottom_x-small">
-                    Find or create the <code>Coveo_Push</code> Named Credential
-                  </li>
-                  <li class="slds-m-bottom_x-small">
-                    Set the <strong>URL</strong> to your Coveo Push API endpoint
-                    (e.g., <code>https://api.cloud.coveo.com/push/v1</code>)
-                  </li>
-                  <li class="slds-m-bottom_x-small">
-                    Go to <strong>Setup → External Credentials</strong> and find
-                    <code>CoveoPushAuthCred</code>
-                  </li>
-                  <li class="slds-m-bottom_x-small">
-                    Add an <strong>Authentication Parameter</strong> named
-                    <code>API_KEY</code> with your Coveo API Key value
-                  </li>
-                  <li>
-                    Assign the permission set
-                    <code>CoveoETL_Admin</code> to grant access
-                  </li>
-                </ol>
-              </div>
-            </div>
-          </div>
-        </div>
-      </lightning-accordion-section>
-
-      <!-- Step 2: Configure Catalog Jobs -->
-      <lightning-accordion-section
-        name="step2"
-        label="Step 2 – Configure Catalog Jobs"
-      >
-        <div class="slds-p-horizontal_medium slds-p-bottom_medium">
-          <!-- Header with button -->
-          <div
-            class="slds-grid slds-wrap slds-grid_vertical-align-center slds-m-bottom_medium"
-          >
-            <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
-              <!-- Stats -->
-              <template if:true={catalogConfigs}>
-                <div class="slds-grid slds-wrap">
-                  <div class="slds-col slds-size_1-of-3 slds-p-right_small">
-                    <div class="stat-card slds-box slds-box_x-small">
-                      <p class="stat-label">Total Jobs</p>
-                      <p class="stat-value">{totalConfigs}</p>
-                    </div>
-                  </div>
-                  <div
-                    class="slds-col slds-size_1-of-3 slds-p-horizontal_small"
-                  >
-                    <div class="stat-card slds-box slds-box_x-small">
-                      <p class="stat-label">Active</p>
-                      <p class="stat-value stat-active">{activeConfigs}</p>
-                    </div>
-                  </div>
-                  <div class="slds-col slds-size_1-of-3 slds-p-left_small">
-                    <div class="stat-card slds-box slds-box_x-small">
-                      <p class="stat-label">Inactive</p>
-                      <p class="stat-value stat-inactive">{inactiveConfigs}</p>
-                    </div>
-                  </div>
+            <section class="workspace-card workspace-card--shade">
+              <div class="workspace-card__header">
+                <div>
+                  <h3 class="slds-text-heading_small">Setup Checklist</h3>
+                  <p class="workspace-card__meta">
+                    These are the minimum pieces needed before a sync can run.
+                  </p>
                 </div>
-              </template>
+              </div>
+
+              <ol class="slds-list_ordered helper-list">
+                <li>Open <strong>Setup → Named Credentials</strong>.</li>
+                <li>
+                  Create or update the <code>Coveo_Push</code> Named Credential.
+                </li>
+                <li>Set the endpoint to your Coveo Push API base URL.</li>
+                <li>
+                  Open <strong>External Credentials</strong> and update
+                  <code>CoveoPushAuthCred</code>.
+                </li>
+                <li>
+                  Add the <code>API_KEY</code> authentication parameter with
+                  your Coveo API key.
+                </li>
+                <li>
+                  Assign the <code>CoveoETL_Admin</code> permission set to the
+                  admin who will run exports.
+                </li>
+              </ol>
+            </section>
+          </div>
+        </template>
+
+        <template if:true={isCatalogJobsView}>
+          <div class="workspace-page-header">
+            <div>
+              <p class="section-label">Catalog Jobs</p>
+              <h2 class="workspace-page-title">
+                Manage catalog job configurations
+              </h2>
+              <p class="workspace-page-subtitle">
+                Work from a proper inventory, edit a draft in-place, and keep a
+                live preflight review visible while you build or reuse configs.
+              </p>
             </div>
-            <div
-              class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2 slds-text-align_right slds-m-top_small"
-            >
+            <div class="workspace-page-actions">
               <lightning-button
                 label="Open Custom Metadata Setup"
                 variant="brand-outline"
@@ -203,178 +347,656 @@
             </div>
           </div>
 
-          <!-- Config Table -->
-          <template if:true={isLoadingConfigs}>
-            <div class="slds-text-align_center slds-m-vertical_large">
+          <div class="workspace-banner slds-m-bottom_medium">
+            <lightning-icon
+              icon-name="utility:info"
+              size="x-small"
+              class="slds-m-right_x-small"
+            ></lightning-icon>
+            This assistant prepares the exact values for a
+            <code>CatalogJobConfig__mdt</code> record. Saving still happens in
+            Custom Metadata Setup for this UX phase.
+          </div>
+
+          <template if:true={isLoadingWorkspaceOptions}>
+            <div class="section-spinner">
               <lightning-spinner
-                alternative-text="Loading configurations"
+                alternative-text="Loading workspace options"
               ></lightning-spinner>
             </div>
           </template>
 
-          <template if:true={hasConfigs}>
-            <lightning-datatable
-              key-field="id"
-              data={catalogConfigs}
-              columns={configColumns}
-              hide-checkbox-column
-              onrowaction={handleRowAction}
-              class="config-table"
-            ></lightning-datatable>
-          </template>
-
-          <template if:true={noConfigs}>
-            <div class="slds-text-align_center slds-m-vertical_large">
-              <lightning-icon
-                icon-name="utility:add"
-                size="large"
-                class="slds-m-bottom_small"
-              ></lightning-icon>
-              <h3 class="slds-text-heading_small slds-m-bottom_x-small">
-                No Catalog Jobs Configured
-              </h3>
-              <p class="slds-text-body_regular slds-text-color_weak">
-                Create your first catalog job configuration to start exporting
-                products to Coveo.
-              </p>
-            </div>
-          </template>
-
-          <!-- Collapsible Help Text -->
-          <details class="slds-m-top_medium">
-            <summary class="slds-text-link help-toggle">
-              <lightning-icon
-                icon-name="utility:info"
-                size="x-small"
-                class="slds-m-right_x-small"
-              ></lightning-icon>
-              Configuration Fields Reference
-            </summary>
-            <div
-              class="help-card slds-box slds-box_x-small slds-theme_shade slds-m-top_small"
-            >
-              <div class="slds-grid slds-wrap">
-                <div class="slds-col slds-size_1-of-2 slds-p-right_small">
-                  <ul class="slds-list_dotted">
-                    <li>
-                      <strong>Coveo Org Id</strong> – Your Coveo organization
-                      identifier
-                    </li>
-                    <li>
-                      <strong>Source Id</strong> – The Coveo catalog source ID
-                    </li>
-                    <li>
-                      <strong>Locale</strong> – Language/region code (e.g.,
-                      en-US)
-                    </li>
-                    <li>
-                      <strong>Builder Type</strong> – Catalog organization
-                      strategy (Default, Commerce, Grouping, Variant,
-                      GroupingWithVariants)
-                    </li>
-                  </ul>
-                </div>
-                <div class="slds-col slds-size_1-of-2 slds-p-left_small">
-                  <ul class="slds-list_dotted">
-                    <li>
-                      <strong>Product Filter</strong> – SOQL WHERE clause
-                      (optional) - e.g., Family = 'Generators'
-                    </li>
-                    <li>
-                      <strong>Additional Fields</strong> – Extra Product2 fields
-                      to export (optional, comma-separated) - e.g.,
-                      ProductCode,Description
-                    </li>
-                    <li><strong>Active</strong> – Enable/disable the job</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </details>
-        </div>
-      </lightning-accordion-section>
-
-      <!-- Step 3: Advanced Builder Settings -->
-      <lightning-accordion-section
-        name="step3"
-        label="Step 3 – Advanced Builder Settings"
-      >
-        <div class="slds-p-horizontal_medium slds-p-bottom_medium">
-          <!-- Info Banner -->
-          <div
-            class="slds-box slds-theme_info slds-theme_alert-texture slds-m-bottom_medium"
-          >
-            <div class="slds-grid slds-wrap">
-              <div class="slds-col slds-size_1-of-1">
-                <div class="slds-media slds-media_center">
-                  <div class="slds-media__figure">
-                    <lightning-icon
-                      icon-name="utility:info"
-                      size="small"
-                      variant="inverse"
-                    ></lightning-icon>
-                  </div>
-                  <div class="slds-media__body">
+          <template if:true={hasWorkspaceOptions}>
+            <div class="jobs-workspace">
+              <aside class="workspace-card jobs-inventory">
+                <div class="workspace-card__header">
+                  <div>
+                    <p class="section-label">Current Catalog Jobs</p>
                     <h3 class="slds-text-heading_small">
-                      Per-Catalog Builder Configuration
+                      Inspect or reuse an existing configuration
                     </h3>
-                    <p class="slds-text-body_small">
-                      Each catalog job can now use a different builder type. Set
-                      the <strong>Builder Type</strong> field in your
-                      CatalogJobConfig__mdt records to choose between Default,
-                      Grouping, Variant, or GroupingWithVariants strategies.
-                      Leave blank to use the global default below.
+                  </div>
+                  <div class="setup-stat-group">
+                    <div class="setup-stat-pill">
+                      <span class="setup-stat-pill__label">Total</span>
+                      <span class="setup-stat-pill__value">{totalConfigs}</span>
+                    </div>
+                    <div class="setup-stat-pill setup-stat-pill--success">
+                      <span class="setup-stat-pill__label">Active</span>
+                      <span class="setup-stat-pill__value"
+                        >{activeConfigs}</span
+                      >
+                    </div>
+                  </div>
+                </div>
+
+                <template if:true={isLoadingConfigs}>
+                  <div class="section-spinner">
+                    <lightning-spinner
+                      alternative-text="Loading catalog job configurations"
+                    ></lightning-spinner>
+                  </div>
+                </template>
+
+                <template if:true={hasConfigs}>
+                  <div class="config-card-list" role="list">
+                    <template for:each={catalogConfigs} for:item="config">
+                      <article
+                        key={config.id}
+                        class={config.cardClass}
+                        role="listitem"
+                      >
+                        <div class="config-card__header">
+                          <div>
+                            <h4 class="config-card__title">{config.label}</h4>
+                            <p class="config-card__subtitle">
+                              {config.developerName}
+                            </p>
+                          </div>
+                          <div class="config-card__badges">
+                            <span class={config.activeStatusClass}>
+                              {config.activeStatusLabel}
+                            </span>
+                            <span class={config.availabilityStatusClass}>
+                              {config.availabilityStatusLabel}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div class="config-card__facts">
+                          <div class="config-card__fact">
+                            <p class="config-card__fact-label">Experience</p>
+                            <p class="config-card__fact-value">
+                              {config.experienceSummary}
+                            </p>
+                          </div>
+                          <div class="config-card__fact">
+                            <p class="config-card__fact-label">Destinations</p>
+                            <p class="config-card__fact-value">
+                              {config.destinationSummary}
+                            </p>
+                          </div>
+                          <div class="config-card__fact">
+                            <p class="config-card__fact-label">Builder</p>
+                            <p class="config-card__fact-value">
+                              {config.builderSummary}
+                            </p>
+                          </div>
+                          <div class="config-card__fact">
+                            <p class="config-card__fact-label">Scope</p>
+                            <p class="config-card__fact-value">
+                              {config.scopeSummary}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div class="config-card__footer">
+                          <p class="config-card__supporting">
+                            {config.additionalFieldSummary}
+                          </p>
+                          <div class="config-card__actions">
+                            <lightning-button
+                              label="Inspect"
+                              variant="neutral"
+                              data-config-id={config.id}
+                              onclick={handleSelectConfig}
+                            ></lightning-button>
+                            <lightning-button
+                              label="Use as Draft"
+                              variant="brand-outline"
+                              data-config-id={config.id}
+                              onclick={handleLoadDraftClick}
+                            ></lightning-button>
+                          </div>
+                        </div>
+                      </article>
+                    </template>
+                  </div>
+                </template>
+
+                <template if:true={noConfigs}>
+                  <div class="empty-state">
+                    <lightning-icon
+                      icon-name="utility:add"
+                      size="small"
+                      class="slds-m-bottom_small"
+                    ></lightning-icon>
+                    <h3 class="slds-text-heading_small slds-m-bottom_x-small">
+                      No Catalog Jobs Configured Yet
+                    </h3>
+                    <p class="slds-text-body_regular slds-text-color_weak">
+                      Use the draft builder and then open Custom Metadata Setup
+                      to create your first record.
                     </p>
                   </div>
+                </template>
+              </aside>
+
+              <section class="workspace-card jobs-editor">
+                <div class="workspace-card__header">
+                  <div>
+                    <p class="section-label">Guided Job Draft</p>
+                    <h3 class="slds-text-heading_medium">
+                      Build or revise a config in-place
+                    </h3>
+                    <p class="workspace-card__meta">
+                      Draft settings here, then use the summary on the right to
+                      verify the final metadata shape before saving.
+                    </p>
+                  </div>
+                  <lightning-badge
+                    label={availabilityToggleLabel}
+                    class="workspace-badge"
+                  ></lightning-badge>
                 </div>
-              </div>
+
+                <section class="editor-section">
+                  <div class="editor-section__header">
+                    <p class="section-label">Basics</p>
+                    <p class="editor-section__meta">
+                      Core identity, destination, and builder selection.
+                    </p>
+                  </div>
+                  <div class="workspace-grid">
+                    <lightning-input
+                      label="Job Label"
+                      value={draft.label}
+                      data-field="label"
+                      onchange={handleDraftInputChange}
+                      placeholder="US B2B Store"
+                      required
+                    ></lightning-input>
+
+                    <lightning-input
+                      label="Developer Name"
+                      value={draft.developerName}
+                      data-field="developerName"
+                      onchange={handleDraftInputChange}
+                      placeholder="US_B2B_STORE"
+                      field-level-help="Custom Metadata developer names use letters, numbers, and underscores."
+                    ></lightning-input>
+
+                    <lightning-input
+                      label="Coveo Org Id"
+                      value={draft.coveoOrgId}
+                      data-field="coveoOrgId"
+                      onchange={handleDraftInputChange}
+                      placeholder="mycoveoorgabc123"
+                      required
+                    ></lightning-input>
+
+                    <lightning-input
+                      label="Product Source Id"
+                      value={draft.sourceId}
+                      data-field="sourceId"
+                      onchange={handleDraftInputChange}
+                      placeholder="catalog-products-us"
+                      required
+                    ></lightning-input>
+
+                    <lightning-combobox
+                      label="Locale"
+                      value={draft.locale}
+                      data-field="locale"
+                      options={localeOptions}
+                      onchange={handleDraftInputChange}
+                    ></lightning-combobox>
+
+                    <lightning-combobox
+                      label="Builder Type"
+                      value={draft.builderType}
+                      data-field="builderType"
+                      options={builderTypeOptions}
+                      onchange={handleDraftInputChange}
+                      field-level-help="Built-in builders appear here, and any custom builders mapped in CatalogJsonBuilderMapping__mdt are included too."
+                    ></lightning-combobox>
+                  </div>
+                </section>
+
+                <section class="editor-section">
+                  <div class="editor-section__header">
+                    <p class="section-label">Product Scope</p>
+                    <p class="editor-section__meta">
+                      Choose the catalog and any optional field or filter
+                      overrides.
+                    </p>
+                  </div>
+                  <div class="workspace-grid">
+                    <lightning-combobox
+                      label="Product Catalog"
+                      value={draft.catalogId}
+                      data-field="catalogId"
+                      options={catalogOptions}
+                      onchange={handleDraftInputChange}
+                      placeholder="Select a catalog"
+                    ></lightning-combobox>
+                  </div>
+
+                  <div class="slds-m-top_medium">
+                    <lightning-textarea
+                      label="Product Filter"
+                      value={draft.productFilter}
+                      data-field="productFilter"
+                      onchange={handleDraftInputChange}
+                      placeholder="Family = 'Generators'"
+                      field-level-help="Provide a SOQL WHERE clause fragment to narrow the product scope."
+                    ></lightning-textarea>
+                  </div>
+
+                  <div class="slds-m-top_medium">
+                    <lightning-dual-listbox
+                      name="additionalFields"
+                      label="Additional Product Fields"
+                      source-label="Available Product2 fields"
+                      selected-label="Fields to export"
+                      options={productFieldOptions}
+                      value={draft.additionalProductFields}
+                      onchange={handleAdditionalFieldsChange}
+                    ></lightning-dual-listbox>
+                  </div>
+                </section>
+
+                <section class="editor-section">
+                  <div class="editor-section__header">
+                    <p class="section-label">Availability</p>
+                    <p class="editor-section__meta">
+                      Configure the paired Buyer Group availability source when
+                      entitlement-aware visibility is needed.
+                    </p>
+                  </div>
+                  <div class="workspace-grid">
+                    <lightning-input
+                      type="toggle"
+                      label="Enable Buyer Group Availability"
+                      checked={draft.enableBuyerGroupAvailability}
+                      data-field="enableBuyerGroupAvailability"
+                      onchange={handleDraftInputChange}
+                    ></lightning-input>
+
+                    <lightning-combobox
+                      label="Web Store"
+                      value={draft.webStoreId}
+                      data-field="webStoreId"
+                      options={webStoreOptions}
+                      onchange={handleDraftInputChange}
+                      placeholder="Select a store"
+                      disabled={areAvailabilityFieldsDisabled}
+                    ></lightning-combobox>
+
+                    <lightning-input
+                      label="Availability Source Id"
+                      value={draft.availabilitySourceId}
+                      data-field="availabilitySourceId"
+                      onchange={handleDraftInputChange}
+                      placeholder="catalog-availability-us"
+                      disabled={areAvailabilityFieldsDisabled}
+                    ></lightning-input>
+                  </div>
+                </section>
+
+                <div class="workspace-card__actions">
+                  <lightning-button
+                    label="Reset Draft"
+                    onclick={handleResetDraft}
+                    disabled={isResetDraftDisabled}
+                  ></lightning-button>
+                  <lightning-button
+                    label="Copy Draft Summary"
+                    variant="brand"
+                    onclick={handleCopyDraft}
+                    disabled={isCopyDraftDisabled}
+                  ></lightning-button>
+                  <lightning-button
+                    label="Open Custom Metadata Setup"
+                    variant="brand-outline"
+                    onclick={handleOpenCustomMetadata}
+                    icon-name="utility:new_window"
+                    icon-position="right"
+                  ></lightning-button>
+                </div>
+              </section>
+
+              <aside class="workspace-card workspace-card--sticky jobs-review">
+                <div class="workspace-card__header">
+                  <div>
+                    <p class="section-label">Review & Preflight</p>
+                    <h3 class="slds-text-heading_medium">
+                      Check readiness before save
+                    </h3>
+                  </div>
+                  <span class={draftStatusClass}>{draftStatusLabel}</span>
+                </div>
+
+                <template if:true={isLoadingDraftPreview}>
+                  <div class="section-spinner">
+                    <lightning-spinner
+                      alternative-text="Refreshing draft preview"
+                      size="small"
+                    ></lightning-spinner>
+                  </div>
+                </template>
+
+                <template if:false={hasDraftInput}>
+                  <div class="empty-review-state">
+                    <p class="slds-text-body_regular">
+                      Start with a label, source id, and catalog selection to
+                      build a config draft.
+                    </p>
+                  </div>
+                </template>
+
+                <template if:true={hasDraftInput}>
+                  <div class="review-stat-grid">
+                    <div class="review-stat-card">
+                      <p class="review-stat-card__label">Estimated Products</p>
+                      <p class="review-stat-card__value">
+                        {draftEstimatedProductCount}
+                      </p>
+                    </div>
+                    <div class="review-stat-card">
+                      <p class="review-stat-card__label">Buyer Groups</p>
+                      <p class="review-stat-card__value">
+                        {draftBuyerGroupCount}
+                      </p>
+                    </div>
+                    <div class="review-stat-card">
+                      <p class="review-stat-card__label">Extra Fields</p>
+                      <p class="review-stat-card__value">
+                        {draftSelectedFieldCount}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="review-summary slds-m-top_medium">
+                    <div class="review-summary__row">
+                      <span class="review-summary__label">Catalog</span>
+                      <span class="review-summary__value">
+                        {draftSummaryCatalogText}
+                      </span>
+                    </div>
+                    <div class="review-summary__row">
+                      <span class="review-summary__label">Web Store</span>
+                      <span class="review-summary__value">
+                        {draftSummaryWebStoreText}
+                      </span>
+                    </div>
+                    <div class="review-summary__row">
+                      <span class="review-summary__label">Builder</span>
+                      <span class="review-summary__value">
+                        {selectedBuilderTypeLabel}
+                      </span>
+                    </div>
+                  </div>
+
+                  <template if:true={hasDraftValidationMessages}>
+                    <div
+                      class="message-panel message-panel--error slds-m-top_medium"
+                    >
+                      <p class="message-panel__title">Required before save</p>
+                      <ul class="message-list">
+                        <template
+                          for:each={draftPreviewValidationMessages}
+                          for:item="message"
+                        >
+                          <li key={message}>{message}</li>
+                        </template>
+                      </ul>
+                    </div>
+                  </template>
+
+                  <template if:true={hasDraftWarningMessages}>
+                    <div
+                      class="message-panel message-panel--warning slds-m-top_medium"
+                    >
+                      <p class="message-panel__title">Helpful notes</p>
+                      <ul class="message-list">
+                        <template
+                          for:each={draftPreviewWarningMessages}
+                          for:item="message"
+                        >
+                          <li key={message}>{message}</li>
+                        </template>
+                      </ul>
+                    </div>
+                  </template>
+
+                  <div class="code-preview slds-m-top_medium">
+                    <p class="section-label slds-m-bottom_x-small">
+                      Draft Summary
+                    </p>
+                    <pre>{generatedConfigDraft}</pre>
+                  </div>
+                </template>
+              </aside>
+            </div>
+
+            <template if:true={hasSelectedConfig}>
+              <section class="workspace-card jobs-detail-panel">
+                <div class="workspace-card__header">
+                  <div>
+                    <p class="section-label">Selected Config</p>
+                    <h3 class="slds-text-heading_medium">
+                      {selectedConfigTitle}
+                    </h3>
+                    <p class="workspace-card__meta">{selectedConfigSubtitle}</p>
+                  </div>
+                  <div class="config-modal-badges">
+                    <lightning-badge
+                      label={configStatusBadgeLabel}
+                      class={configStatusBadgeClass}
+                    ></lightning-badge>
+                    <lightning-badge
+                      label={configAvailabilityBadgeLabel}
+                      class={configAvailabilityBadgeClass}
+                    ></lightning-badge>
+                  </div>
+                </div>
+
+                <div class="config-detail-panel__actions">
+                  <lightning-button
+                    label="Load into Draft"
+                    variant="brand"
+                    onclick={handleLoadDraftClick}
+                    data-config-id={selectedConfigId}
+                  ></lightning-button>
+                </div>
+
+                <div class="config-modal-layout">
+                  <section class="detail-section">
+                    <div class="detail-section__header">
+                      <p class="section-label">Summary</p>
+                      <p class="detail-section__meta">
+                        Core identity, org target, and resolved builder
+                        selection.
+                      </p>
+                    </div>
+                    <div class="detail-grid">
+                      <template for:each={configSummaryFields} for:item="field">
+                        <div key={field.label} class="detail-field">
+                          <p class="detail-field__label">{field.label}</p>
+                          <p class="detail-field__value">{field.value}</p>
+                        </div>
+                      </template>
+                    </div>
+                  </section>
+
+                  <section class="detail-section">
+                    <div class="detail-section__header">
+                      <p class="section-label">Product Scope</p>
+                      <p class="detail-section__meta">
+                        Catalog targeting, source destination, and filter
+                        coverage.
+                      </p>
+                    </div>
+                    <div class="detail-grid">
+                      <template
+                        for:each={configProductScopeFields}
+                        for:item="field"
+                      >
+                        <div key={field.label} class="detail-field">
+                          <p class="detail-field__label">{field.label}</p>
+                          <p class="detail-field__value">{field.value}</p>
+                        </div>
+                      </template>
+                    </div>
+
+                    <div class="slds-m-top_medium">
+                      <p class="detail-field__label slds-m-bottom_x-small">
+                        Additional Product Fields
+                      </p>
+                      <template if:true={hasConfigAdditionalFieldPills}>
+                        <div class="detail-pill-list">
+                          <template
+                            for:each={configAdditionalFieldPills}
+                            for:item="field"
+                          >
+                            <span key={field.key} class="detail-pill">
+                              {field.label}
+                            </span>
+                          </template>
+                        </div>
+                      </template>
+                      <template if:false={hasConfigAdditionalFieldPills}>
+                        <p class="detail-empty-value">
+                          No additional fields selected.
+                        </p>
+                      </template>
+                    </div>
+                  </section>
+
+                  <section class="detail-section">
+                    <div class="detail-section__header">
+                      <p class="section-label">Availability</p>
+                      <p class="detail-section__meta">
+                        Buyer Group availability settings and availability
+                        source destination.
+                      </p>
+                    </div>
+                    <div class="detail-grid">
+                      <template
+                        for:each={configAvailabilityFields}
+                        for:item="field"
+                      >
+                        <div key={field.label} class="detail-field">
+                          <p class="detail-field__label">{field.label}</p>
+                          <p class="detail-field__value">{field.value}</p>
+                        </div>
+                      </template>
+                    </div>
+                  </section>
+
+                  <section class="detail-section">
+                    <div class="detail-section__header">
+                      <p class="section-label">Advanced</p>
+                      <p class="detail-section__meta">
+                        Raw ids and advanced values that are still useful during
+                        troubleshooting.
+                      </p>
+                    </div>
+                    <div class="detail-grid">
+                      <template
+                        for:each={configAdvancedFields}
+                        for:item="field"
+                      >
+                        <div key={field.label} class="detail-field">
+                          <p class="detail-field__label">{field.label}</p>
+                          <p class="detail-field__value">{field.value}</p>
+                        </div>
+                      </template>
+                    </div>
+                  </section>
+
+                  <section class="detail-section detail-section--full">
+                    <div class="detail-section__header">
+                      <p class="section-label">Raw Metadata Snapshot</p>
+                      <p class="detail-section__meta">
+                        Exact field values for quick copy/paste into Custom
+                        Metadata Setup.
+                      </p>
+                    </div>
+                    <div class="code-preview">
+                      <pre>{configMetadataSummary}</pre>
+                    </div>
+                  </section>
+                </div>
+              </section>
+            </template>
+          </template>
+        </template>
+
+        <template if:true={isAdvancedView}>
+          <div class="workspace-page-header">
+            <div>
+              <p class="section-label">Advanced</p>
+              <h2 class="workspace-page-title">
+                Builder mapping and validation
+              </h2>
+              <p class="workspace-page-subtitle">
+                Review the global default builder, validate custom builder
+                classes, and inspect the available per-catalog override choices.
+              </p>
             </div>
           </div>
 
-          <div class="slds-grid slds-wrap slds-gutters">
-            <!-- Current Global Default Builder -->
-            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
-              <div
-                class="status-card slds-box slds-box_x-small slds-m-bottom_medium"
-              >
-                <h3 class="slds-text-heading_small slds-m-bottom_small">
-                  Global Default Builder
-                </h3>
-                <template if:true={isLoadingBuilder}>
-                  <lightning-spinner
-                    alternative-text="Loading"
-                    size="small"
-                  ></lightning-spinner>
-                </template>
-                <template if:false={isLoadingBuilder}>
-                  <div class="slds-m-bottom_small">
-                    <p class="slds-text-title_caps slds-m-bottom_xx-small">
-                      Active Class
-                    </p>
-                    <p class="slds-text-heading_small">
-                      <code>{builderClassName}</code>
-                    </p>
-                  </div>
-                  <p class="slds-text-body_small slds-text-color_weak">
-                    This builder is used when a catalog job has no specific
-                    Builder Type configured.
-                  </p>
-                  <template if:true={isDefaultBuilder}>
-                    <lightning-badge
-                      label="Default"
-                      class="slds-theme_success slds-m-top_x-small"
-                    ></lightning-badge>
-                  </template>
-                  <template if:false={isDefaultBuilder}>
-                    <lightning-badge
-                      label="Custom"
-                      class="slds-theme_warning slds-m-top_x-small"
-                    ></lightning-badge>
-                  </template>
-                </template>
+          <div class="info-banner slds-m-bottom_medium">
+            <lightning-icon
+              icon-name="utility:info"
+              size="x-small"
+              class="slds-m-right_x-small"
+            ></lightning-icon>
+            Each catalog job can override the global builder by setting
+            <code>BuilderType__c</code> on the config record.
+          </div>
+
+          <div class="workspace-two-up">
+            <section class="workspace-card">
+              <div class="workspace-card__header">
+                <div>
+                  <p class="section-label">Global Default Builder</p>
+                  <h3 class="slds-text-heading_small">{builderClassName}</h3>
+                </div>
+                <lightning-badge
+                  label={builderBadgeLabel}
+                  class={builderBadgeClass}
+                ></lightning-badge>
               </div>
 
-              <!-- Validate Custom Builder -->
+              <template if:true={isLoadingBuilder}>
+                <div class="section-spinner">
+                  <lightning-spinner
+                    alternative-text="Loading builder mapping"
+                    size="small"
+                  ></lightning-spinner>
+                </div>
+              </template>
+
+              <template if:false={isLoadingBuilder}>
+                <p class="slds-text-body_small slds-text-color_weak">
+                  This builder is used whenever a catalog job does not specify a
+                  Builder Type value.
+                </p>
+              </template>
+
               <div class="slds-m-top_medium">
                 <lightning-input
                   type="text"
@@ -382,15 +1004,18 @@
                   placeholder="Enter Apex class name"
                   value={customBuilderInput}
                   onchange={handleCustomBuilderInputChange}
-                  class="slds-m-bottom_small"
                   field-level-help="Test if a custom builder class is valid before deploying it."
                 ></lightning-input>
-                <lightning-button
-                  label="Validate Class"
-                  variant="neutral"
-                  onclick={handleValidateBuilder}
-                  disabled={isValidatingBuilder}
-                ></lightning-button>
+
+                <div class="workspace-card__actions">
+                  <lightning-button
+                    label="Validate Class"
+                    variant="neutral"
+                    onclick={handleValidateBuilder}
+                    disabled={isValidatingBuilder}
+                  ></lightning-button>
+                </div>
+
                 <template if:true={builderValidationResult}>
                   <div class={builderValidationClass}>
                     <lightning-icon
@@ -402,132 +1027,32 @@
                   </div>
                 </template>
               </div>
-            </div>
+            </section>
 
-            <!-- Help Section -->
-            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
-              <div class="help-card slds-box slds-box_x-small slds-theme_shade">
-                <h3 class="slds-text-heading_small slds-m-bottom_small">
-                  <lightning-icon
-                    icon-name="utility:settings"
-                    size="x-small"
-                    class="slds-m-right_x-small"
-                  ></lightning-icon>
-                  Builder Configuration Options
-                </h3>
-                <div class="slds-m-bottom_medium">
-                  <p class="slds-text-heading_small slds-m-bottom_x-small">
-                    Per-Catalog Configuration (Recommended)
-                  </p>
-                  <ol class="slds-list_ordered">
-                    <li class="slds-m-bottom_x-small">
-                      Edit your <code>CatalogJobConfig__mdt</code> record
-                    </li>
-                    <li class="slds-m-bottom_x-small">
-                      Set <code>BuilderType__c</code> to: Default, Commerce,
-                      Grouping, Variant, or GroupingWithVariants
-                    </li>
-                    <li>Leave blank to use the global default</li>
-                  </ol>
-                </div>
+            <section class="workspace-card workspace-card--shade">
+              <div class="workspace-card__header">
                 <div>
-                  <p class="slds-text-heading_small slds-m-bottom_x-small">
-                    Global Default Configuration
-                  </p>
-                  <p class="slds-text-body_small slds-text-color_weak">
-                    To change the global default builder, update
-                    <code>CatalogJsonBuilderMapping__mdt.Active</code> in Custom
-                    Metadata Setup.
-                  </p>
+                  <p class="section-label">Available Builder Types</p>
+                  <h3 class="slds-text-heading_small">
+                    Per-catalog override choices
+                  </h3>
                 </div>
               </div>
 
-              <!-- Available Builders -->
-              <details class="slds-m-top_medium">
-                <summary class="slds-text-link help-toggle">
-                  <lightning-icon
-                    icon-name="utility:apex"
-                    size="x-small"
-                    class="slds-m-right_x-small"
-                  ></lightning-icon>
-                  Available Builder Types
-                </summary>
-                <div class="slds-box slds-box_x-small slds-m-top_small">
-                  <template if:true={builderOptions}>
-                    <template for:each={builderOptions} for:item="option">
-                      <div
-                        key={option.value}
-                        class="slds-p-around_x-small slds-border_bottom"
-                      >
-                        <p class="slds-text-body_regular">
-                          <strong>{option.label}</strong>
-                        </p>
-                        <p class="slds-text-body_small slds-text-color_weak">
-                          {option.description}
-                        </p>
-                      </div>
-                    </template>
-                  </template>
-                </div>
-              </details>
-            </div>
-          </div>
-        </div>
-      </lightning-accordion-section>
-    </lightning-accordion>
-
-    <!-- Details Modal -->
-    <template if:true={showDetailsModal}>
-      <section
-        role="dialog"
-        tabindex="-1"
-        class="slds-modal slds-fade-in-open"
-        aria-modal="true"
-      >
-        <div class="slds-modal__container">
-          <header class="slds-modal__header">
-            <lightning-button-icon
-              icon-name="utility:close"
-              variant="bare-inverse"
-              size="large"
-              onclick={handleCloseModal}
-              alternative-text="Close"
-              class="slds-modal__close"
-            ></lightning-button-icon>
-            <h2 class="slds-text-heading_medium">{configModalTitle}</h2>
-          </header>
-          <div class="slds-modal__content slds-p-around_medium">
-            <div class="slds-form">
-              <div class="slds-form-element slds-m-bottom_medium">
-                <label class="slds-form-element__label slds-text-title_bold">
-                  Product Filter
-                </label>
-                <div class="slds-form-element__control">
-                  <div class="setup-detail-content">{configProductFilter}</div>
-                </div>
-              </div>
-              <div class="slds-form-element">
-                <label class="slds-form-element__label slds-text-title_bold">
-                  Additional Product Fields
-                </label>
-                <div class="slds-form-element__control">
-                  <div class="setup-detail-content">
-                    {configAdditionalFields}
+              <template if:true={builderOptions}>
+                <template for:each={builderOptions} for:item="option">
+                  <div key={option.value} class="builder-option-row">
+                    <p class="builder-option-row__label">{option.label}</p>
+                    <p class="builder-option-row__description">
+                      {option.description}
+                    </p>
                   </div>
-                </div>
-              </div>
-            </div>
+                </template>
+              </template>
+            </section>
           </div>
-          <footer class="slds-modal__footer">
-            <lightning-button
-              label="Close"
-              onclick={handleCloseModal}
-              variant="brand"
-            ></lightning-button>
-          </footer>
-        </div>
+        </template>
       </section>
-      <div class="slds-backdrop slds-backdrop_open"></div>
-    </template>
+    </div>
   </div>
 </template>

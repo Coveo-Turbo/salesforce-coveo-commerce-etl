@@ -1,5 +1,35 @@
 @IsTest
 private class CoveoCommerceSetupControllerTest {
+  private static Map<String, Id> createPreviewCatalogData() {
+    ProductCatalog catalog = new ProductCatalog(Name = 'Preview Catalog');
+    insert catalog;
+
+    ProductCategory category = new ProductCategory(
+      Name = 'Preview Category',
+      CatalogId = catalog.Id
+    );
+    insert category;
+
+    Product2 product = new Product2(
+      Name = 'Preview Product',
+      ProductCode = 'SKU-PREVIEW-001',
+      Family = 'Tools',
+      IsActive = true
+    );
+    insert product;
+
+    insert new ProductCategoryProduct(
+      ProductId = product.Id,
+      ProductCategoryId = category.Id
+    );
+
+    return new Map<String, Id>{
+      'catalogId' => catalog.Id,
+      'categoryId' => category.Id,
+      'productId' => product.Id
+    };
+  }
+
   /**
    * Mock class for successful HTTP callout (201 Created)
    */
@@ -175,6 +205,14 @@ private class CoveoCommerceSetupControllerTest {
         'Config should have sourceId key'
       );
       System.assert(
+        config.containsKey('availabilitySourceId'),
+        'Config should have availabilitySourceId key'
+      );
+      System.assert(
+        config.containsKey('webStoreId'),
+        'Config should have webStoreId key'
+      );
+      System.assert(
         config.containsKey('locale'),
         'Config should have locale key'
       );
@@ -190,7 +228,266 @@ private class CoveoCommerceSetupControllerTest {
         config.containsKey('additionalProductFields'),
         'Config should have additionalProductFields key'
       );
+      System.assert(
+        config.containsKey('buyerGroupAvailabilityEnabled'),
+        'Config should have buyerGroupAvailabilityEnabled key'
+      );
     }
+  }
+
+  // ============================================================
+  // Tests for getSetupWorkspaceOptions()
+  // ============================================================
+
+  @IsTest
+  static void testGetSetupWorkspaceOptions_returnsExpectedCollections() {
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.getSetupWorkspaceOptions();
+    Test.stopTest();
+
+    System.assertNotEquals(
+      null,
+      result,
+      'Workspace options should not be null'
+    );
+    System.assert(
+      result.containsKey('webStores'),
+      'Workspace options should include webStores'
+    );
+    System.assert(
+      result.containsKey('productCatalogs'),
+      'Workspace options should include productCatalogs'
+    );
+    System.assert(
+      result.containsKey('builderTypeOptions'),
+      'Workspace options should include builderTypeOptions'
+    );
+    System.assert(
+      result.containsKey('productFieldOptions'),
+      'Workspace options should include productFieldOptions'
+    );
+
+    List<Object> builderTypeOptions = (List<Object>) result.get(
+      'builderTypeOptions'
+    );
+    List<Object> productFieldOptions = (List<Object>) result.get(
+      'productFieldOptions'
+    );
+
+    System.assert(
+      builderTypeOptions.size() > 0,
+      'Builder type options should contain at least one entry'
+    );
+    System.assert(
+      productFieldOptions.size() > 0,
+      'Product field options should contain at least one entry'
+    );
+  }
+
+  @IsTest
+  static void testGetSetupWorkspaceOptions_includesInsertedCatalogs() {
+    Map<String, Id> previewData = createPreviewCatalogData();
+
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.getSetupWorkspaceOptions();
+    Test.stopTest();
+
+    List<Object> productCatalogOptions = (List<Object>) result.get(
+      'productCatalogs'
+    );
+    Boolean foundCatalog = false;
+
+    for (Object optionObject : productCatalogOptions) {
+      Map<String, Object> option = (Map<String, Object>) optionObject;
+      if (
+        String.valueOf(option.get('value')) ==
+        String.valueOf(previewData.get('catalogId'))
+      ) {
+        foundCatalog = true;
+        break;
+      }
+    }
+
+    System.assertEquals(
+      true,
+      foundCatalog,
+      'Workspace options should include inserted ProductCatalog records'
+    );
+  }
+
+  // ============================================================
+  // Tests for previewCatalogJobDraft()
+  // ============================================================
+
+  @IsTest
+  static void testPreviewCatalogJobDraft_requiresAvailabilityInputs() {
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.previewCatalogJobDraft(
+      'US B2B Store',
+      'US_B2B_STORE',
+      'my-coveo-org',
+      'catalog-products-us',
+      null,
+      null,
+      null,
+      'en-US',
+      'Commerce',
+      true,
+      null,
+      new List<String>()
+    );
+    Test.stopTest();
+
+    System.assertEquals(
+      false,
+      result.get('isReady'),
+      'Preview should not be ready when availability inputs are missing'
+    );
+
+    List<Object> validationMessages = (List<Object>) result.get(
+      'validationMessages'
+    );
+    String combinedMessage = String.join(
+      new List<String>{
+        String.valueOf(validationMessages[0]),
+        String.valueOf(validationMessages[1])
+      },
+      ' '
+    );
+
+    System.assert(
+      combinedMessage.contains('Availability Source Id') ||
+      combinedMessage.contains('Web Store'),
+      'Validation messages should mention the missing availability inputs'
+    );
+  }
+
+  @IsTest
+  static void testPreviewCatalogJobDraft_countsSelectedFields() {
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.previewCatalogJobDraft(
+      'US B2B Store',
+      'US_B2B_STORE',
+      'my-coveo-org',
+      'catalog-products-us',
+      null,
+      null,
+      null,
+      'en-US',
+      '',
+      false,
+      null,
+      new List<String>{ 'Color__c', 'Material__c' }
+    );
+    Test.stopTest();
+
+    System.assertEquals(
+      2,
+      result.get('selectedFieldCount'),
+      'Selected field count should reflect the provided draft fields'
+    );
+    System.assertEquals(
+      true,
+      result.get('isReady'),
+      'Preview should be ready when required fields are present and availability is disabled'
+    );
+    System.assert(
+      result.containsKey('estimatedProductCount'),
+      'Preview should include an estimated product count'
+    );
+  }
+
+  @IsTest
+  static void testPreviewCatalogJobDraft_countsCatalogProducts() {
+    Map<String, Id> previewData = createPreviewCatalogData();
+
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.previewCatalogJobDraft(
+      'Scoped Catalog Store',
+      'SCOPED_CATALOG_STORE',
+      'my-coveo-org',
+      'catalog-products-us',
+      null,
+      String.valueOf(previewData.get('catalogId')),
+      null,
+      'en-US',
+      'Commerce',
+      false,
+      'Family = \'Tools\'',
+      new List<String>{
+        'Field01__c',
+        'Field02__c',
+        'Field03__c',
+        'Field04__c',
+        'Field05__c',
+        'Field06__c',
+        'Field07__c',
+        'Field08__c',
+        'Field09__c',
+        'Field10__c',
+        'Field11__c',
+        'Field12__c',
+        'Field13__c'
+      }
+    );
+    Test.stopTest();
+
+    System.assertEquals(
+      1,
+      result.get('estimatedProductCount'),
+      'Preview should count active products scoped to the selected catalog and filter'
+    );
+
+    List<Object> warningMessages = (List<Object>) result.get('warningMessages');
+    Boolean foundPayloadWarning = false;
+    for (Object warning : warningMessages) {
+      if (String.valueOf(warning).contains('payload size')) {
+        foundPayloadWarning = true;
+      }
+    }
+
+    System.assertEquals(
+      true,
+      foundPayloadWarning,
+      'Preview should warn when too many additional fields are selected'
+    );
+  }
+
+  @IsTest
+  static void testPreviewCatalogJobDraft_handlesInvalidFilter() {
+    Map<String, Id> previewData = createPreviewCatalogData();
+
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.previewCatalogJobDraft(
+      'Invalid Filter Store',
+      'INVALID_FILTER_STORE',
+      'my-coveo-org',
+      'catalog-products-us',
+      null,
+      String.valueOf(previewData.get('catalogId')),
+      null,
+      'en-US',
+      'Commerce',
+      false,
+      'INSERT ProductCode = \'NOPE\'',
+      new List<String>()
+    );
+    Test.stopTest();
+
+    System.assertEquals(
+      false,
+      result.get('isReady'),
+      'Preview should not be ready when the filter is invalid'
+    );
+
+    List<Object> validationMessages = (List<Object>) result.get(
+      'validationMessages'
+    );
+    System.assert(
+      String.valueOf(validationMessages[0])
+        .contains('Unable to estimate product count'),
+      'Preview should surface invalid filter issues through the validation summary'
+    );
   }
 
   // ============================================================
