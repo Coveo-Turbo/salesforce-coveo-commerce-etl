@@ -57,6 +57,7 @@ const STANDARD_BUILDER_CLASS_NAMES = new Set([
 export default class CoveoCommerceSetup extends NavigationMixin(
   LightningElement
 ) {
+  @track activeWorkspace = "catalogJobs";
   @track credentialStatus = null;
   @track isLoadingCredential = true;
   @track isTestingConnection = false;
@@ -224,6 +225,14 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     return this.catalogConfigs ? this.catalogConfigs.length : 0;
   }
 
+  get availabilityEnabledConfigs() {
+    return this.catalogConfigs
+      ? this.catalogConfigs.filter(
+          (config) => config.buyerGroupAvailabilityEnabled
+        ).length
+      : 0;
+  }
+
   get activeConfigs() {
     return this.catalogConfigs
       ? this.catalogConfigs.filter((config) => config.isActive).length
@@ -234,6 +243,92 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     return this.catalogConfigs
       ? this.catalogConfigs.filter((config) => !config.isActive).length
       : 0;
+  }
+
+  get isOverviewView() {
+    return this.activeWorkspace === "overview";
+  }
+
+  get isConnectionView() {
+    return this.activeWorkspace === "connection";
+  }
+
+  get isCatalogJobsView() {
+    return this.activeWorkspace === "catalogJobs";
+  }
+
+  get isAdvancedView() {
+    return this.activeWorkspace === "advanced";
+  }
+
+  get overviewNavClass() {
+    return this.getWorkspaceNavClass("overview");
+  }
+
+  get connectionNavClass() {
+    return this.getWorkspaceNavClass("connection");
+  }
+
+  get catalogJobsNavClass() {
+    return this.getWorkspaceNavClass("catalogJobs");
+  }
+
+  get advancedNavClass() {
+    return this.getWorkspaceNavClass("advanced");
+  }
+
+  get workspaceConnectionStatusText() {
+    if (this.isLoadingCredential) {
+      return "Checking connection";
+    }
+    return this.credentialStatus?.exists ? "Connected" : "Needs setup";
+  }
+
+  get workspaceConnectionSummary() {
+    if (this.isLoadingCredential) {
+      return "Loading Named Credential status.";
+    }
+    if (this.credentialStatus?.exists) {
+      return `Named Credential is configured for ${this.credentialEndpoint}.`;
+    }
+    return "Named Credential still needs to be configured before exports can run.";
+  }
+
+  get workspaceCatalogSummary() {
+    if (!this.totalConfigs) {
+      return "No catalog job configs created yet.";
+    }
+    return `${this.activeConfigs} active configs, ${this.availabilityEnabledConfigs} availability-enabled.`;
+  }
+
+  get workspaceOverviewHighlights() {
+    return [
+      {
+        key: "connection",
+        label: "Connection",
+        value: this.workspaceConnectionStatusText,
+        helper: this.workspaceConnectionSummary,
+        actionLabel: "Open Connection",
+        target: "connection"
+      },
+      {
+        key: "catalogJobs",
+        label: "Catalog Jobs",
+        value: `${this.totalConfigs}`,
+        helper: this.workspaceCatalogSummary,
+        actionLabel: "Open Catalog Jobs",
+        target: "catalogJobs"
+      },
+      {
+        key: "advanced",
+        label: "Builder Strategy",
+        value: this.builderClassName,
+        helper:
+          "Review the global builder mapping and validate any custom builder classes.",
+        actionLabel: "Open Advanced",
+        target: "advanced"
+      }
+    ];
   }
 
   get hasSelectedConfig() {
@@ -771,6 +866,14 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     });
   }
 
+  handleWorkspaceSelect(event) {
+    const workspace = event.currentTarget?.dataset?.workspace;
+    if (!workspace || workspace === this.activeWorkspace) {
+      return;
+    }
+    this.activeWorkspace = workspace;
+  }
+
   handleSelectConfig(event) {
     const configId = event.currentTarget?.dataset?.configId;
     if (!configId) {
@@ -1161,6 +1264,12 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     }
 
     return builderTypeValue;
+  }
+
+  getWorkspaceNavClass(workspaceName) {
+    return this.activeWorkspace === workspaceName
+      ? "workspace-nav__item workspace-nav__item--active"
+      : "workspace-nav__item";
   }
 
   formatNamedValue(label, id, fallbackValue = "Not set") {

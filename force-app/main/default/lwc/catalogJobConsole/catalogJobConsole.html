@@ -227,6 +227,7 @@
                           <p class="cc-run-card__meta">
                             {run.developerName} • Started {run.launchedAtLabel}
                           </p>
+                          <p class="cc-run-card__timing">{run.timingLabel}</p>
                         </div>
                         <span class={run.overallStatusClass}>
                           {run.overallStatusLabel}
@@ -252,6 +253,11 @@
                                 <p class="cc-stage-card__meta">
                                   {stage.batchesLabel}
                                 </p>
+                                <template if:true={stage.timingLabel}>
+                                  <p class="cc-stage-card__timing">
+                                    {stage.timingLabel}
+                                  </p>
+                                </template>
                               </div>
                               <span class={stage.statusClass}>
                                 {stage.statusLabel}

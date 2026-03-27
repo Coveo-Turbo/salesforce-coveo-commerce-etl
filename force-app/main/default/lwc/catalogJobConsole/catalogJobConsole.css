@@ -200,6 +200,14 @@
   font-size: 0.84rem;
 }
 
+.cc-run-card__timing,
+.cc-stage-card__timing {
+  margin: 0.2rem 0 0;
+  color: #032d60;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
 .cc-badge-group {
   display: flex;
   flex-wrap: wrap;

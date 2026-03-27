@@ -561,10 +561,13 @@ export default class CatalogJobConsole extends LightningElement {
     const isComplete =
       stages.length > 0 && stages.every((stage) => stage.isTerminal);
     const isInProgress = stages.some((stage) => stage.status === "Processing");
+    const hasActiveStages = stages.some((stage) => !stage.isTerminal);
     const progressPercent = Math.round(
       stages.reduce((sum, stage) => sum + stage.progressPercent, 0) /
         Math.max(stages.length, 1)
     );
+    const startedAt = this.getRunStartTime(runSession, stages);
+    const completedAt = this.getRunCompletedTime(stages);
 
     let overallStatusLabel = "Queued";
     let overallStatusClass = "cc-badge cc-badge--neutral";
@@ -588,6 +591,13 @@ export default class CatalogJobConsole extends LightningElement {
       overallStatusLabel,
       overallStatusClass,
       launchedAtLabel: this.formatTimestamp(runSession.launchedAt),
+      timingLabel: this.describeRunDuration({
+        startedAt,
+        completedAt,
+        hasActiveStages,
+        hasFailure,
+        isComplete
+      }),
       cardClass: hasFailure
         ? "cc-run-card cc-run-card--error"
         : isComplete
@@ -610,8 +620,87 @@ export default class CatalogJobConsole extends LightningElement {
       progressPercent,
       statusLabel: this.describeStageChange(job.channel, status),
       statusClass: this.getStageStatusClass(status),
-      batchesLabel
+      batchesLabel,
+      timingLabel: this.describeStageDuration(job)
     };
+  }
+
+  getRunStartTime(runSession, stages) {
+    const timestamps = [runSession.launchedAt, ...stages.map((stage) => stage.createdDate)]
+      .map((value) => this.toTimestamp(value))
+      .filter((value) => value !== null);
+
+    if (!timestamps.length) {
+      return null;
+    }
+
+    return Math.min(...timestamps);
+  }
+
+  getRunCompletedTime(stages) {
+    const timestamps = stages
+      .map((stage) => this.toTimestamp(stage.completedDate))
+      .filter((value) => value !== null);
+
+    if (!timestamps.length) {
+      return null;
+    }
+
+    return Math.max(...timestamps);
+  }
+
+  describeRunDuration({
+    startedAt,
+    completedAt,
+    hasActiveStages,
+    hasFailure,
+    isComplete
+  }) {
+    if (startedAt === null) {
+      return "Waiting for timing data";
+    }
+
+    const effectiveEnd = completedAt ?? Date.now();
+    const durationText = this.formatDuration(effectiveEnd - startedAt);
+
+    if (hasActiveStages) {
+      return `Elapsed ${durationText}`;
+    }
+
+    if (hasFailure) {
+      return `Stopped after ${durationText}`;
+    }
+
+    if (isComplete) {
+      return `Completed in ${durationText}`;
+    }
+
+    return `Queued for ${durationText}`;
+  }
+
+  describeStageDuration(job) {
+    const startedAt = this.toTimestamp(job.createdDate);
+    if (startedAt === null) {
+      return "";
+    }
+
+    const completedAt = this.toTimestamp(job.completedDate);
+    const effectiveEnd = completedAt ?? Date.now();
+    const durationText = this.formatDuration(effectiveEnd - startedAt);
+
+    if (job.status === "Completed") {
+      return `Completed in ${durationText}`;
+    }
+
+    if (job.status === "Failed" || job.status === "Aborted") {
+      return `Stopped after ${durationText}`;
+    }
+
+    if (job.status === "Processing") {
+      return `Elapsed ${durationText}`;
+    }
+
+    return `Queued for ${durationText}`;
   }
 
   getJobProgressPercent(job) {
@@ -723,6 +812,37 @@ export default class CatalogJobConsole extends LightningElement {
 
   normalizeText(value, fallback) {
     return value && String(value).trim() ? value : fallback;
+  }
+
+  toTimestamp(isoValue) {
+    if (!isoValue) {
+      return null;
+    }
+
+    const timestamp = new Date(isoValue).getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+  }
+
+  formatDuration(durationMs) {
+    const totalSeconds = Math.max(0, Math.round((durationMs || 0) / 1000));
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (days > 0) {
+      return `${days}d ${hours}h`;
+    }
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+
+    if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    }
+
+    return `${seconds}s`;
   }
 
   formatTimestamp(isoValue) {
