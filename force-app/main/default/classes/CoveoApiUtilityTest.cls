@@ -1,5 +1,7 @@
 @IsTest
 private class CoveoApiUtilityTest {
+  private static List<HttpRequest> recordedRequests = new List<HttpRequest>();
+
   private class MockResponse {
     Integer statusCode;
     String status;
@@ -13,7 +15,6 @@ private class CoveoApiUtilityTest {
   }
 
   private class RecordingHttpMock implements HttpCalloutMock {
-    public static List<HttpRequest> requests = new List<HttpRequest>();
     private Map<String, MockResponse> responsesByToken;
 
     RecordingHttpMock(Map<String, MockResponse> responsesByToken) {
@@ -21,7 +22,7 @@ private class CoveoApiUtilityTest {
     }
 
     public HttpResponse respond(HttpRequest req) {
-      requests.add(req);
+      recordedRequests.add(req);
 
       for (String token : responsesByToken.keySet()) {
         if (req.getEndpoint().contains(token)) {
@@ -95,7 +96,7 @@ private class CoveoApiUtilityTest {
 
   @IsTest
   static void testStreamClientHappyPathAndDeleteOlderThan() {
-    RecordingHttpMock.requests.clear();
+    recordedRequests.clear();
     Test.setMock(
       HttpCalloutMock.class,
       new RecordingHttpMock(
@@ -141,22 +142,22 @@ private class CoveoApiUtilityTest {
     );
     System.assertEquals(
       4,
-      RecordingHttpMock.requests.size(),
+      recordedRequests.size(),
       'Null orderingId should not trigger a callout'
     );
 
-    HttpRequest fileRequest = RecordingHttpMock.requests[0];
+    HttpRequest fileRequest = recordedRequests[0];
     System.assertEquals('POST', fileRequest.getMethod());
     System.assert(
       fileRequest.getEndpoint().contains('/organizations/org-123/files'),
       'Expected file container endpoint'
     );
 
-    HttpRequest uploadRequest = RecordingHttpMock.requests[1];
+    HttpRequest uploadRequest = recordedRequests[1];
     System.assertEquals('PUT', uploadRequest.getMethod());
     System.assertEquals('abc', uploadRequest.getHeader('x-amz-meta-test'));
 
-    HttpRequest updateRequest = RecordingHttpMock.requests[2];
+    HttpRequest updateRequest = recordedRequests[2];
     System.assertEquals('PUT', updateRequest.getMethod());
     System.assert(
       updateRequest
@@ -165,7 +166,7 @@ private class CoveoApiUtilityTest {
       'Expected encoded fileId in stream update endpoint'
     );
 
-    HttpRequest deleteRequest = RecordingHttpMock.requests[3];
+    HttpRequest deleteRequest = recordedRequests[3];
     System.assertEquals('POST', deleteRequest.getMethod());
     System.assert(
       deleteRequest
