@@ -1,6 +1,9 @@
 @IsTest
 private class BuyerGroupAvailabilityExportBatchTest {
   private static List<HttpRequest> recordedRequests = new List<HttpRequest>();
+  private static final Id FALLBACK_WEB_STORE_ID = Id.valueOf(
+    '001000000000001AAA'
+  );
 
   private class MockResponse {
     Integer statusCode;
@@ -57,24 +60,40 @@ private class BuyerGroupAvailabilityExportBatchTest {
     );
   }
 
-  private static WebStore createWebStore(String name) {
-    WebStore store = new WebStore(
-      Name = name,
-      OptionsAutoFacetingEnabled = false,
-      OptionsCartAsyncProcessingEnabled = false,
-      OptionsCartCalculateEnabled = false,
-      OptionsCartToOrderAutoCustomFieldMapping = false,
-      OptionsCommerceEinsteinActivitiesTracked = false,
-      OptionsCommerceEinsteinDeployed = false,
-      OptionsDuplicateCartItemsEnabled = false,
-      OptionsGuestBrowsingEnabled = false,
-      OptionsGuestCartEnabled = false,
-      OptionsGuestCheckoutEnabled = false,
-      OptionsPreserveGuestCartEnabled = false,
-      OptionsSkipAdditionalEntitlementCheckForSearch = false,
-      OptionsSkuDetectionEnabled = false,
-      OptionsSplitShipmentEnabled = false
+  private static Boolean hasCommerceAvailabilitySchema() {
+    Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
+    return globalDescribe.containsKey('WebStore') &&
+      globalDescribe.containsKey('BuyerGroup') &&
+      globalDescribe.containsKey('WebStoreBuyerGroup') &&
+      globalDescribe.containsKey('CommerceEntitlementPolicy') &&
+      globalDescribe.containsKey('CommerceEntitlementBuyerGroup') &&
+      globalDescribe.containsKey('CommerceEntitlementProduct');
+  }
+
+  private static SObject createWebStore(String name) {
+    Schema.SObjectType webStoreType = Schema.getGlobalDescribe().get('WebStore');
+    System.assertNotEquals(
+      null,
+      webStoreType,
+      'WebStore should only be created in orgs where Commerce availability schema exists.'
     );
+
+    SObject store = webStoreType.newSObject();
+    store.put('Name', name);
+    store.put('OptionsAutoFacetingEnabled', false);
+    store.put('OptionsCartAsyncProcessingEnabled', false);
+    store.put('OptionsCartCalculateEnabled', false);
+    store.put('OptionsCartToOrderAutoCustomFieldMapping', false);
+    store.put('OptionsCommerceEinsteinActivitiesTracked', false);
+    store.put('OptionsCommerceEinsteinDeployed', false);
+    store.put('OptionsDuplicateCartItemsEnabled', false);
+    store.put('OptionsGuestBrowsingEnabled', false);
+    store.put('OptionsGuestCartEnabled', false);
+    store.put('OptionsGuestCheckoutEnabled', false);
+    store.put('OptionsPreserveGuestCartEnabled', false);
+    store.put('OptionsSkipAdditionalEntitlementCheckForSearch', false);
+    store.put('OptionsSkuDetectionEnabled', false);
+    store.put('OptionsSplitShipmentEnabled', false);
     insert store;
     return store;
   }
@@ -179,37 +198,44 @@ private class BuyerGroupAvailabilityExportBatchTest {
 
   @IsTest
   static void testConstructorValidation_requiresEnabledAvailabilityAndFields() {
-    WebStore store = createWebStore('Validation Store');
-
-    CatalogJobConfig__mdt disabledConfig = createConfig(store.Id);
+    CatalogJobConfig__mdt disabledConfig = createConfig(FALLBACK_WEB_STORE_ID);
     disabledConfig.EnableBuyerGroupAvailability__c = false;
     assertConfigFailure(
       disabledConfig,
       'EnableBuyerGroupAvailability__c must be true'
     );
 
-    CatalogJobConfig__mdt missingSourceConfig = createConfig(store.Id);
+    CatalogJobConfig__mdt missingSourceConfig = createConfig(
+      FALLBACK_WEB_STORE_ID
+    );
     missingSourceConfig.AvailabilitySourceId__c = null;
     assertConfigFailure(
       missingSourceConfig,
       'AvailabilitySourceId__c is required'
     );
 
-    CatalogJobConfig__mdt missingStoreConfig = createConfig(store.Id);
+    CatalogJobConfig__mdt missingStoreConfig = createConfig(
+      FALLBACK_WEB_STORE_ID
+    );
     missingStoreConfig.WebStoreId__c = null;
     assertConfigFailure(missingStoreConfig, 'WebStoreId__c is required');
   }
 
   @IsTest
   static void testStart_returnsBuyerGroupsForConfiguredStore() {
-    WebStore store = createWebStore('Availability Start Store');
+    if (!hasCommerceAvailabilitySchema()) {
+      return;
+    }
+
+    SObject store = createWebStore('Availability Start Store');
+    Id storeId = (Id) store.get('Id');
     SObject alphaBuyerGroup = createBuyerGroup('Alpha Buyers');
     SObject betaBuyerGroup = createBuyerGroup('Beta Buyers');
-    linkWebStoreBuyerGroup(store.Id, (Id) alphaBuyerGroup.get('Id'));
-    linkWebStoreBuyerGroup(store.Id, (Id) betaBuyerGroup.get('Id'));
+    linkWebStoreBuyerGroup(storeId, (Id) alphaBuyerGroup.get('Id'));
+    linkWebStoreBuyerGroup(storeId, (Id) betaBuyerGroup.get('Id'));
 
     BuyerGroupAvailabilityExportBatch batch =
-      new BuyerGroupAvailabilityExportBatch(createConfig(store.Id));
+      new BuyerGroupAvailabilityExportBatch(createConfig(storeId));
 
     List<String> names = readQueryLocatorNames(batch.start(null));
 
@@ -222,11 +248,16 @@ private class BuyerGroupAvailabilityExportBatchTest {
 
   @IsTest
   static void testStart_throwsWhenStoreHasNoBuyerGroups() {
-    WebStore store = createWebStore('Empty Availability Store');
+    if (!hasCommerceAvailabilitySchema()) {
+      return;
+    }
+
+    SObject store = createWebStore('Empty Availability Store');
+    Id storeId = (Id) store.get('Id');
 
     Boolean exceptionThrown = false;
     try {
-      new BuyerGroupAvailabilityExportBatch(createConfig(store.Id)).start(null);
+      new BuyerGroupAvailabilityExportBatch(createConfig(storeId)).start(null);
     } catch (CatalogJobConfigException ex) {
       exceptionThrown = true;
       System.assert(ex.getMessage().contains('No BuyerGroup records found'));
@@ -241,6 +272,24 @@ private class BuyerGroupAvailabilityExportBatchTest {
 
   @IsTest
   static void testVisiblePolicyAndExportedItemHelpers_filterToVisibleScopedProducts() {
+    if (!hasCommerceAvailabilitySchema()) {
+      BuyerGroupAvailabilityExportBatch batch = new BuyerGroupAvailabilityExportBatch(
+        createConfig(FALLBACK_WEB_STORE_ID)
+      );
+
+      System.assertEquals(
+        0,
+        batch.getVisiblePolicyIdsByBuyerGroup(new Set<Id>()).size(),
+        'Empty Buyer Group inputs should return no policies'
+      );
+      System.assertEquals(
+        0,
+        batch.getExportedItemIdsByBuyerGroup(new Map<Id, Set<Id>>()).size(),
+        'Empty policy maps should return no item ids'
+      );
+      return;
+    }
+
     Product2 hardwareProduct = createProduct('SKU-HARD-001', 'Hardware');
     Product2 plumbingProduct = createProduct('SKU-PIPE-001', 'Plumbing');
     Product2 outsideCatalogProduct = createProduct('SKU-OUT-001', 'Hardware');
@@ -248,9 +297,10 @@ private class BuyerGroupAvailabilityExportBatchTest {
       new List<Product2>{ hardwareProduct, plumbingProduct }
     );
 
-    WebStore store = createWebStore('Availability Helper Store');
+    SObject store = createWebStore('Availability Helper Store');
+    Id storeId = (Id) store.get('Id');
     SObject buyerGroup = createBuyerGroup('Helper Buyers');
-    linkWebStoreBuyerGroup(store.Id, (Id) buyerGroup.get('Id'));
+    linkWebStoreBuyerGroup(storeId, (Id) buyerGroup.get('Id'));
 
     SObject visiblePolicy = createPolicy('Visible Policy', true, false);
     SObject hiddenPolicy = createPolicy('Hidden Policy', false, false);
@@ -261,7 +311,7 @@ private class BuyerGroupAvailabilityExportBatchTest {
     linkPolicyProduct((Id) visiblePolicy.get('Id'), outsideCatalogProduct.Id);
     linkPolicyProduct((Id) hiddenPolicy.get('Id'), hardwareProduct.Id);
 
-    CatalogJobConfig__mdt config = createConfig(store.Id);
+    CatalogJobConfig__mdt config = createConfig(storeId);
     config.CatalogId__c = String.valueOf(catalog.Id);
 
     BuyerGroupAvailabilityExportBatch batch =
@@ -302,17 +352,76 @@ private class BuyerGroupAvailabilityExportBatchTest {
   static void testExecute_uploadsAvailabilityPayloadAndLogsPayload() {
     recordedRequests.clear();
 
+    if (!hasCommerceAvailabilitySchema()) {
+      CatalogJobConfig__mdt config = createConfig(FALLBACK_WEB_STORE_ID);
+      BuyerGroupAvailabilityExportBatch batch =
+        new BuyerGroupAvailabilityExportBatch(config);
+
+      Test.setMock(
+        HttpCalloutMock.class,
+        new RecordingHttpMock(
+          new Map<String, MockResponse>{
+            '/files' => new MockResponse(
+              201,
+              '201 Created',
+              '{"fileId":"file-123","uploadUri":"https://upload.example.com/put","requiredHeaders":{"x-amz-meta-test":"abc"}}'
+            ),
+            'upload.example.com' => new MockResponse(200, '200 OK', ''),
+            '/stream/update' => new MockResponse(
+              202,
+              '202 Accepted',
+              '{"orderingId":42,"streamId":"stream-123"}'
+            )
+          }
+        )
+      );
+
+      Test.startTest();
+      batch.execute(null, new List<SObject>());
+      Test.stopTest();
+
+      System.assertEquals(42L, batch.firstOrderingId);
+      System.assertEquals(
+        3,
+        recordedRequests.size(),
+        'Empty-scope execution should still upload and stream an empty payload'
+      );
+
+      List<Coveo_Payload_Log__c> logs = [
+        SELECT ScopeSize__c, OperationCount__c, IsValid__c, Reason__c, Payload__c
+        FROM Coveo_Payload_Log__c
+      ];
+      System.assertEquals(1, logs.size(), 'Payload logging should still occur');
+      System.assertEquals(0, logs[0].ScopeSize__c.intValue());
+      System.assertEquals(
+        false,
+        logs[0].IsValid__c,
+        'An empty payload should be logged as invalid because it has no operations'
+      );
+      System.assert(
+        logs[0].Reason__c.contains('No operations found'),
+        'The validator should explain why the empty payload is invalid'
+      );
+      System.assertEquals(
+        '{"addOrUpdate":[]}',
+        logs[0].Payload__c,
+        'Empty-scope execution should export an empty availability payload'
+      );
+      return;
+    }
+
     Product2 hardwareProduct = createProduct('SKU-HARD-100', 'Hardware');
     Product2 plumbingProduct = createProduct('SKU-PIPE-200', 'Plumbing');
     ProductCatalog catalog = createCatalogWithProducts(
       new List<Product2>{ hardwareProduct, plumbingProduct }
     );
 
-    WebStore store = createWebStore('Availability Execute Store');
+    SObject store = createWebStore('Availability Execute Store');
+    Id storeId = (Id) store.get('Id');
     SObject allBuyerGroup = createBuyerGroup('All Buyers');
     SObject filteredBuyerGroup = createBuyerGroup('Filtered Buyers');
-    linkWebStoreBuyerGroup(store.Id, (Id) allBuyerGroup.get('Id'));
-    linkWebStoreBuyerGroup(store.Id, (Id) filteredBuyerGroup.get('Id'));
+    linkWebStoreBuyerGroup(storeId, (Id) allBuyerGroup.get('Id'));
+    linkWebStoreBuyerGroup(storeId, (Id) filteredBuyerGroup.get('Id'));
 
     SObject allPolicy = createPolicy('All Buyers Policy', true, true);
     SObject filteredPolicy = createPolicy('Filtered Buyers Policy', true, false);
@@ -325,7 +434,7 @@ private class BuyerGroupAvailabilityExportBatchTest {
     linkPolicyProduct((Id) allPolicy.get('Id'), plumbingProduct.Id);
     linkPolicyProduct((Id) filteredPolicy.get('Id'), plumbingProduct.Id);
 
-    CatalogJobConfig__mdt config = createConfig(store.Id);
+    CatalogJobConfig__mdt config = createConfig(storeId);
     config.CatalogId__c = String.valueOf(catalog.Id);
 
     BuyerGroupAvailabilityExportBatch batch =
@@ -395,8 +504,7 @@ private class BuyerGroupAvailabilityExportBatchTest {
   static void testFinish_deletesOlderItemsWhenOrderingIdPresent() {
     recordedRequests.clear();
 
-    WebStore store = createWebStore('Availability Finish Store');
-    CatalogJobConfig__mdt config = createConfig(store.Id);
+    CatalogJobConfig__mdt config = createConfig(FALLBACK_WEB_STORE_ID);
     config.EnablePayloadLogging__c = false;
 
     BuyerGroupAvailabilityExportBatch batch =
