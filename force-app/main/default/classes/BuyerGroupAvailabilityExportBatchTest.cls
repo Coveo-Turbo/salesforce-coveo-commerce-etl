@@ -393,7 +393,15 @@ private class BuyerGroupAvailabilityExportBatchTest {
       ];
       System.assertEquals(1, logs.size(), 'Payload logging should still occur');
       System.assertEquals(0, logs[0].ScopeSize__c.intValue());
-      System.assertEquals(true, logs[0].IsValid__c);
+      System.assertEquals(
+        false,
+        logs[0].IsValid__c,
+        'An empty payload should be logged as invalid because it has no operations'
+      );
+      System.assert(
+        logs[0].Reason__c.contains('No operations found'),
+        'The validator should explain why the empty payload is invalid'
+      );
       System.assertEquals(
         '{"addOrUpdate":[]}',
         logs[0].Payload__c,
