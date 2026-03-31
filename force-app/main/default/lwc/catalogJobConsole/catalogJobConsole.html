@@ -6,7 +6,7 @@
           <p class="cc-kicker">Run Center</p>
           <h2 class="cc-heading">Launch and monitor catalog syncs</h2>
           <p class="cc-subtitle">
-            Start product and Buyer Group availability exports, then follow live
+            Start product and Buyer Group access exports, then follow live
             batch progress without leaving Salesforce.
           </p>
         </div>
@@ -17,7 +17,7 @@
             onclick={handleRunAllProducts}
           ></lightning-button>
           <lightning-button
-            label="Run All Availability"
+            label="Run All Access"
             variant="neutral"
             onclick={handleRunAllAvailability}
           ></lightning-button>
@@ -52,7 +52,7 @@
             <p class="cc-stat-card__value">{activeJobs}</p>
           </article>
           <article class="cc-stat-card">
-            <p class="cc-stat-card__label">Availability Ready</p>
+            <p class="cc-stat-card__label">Access Ready</p>
             <p class="cc-stat-card__value">{availabilityReadyJobs}</p>
           </article>
           <article class="cc-stat-card">
@@ -116,9 +116,9 @@
                       </p>
                       <p
                         class="cc-config-card__value"
-                        title={config.availabilitySourceLabel}
+                        title={config.accessDestinationLabel}
                       >
-                        Availability: {config.availabilitySourceLabel}
+                        Access: {config.accessDestinationLabel}
                       </p>
                     </div>
                     <div>
@@ -179,17 +179,19 @@
                     onclick={handleRunSelectedProducts}
                   ></lightning-button>
                   <lightning-button
-                    label="Run Availability"
+                    label="Run Access"
                     variant="neutral"
                     onclick={handleRunSelectedAvailability}
                     disabled={selectedConfig.availabilityDisabled}
                   ></lightning-button>
-                  <lightning-button
-                    label="Run Both"
-                    variant="brand-outline"
-                    onclick={handleRunSelectedBoth}
-                    disabled={selectedConfig.availabilityDisabled}
-                  ></lightning-button>
+                  <template if:true={showRunSelectedBoth}>
+                    <lightning-button
+                      label="Run Both"
+                      variant="brand-outline"
+                      onclick={handleRunSelectedBoth}
+                      disabled={selectedConfig.availabilityDisabled}
+                    ></lightning-button>
+                  </template>
                 </div>
                 <template if:true={availabilityDisabledMessage}>
                   <p class="cc-launchpad__note">

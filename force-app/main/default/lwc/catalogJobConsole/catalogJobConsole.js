@@ -15,6 +15,59 @@ const RUN_STORAGE_KEY = "catalogJobConsoleRuns:v1";
 const ACTIVITY_STORAGE_KEY = "catalogJobConsoleActivity:v1";
 const MAX_RUNS = 8;
 const MAX_ACTIVITY_ITEMS = 18;
+const BUYER_GROUP_MODE_DISABLED = "Disabled";
+const BUYER_GROUP_MODE_PAIRED = "PairedSource";
+const BUYER_GROUP_MODE_EMBEDDED = "Embedded";
+const BUYER_GROUP_MODE_DUAL = "DualWrite";
+
+function resolveBuyerGroupAvailabilityMode(mode, legacyEnabled = false) {
+  switch (mode) {
+    case BUYER_GROUP_MODE_PAIRED:
+    case BUYER_GROUP_MODE_EMBEDDED:
+    case BUYER_GROUP_MODE_DUAL:
+    case BUYER_GROUP_MODE_DISABLED:
+      return mode;
+    default:
+      return legacyEnabled
+        ? BUYER_GROUP_MODE_PAIRED
+        : BUYER_GROUP_MODE_DISABLED;
+  }
+}
+
+function isBuyerGroupAccessEnabled(mode) {
+  return (
+    resolveBuyerGroupAvailabilityMode(mode) !== BUYER_GROUP_MODE_DISABLED
+  );
+}
+
+function usesPairedSource(mode) {
+  const resolvedMode = resolveBuyerGroupAvailabilityMode(mode);
+  return (
+    resolvedMode === BUYER_GROUP_MODE_PAIRED ||
+    resolvedMode === BUYER_GROUP_MODE_DUAL
+  );
+}
+
+function usesEmbeddedAccess(mode) {
+  const resolvedMode = resolveBuyerGroupAvailabilityMode(mode);
+  return (
+    resolvedMode === BUYER_GROUP_MODE_EMBEDDED ||
+    resolvedMode === BUYER_GROUP_MODE_DUAL
+  );
+}
+
+function formatBuyerGroupAvailabilityMode(mode) {
+  switch (resolveBuyerGroupAvailabilityMode(mode)) {
+    case BUYER_GROUP_MODE_PAIRED:
+      return "Paired Source";
+    case BUYER_GROUP_MODE_EMBEDDED:
+      return "Embedded";
+    case BUYER_GROUP_MODE_DUAL:
+      return "Dual Write";
+    default:
+      return "Disabled";
+  }
+}
 
 export default class CatalogJobConsole extends LightningElement {
   configs;
@@ -95,8 +148,7 @@ export default class CatalogJobConsole extends LightningElement {
 
   get availabilityReadyJobs() {
     return this.configs
-      ? this.configs.filter((config) => config.EnableBuyerGroupAvailability__c)
-          .length
+      ? this.configs.filter((config) => config.buyerGroupAccessEnabled).length
       : 0;
   }
 
@@ -164,6 +216,10 @@ export default class CatalogJobConsole extends LightningElement {
         value: this.selectedConfig.productSourceLabel
       },
       {
+        label: "Access Mode",
+        value: this.selectedConfig.buyerGroupAvailabilityModeLabel
+      },
+      {
         label: "Availability Source",
         value: this.selectedConfig.availabilitySourceLabel
       },
@@ -203,16 +259,27 @@ export default class CatalogJobConsole extends LightningElement {
 
   get selectedRunSubtitle() {
     if (!this.selectedConfig) {
-      return "Choose a configuration to launch products or availability syncs.";
+      return "Choose a configuration to launch products or Buyer Group access syncs.";
     }
     return `${this.selectedConfig.catalogLabel} • ${this.selectedConfig.localeLabel} • ${this.selectedConfig.builderLabel}`;
   }
 
   get availabilityDisabledMessage() {
-    if (this.selectedConfig?.EnableBuyerGroupAvailability__c) {
+    if (this.selectedConfig?.buyerGroupAccessEnabled) {
       return "";
     }
-    return "Buyer Group availability is disabled for this configuration.";
+    return "Buyer Group access is disabled for this configuration.";
+  }
+
+  get showRunSelectedBoth() {
+    if (!this.selectedConfig) {
+      return false;
+    }
+
+    return !(
+      this.selectedConfig.usesEmbeddedAccess &&
+      !this.selectedConfig.usesPairedSource
+    );
   }
 
   handleSelectConfig(event) {
@@ -251,7 +318,7 @@ export default class CatalogJobConsole extends LightningElement {
         runSingleAvailability({
           jobConfigDeveloperName: this.selectedConfig.developerName
         }),
-      `${this.selectedConfig.label}: started availability sync`
+      `${this.selectedConfig.label}: started access sync`
     );
   }
 
@@ -265,7 +332,7 @@ export default class CatalogJobConsole extends LightningElement {
         runSingleBoth({
           jobConfigDeveloperName: this.selectedConfig.developerName
         }),
-      `${this.selectedConfig.label}: started products and availability syncs`
+      `${this.selectedConfig.label}: started product and access syncs`
     );
   }
 
@@ -279,7 +346,7 @@ export default class CatalogJobConsole extends LightningElement {
   async handleRunAllAvailability() {
     await this.launchRuns(
       () => runAllActiveAvailability(),
-      "Started availability syncs for active Buyer Group-enabled configurations"
+      "Started access syncs for active Buyer Group-enabled configurations"
     );
   }
 
@@ -327,7 +394,10 @@ export default class CatalogJobConsole extends LightningElement {
     const nextRuns = launches.map((launch) => this.createRunSession(launch));
     nextRuns.forEach((launch) => {
       this.addActivity(
-        `${launch.label}: ${this.describeLaunchMode(launch.mode)} started`
+        `${launch.label}: ${this.describeLaunchMode(
+          launch.mode,
+          launch.jobs
+        )} started`
       );
     });
 
@@ -345,6 +415,7 @@ export default class CatalogJobConsole extends LightningElement {
       label: launch.label,
       mode: launch.mode,
       availabilityEnabled: launch.availabilityEnabled,
+      buyerGroupAvailabilityMode: launch.buyerGroupAvailabilityMode,
       launchedAt: launch.launchedAt,
       jobs: (launch.jobs || []).map((job) => ({
         jobId: job.jobId,
@@ -508,12 +579,34 @@ export default class CatalogJobConsole extends LightningElement {
     );
     const extraFields = this.splitCsv(config.AdditionalProductFields__c);
     const isSelected = config.DeveloperName === selectedConfigId;
+    const buyerGroupAvailabilityMode = resolveBuyerGroupAvailabilityMode(
+      config.BuyerGroupAvailabilityMode__c,
+      config.EnableBuyerGroupAvailability__c
+    );
+    const buyerGroupAccessEnabled = isBuyerGroupAccessEnabled(
+      buyerGroupAvailabilityMode
+    );
+    const usesPaired = usesPairedSource(buyerGroupAvailabilityMode);
+    const usesEmbedded = usesEmbeddedAccess(buyerGroupAvailabilityMode);
+    const buyerGroupAvailabilityModeLabel = formatBuyerGroupAvailabilityMode(
+      buyerGroupAvailabilityMode
+    );
+    const accessDestinationLabel = this.describeAccessDestination(
+      config.SourceId__c,
+      config.AvailabilitySourceId__c,
+      buyerGroupAvailabilityMode
+    );
 
     return {
       ...config,
       id: config.DeveloperName,
       developerName: config.DeveloperName,
       label: config.Label,
+      buyerGroupAvailabilityMode,
+      buyerGroupAvailabilityModeLabel,
+      buyerGroupAccessEnabled,
+      usesPairedSource: usesPaired,
+      usesEmbeddedAccess: usesEmbedded,
       cardClass: this.getConfigCardClass(isSelected),
       catalogLabel: this.normalizeText(config.CatalogId__c, "Catalog not set"),
       localeLabel: this.normalizeText(config.Locale__c, "Default locale"),
@@ -523,13 +616,14 @@ export default class CatalogJobConsole extends LightningElement {
         config.SourceId__c,
         "No product source"
       ),
-      availabilitySourceLabel: config.EnableBuyerGroupAvailability__c
+      availabilitySourceLabel: usesPaired
         ? this.normalizeText(
             config.AvailabilitySourceId__c,
             "Availability source missing"
           )
-        : "Not enabled",
-      webStoreLabel: config.EnableBuyerGroupAvailability__c
+        : "Not required",
+      accessDestinationLabel,
+      webStoreLabel: buyerGroupAccessEnabled
         ? this.normalizeText(config.WebStoreId__c, "Web store missing")
         : "Not required",
       scopeSummary: filterText,
@@ -543,13 +637,13 @@ export default class CatalogJobConsole extends LightningElement {
       activeStatusClass: config.IsActive__c
         ? "cc-badge cc-badge--success"
         : "cc-badge cc-badge--neutral",
-      availabilityStatusLabel: config.EnableBuyerGroupAvailability__c
-        ? "Availability On"
-        : "Availability Off",
-      availabilityStatusClass: config.EnableBuyerGroupAvailability__c
+      availabilityStatusLabel: buyerGroupAccessEnabled
+        ? buyerGroupAvailabilityModeLabel
+        : "Access Disabled",
+      availabilityStatusClass: buyerGroupAccessEnabled
         ? "cc-badge cc-badge--info"
         : "cc-badge cc-badge--neutral",
-      availabilityDisabled: config.EnableBuyerGroupAvailability__c !== true
+      availabilityDisabled: buyerGroupAccessEnabled !== true
     };
   }
 
@@ -750,20 +844,38 @@ export default class CatalogJobConsole extends LightningElement {
     }
   }
 
-  describeLaunchMode(mode) {
+  describeLaunchMode(mode, jobs = []) {
+    const channels = new Set((jobs || []).map((job) => job.channel));
+
+    if (mode === "both" || (channels.has("products") && channels.size > 1)) {
+      return "product and access syncs";
+    }
+
+    if (channels.has("access")) {
+      return "embedded access sync";
+    }
+
     switch (mode) {
       case "availability":
-        return "availability sync";
+        return channels.has("availability")
+          ? "availability sync"
+          : "access sync";
+      case "access":
+        return "access sync";
       case "both":
-        return "product and availability syncs";
+        return "product and access syncs";
       default:
         return "product sync";
     }
   }
 
   describeStageChange(channel, status) {
-    const subject =
-      channel === "availability" ? "Syncing availability" : "Syncing products";
+    let subject = "Syncing products";
+    if (channel === "availability") {
+      subject = "Syncing availability";
+    } else if (channel === "access") {
+      subject = "Syncing embedded access";
+    }
 
     switch (status) {
       case "Completed":
@@ -795,6 +907,29 @@ export default class CatalogJobConsole extends LightningElement {
           "Default - Simple products without grouping/variant logic"
         );
     }
+  }
+
+  describeAccessDestination(
+    productSourceId,
+    availabilitySourceId,
+    buyerGroupAvailabilityMode
+  ) {
+    const usesPaired = usesPairedSource(buyerGroupAvailabilityMode);
+    const usesEmbedded = usesEmbeddedAccess(buyerGroupAvailabilityMode);
+    const parts = [];
+
+    if (usesPaired) {
+      parts.push(
+        this.normalizeText(availabilitySourceId, "Availability source missing")
+      );
+    }
+    if (usesEmbedded) {
+      parts.push(
+        `${this.normalizeText(productSourceId, "Product source missing")} (embedded)`
+      );
+    }
+
+    return parts.length ? parts.join(" + ") : "Disabled";
   }
 
   getConfigCardClass(isSelected) {

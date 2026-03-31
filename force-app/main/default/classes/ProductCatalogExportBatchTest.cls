@@ -348,6 +348,68 @@ private class ProductCatalogExportBatchTest {
   }
 
   @IsTest
+  static void testExecute_embeddedAccessDecoratesProductPayload() {
+    recordedRequests.clear();
+    Product2 product = createTestProduct('EXEC-EMBED-001', 'Hardware');
+    Product2 scopedProduct = [
+      SELECT Id, Name, ProductCode, Description, Family, IsActive
+      FROM Product2
+      WHERE Id = :product.Id
+    ];
+
+    CatalogJobConfig__mdt config = createConfig('Default', true);
+    config.BuyerGroupAvailabilityMode__c =
+      CatalogBuyerGroupAvailabilityMode.EMBEDDED;
+    config.WebStoreId__c = '0ZE000000000001AAA';
+
+    ProductCatalogExportBatch batch = new ProductCatalogExportBatch(
+      config,
+      Test.getStandardPricebookId()
+    );
+
+    Test.setMock(
+      HttpCalloutMock.class,
+      new RecordingHttpMock(
+        new Map<String, MockResponse>{
+          '/files' => new MockResponse(
+            201,
+            '201 Created',
+            '{"fileId":"file-embedded","uploadUri":"https://upload.example.com/put","requiredHeaders":{"x-amz-meta-test":"abc"}}'
+          ),
+          'upload.example.com' => new MockResponse(200, '200 OK', ''),
+          '/stream/update' => new MockResponse(
+            202,
+            '202 Accepted',
+            '{"orderingId":105,"streamId":"stream-embedded"}'
+          )
+        }
+      )
+    );
+
+    Test.startTest();
+    batch.execute(null, new List<Product2>{ scopedProduct });
+    Test.stopTest();
+
+    List<Coveo_Payload_Log__c> logs = [
+      SELECT Payload__c
+      FROM Coveo_Payload_Log__c
+    ];
+    System.assertEquals(1, logs.size());
+    System.assert(
+      logs[0].Payload__c.contains('"sf_buyergroup_ids":[]'),
+      'Embedded mode should always include Buyer Group ids on product docs'
+    );
+    System.assert(
+      logs[0].Payload__c.contains('"sf_buyergroup_names":[]'),
+      'Embedded mode should always include Buyer Group names on product docs'
+    );
+    System.assert(
+      logs[0].Payload__c.contains('"sf_webstore_id":"0ZE000000000001AAA"'),
+      'Embedded mode should stamp the configured Web Store id on product docs'
+    );
+  }
+
+  @IsTest
   static void testFinish_deletesOlderItemsWhenOrderingIdPresent() {
     recordedRequests.clear();
     CatalogJobConfig__mdt config = createConfig('Default', false);

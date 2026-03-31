@@ -61,6 +61,8 @@ private class BuyerGroupAvailabilityExportBatchTest {
       AvailabilitySourceId__c = 'availability-source-test',
       WebStoreId__c = String.valueOf(webStoreId),
       EnableBuyerGroupAvailability__c = true,
+      BuyerGroupAvailabilityMode__c =
+        CatalogBuyerGroupAvailabilityMode.PAIRED_SOURCE,
       EnablePayloadLogging__c = true,
       ProductFilter__c = 'Family = \'Hardware\'',
       BuilderType__c = builderType,
@@ -217,9 +219,11 @@ private class BuyerGroupAvailabilityExportBatchTest {
   static void testConstructorValidation_requiresEnabledAvailabilityAndFields() {
     CatalogJobConfig__mdt disabledConfig = createConfig(FALLBACK_WEB_STORE_ID);
     disabledConfig.EnableBuyerGroupAvailability__c = false;
+    disabledConfig.BuyerGroupAvailabilityMode__c =
+      CatalogBuyerGroupAvailabilityMode.DISABLED;
     assertConfigFailure(
       disabledConfig,
-      'EnableBuyerGroupAvailability__c must be true'
+      'PairedSource or DualWrite'
     );
 
     CatalogJobConfig__mdt missingSourceConfig = createConfig(

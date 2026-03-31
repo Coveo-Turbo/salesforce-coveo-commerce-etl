@@ -2,6 +2,8 @@ public with sharing class CatalogJobRunner {
   private static final String PRODUCT_BATCH_CLASS = 'ProductCatalogExportBatch';
   private static final String AVAILABILITY_BATCH_CLASS =
     'BuyerGroupAvailabilityExportBatch';
+  private static final String ACCESS_BATCH_CLASS =
+    'EmbeddedBuyerGroupAccessExportBatch';
 
   public class JobLaunchHandle {
     @AuraEnabled
@@ -29,6 +31,9 @@ public with sharing class CatalogJobRunner {
 
     @AuraEnabled
     public Boolean availabilityEnabled { get; set; }
+
+    @AuraEnabled
+    public String buyerGroupAvailabilityMode { get; set; }
 
     @AuraEnabled
     public String launchedAt { get; set; }
@@ -89,7 +94,8 @@ public with sharing class CatalogJobRunner {
         BuilderType__c,
         CatalogId__c,
         BatchSize__c,
-        EnableBuyerGroupAvailability__c
+        EnableBuyerGroupAvailability__c,
+        BuyerGroupAvailabilityMode__c
       FROM CatalogJobConfig__mdt
       ORDER BY Label
     ];
@@ -104,14 +110,14 @@ public with sharing class CatalogJobRunner {
   @AuraEnabled
   public static LaunchResult runSingleAvailability(String jobConfigDeveloperName) {
     CatalogJobConfig__mdt config = getConfig(jobConfigDeveloperName);
-    validateAvailabilityEnabled(config);
+    validateBuyerGroupAccessEnabled(config);
     return launchForConfig(config, false, true, 'availability');
   }
 
   @AuraEnabled
   public static LaunchResult runSingleBoth(String jobConfigDeveloperName) {
     CatalogJobConfig__mdt config = getConfig(jobConfigDeveloperName);
-    validateAvailabilityEnabled(config);
+    validateBuyerGroupAccessEnabled(config);
     return launchForConfig(config, true, true, 'both');
   }
 
@@ -128,7 +134,7 @@ public with sharing class CatalogJobRunner {
   public static List<LaunchResult> runAllActiveAvailability() {
     List<LaunchResult> launches = new List<LaunchResult>();
     for (CatalogJobConfig__mdt config : getActiveConfigs()) {
-      if (config.EnableBuyerGroupAvailability__c == true) {
+      if (CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(config)) {
         launches.add(launchForConfig(config, false, true, 'availability'));
       }
     }
@@ -143,8 +149,10 @@ public with sharing class CatalogJobRunner {
         launchForConfig(
           config,
           true,
-          config.EnableBuyerGroupAvailability__c == true,
-          config.EnableBuyerGroupAvailability__c == true ? 'both' : 'products'
+          CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(config),
+          CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(config)
+            ? 'both'
+            : 'products'
         )
       );
     }
@@ -246,7 +254,10 @@ public with sharing class CatalogJobRunner {
     launch.developerName = config.DeveloperName;
     launch.label = config.Label;
     launch.mode = mode;
-    launch.availabilityEnabled = config.EnableBuyerGroupAvailability__c;
+    launch.availabilityEnabled =
+      CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(config);
+    launch.buyerGroupAvailabilityMode =
+      CatalogBuyerGroupAvailabilityMode.resolve(config);
     launch.launchedAt = DateTime.now().formatGmt('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
     launch.jobs = new List<JobLaunchHandle>();
 
@@ -255,7 +266,7 @@ public with sharing class CatalogJobRunner {
     }
 
     if (runAvailability == true) {
-      launch.jobs.add(launchAvailabilityJob(config.DeveloperName));
+      launch.jobs.addAll(launchBuyerGroupJobs(config));
     }
 
     return launch;
@@ -275,6 +286,28 @@ public with sharing class CatalogJobRunner {
     return createLaunchHandle(jobId, 'availability', 'Availability Sync');
   }
 
+  private static JobLaunchHandle launchEmbeddedAccessJob(String developerName) {
+    EmbeddedBuyerGroupAccessExportBatch batch =
+      new EmbeddedBuyerGroupAccessExportBatch(developerName);
+    Id jobId = Database.executeBatch(batch, batch.getBatchSize());
+    return createLaunchHandle(jobId, 'access', 'Embedded Access Sync');
+  }
+
+  private static List<JobLaunchHandle> launchBuyerGroupJobs(
+    CatalogJobConfig__mdt config
+  ) {
+    List<JobLaunchHandle> launchHandles = new List<JobLaunchHandle>();
+
+    if (CatalogBuyerGroupAvailabilityMode.usesPairedSource(config)) {
+      launchHandles.add(launchAvailabilityJob(config.DeveloperName));
+    }
+    if (CatalogBuyerGroupAvailabilityMode.usesEmbedded(config)) {
+      launchHandles.add(launchEmbeddedAccessJob(config.DeveloperName));
+    }
+
+    return launchHandles;
+  }
+
   private static JobLaunchHandle createLaunchHandle(
     Id jobId,
     String channel,
@@ -292,7 +325,8 @@ public with sharing class CatalogJobRunner {
       SELECT
         DeveloperName,
         Label,
-        EnableBuyerGroupAvailability__c
+        EnableBuyerGroupAvailability__c,
+        BuyerGroupAvailabilityMode__c
       FROM CatalogJobConfig__mdt
       WHERE DeveloperName = :jobConfigDeveloperName
       LIMIT 1
@@ -313,17 +347,20 @@ public with sharing class CatalogJobRunner {
       SELECT
         DeveloperName,
         Label,
-        EnableBuyerGroupAvailability__c
+        EnableBuyerGroupAvailability__c,
+        BuyerGroupAvailabilityMode__c
       FROM CatalogJobConfig__mdt
       WHERE IsActive__c = TRUE
       ORDER BY Label
     ];
   }
 
-  private static void validateAvailabilityEnabled(CatalogJobConfig__mdt config) {
-    if (config.EnableBuyerGroupAvailability__c != true) {
+  private static void validateBuyerGroupAccessEnabled(
+    CatalogJobConfig__mdt config
+  ) {
+    if (!CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(config)) {
       throw new CatalogJobConfigException(
-        'EnableBuyerGroupAvailability__c must be true to run availability syncs for ' +
+        'Buyer Group access is disabled for ' +
         config.Label +
         '.'
       );
@@ -333,6 +370,9 @@ public with sharing class CatalogJobRunner {
   private static String inferChannel(String apexClassName) {
     if (apexClassName == AVAILABILITY_BATCH_CLASS) {
       return 'availability';
+    }
+    if (apexClassName == ACCESS_BATCH_CLASS) {
+      return 'access';
     }
     return 'products';
   }

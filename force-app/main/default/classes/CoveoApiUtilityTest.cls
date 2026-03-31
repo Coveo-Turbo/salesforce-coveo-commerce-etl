@@ -70,7 +70,7 @@ private class CoveoApiUtilityTest {
     );
 
     CoveoPayloadValidator.Result noOpsResult = CoveoPayloadValidator.validate(
-      '{"addOrUpdate":[],"addOrMerge":[]}'
+      '{"addOrUpdate":[],"addOrMerge":[],"partialUpdate":[]}'
     );
     System.assertEquals(false, noOpsResult.isValid);
     System.assertEquals(0, noOpsResult.operationCount);
@@ -83,7 +83,7 @@ private class CoveoApiUtilityTest {
   @IsTest
   static void testPayloadValidator_validPayloadCountsOperations() {
     String jsonBody =
-      '{"addOrUpdate":[{"documentId":"1"},{"documentId":"2"}],"addOrMerge":[{"documentId":"3"}]}';
+      '{"addOrUpdate":[{"documentId":"1"},{"documentId":"2"}],"addOrMerge":[{"documentId":"3"}],"partialUpdate":[{"documentId":"4","operator":"fieldValueReplace","field":"sf_buyergroup_ids","value":["BG-1"]}]}';
 
     CoveoPayloadValidator.Result result = CoveoPayloadValidator.validate(
       jsonBody
@@ -91,7 +91,7 @@ private class CoveoApiUtilityTest {
 
     System.assertEquals(true, result.isValid);
     System.assertEquals('OK', result.reason);
-    System.assertEquals(3, result.operationCount);
+    System.assertEquals(4, result.operationCount);
   }
 
   @IsTest

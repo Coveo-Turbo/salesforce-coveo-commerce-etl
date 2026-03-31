@@ -89,6 +89,11 @@ private class CatalogJobRunnerTest {
         launchResult.developerName,
         'runSingle should return the launched config name'
       );
+      System.assertNotEquals(
+        null,
+        launchResult.buyerGroupAvailabilityMode,
+        'runSingle should expose the resolved Buyer Group access mode'
+      );
       System.assertEquals(
         1,
         launchResult.jobs.size(),
@@ -331,6 +336,7 @@ private class CatalogJobRunnerTest {
       String locale = config.Locale__c;
       Boolean isActive = config.IsActive__c;
       Boolean availabilityEnabled = config.EnableBuyerGroupAvailability__c;
+      String availabilityMode = config.BuyerGroupAvailabilityMode__c;
       String productFilter = config.ProductFilter__c;
       String additionalFields = config.AdditionalProductFields__c;
       Decimal batchSize = config.BatchSize__c;

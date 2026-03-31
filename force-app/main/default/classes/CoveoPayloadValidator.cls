@@ -31,8 +31,13 @@ public with sharing class CoveoPayloadValidator {
 
     Map<String, Object> root = (Map<String, Object>) rootObj;
 
-    // Per commerce docs: full = addOrUpdate; partial = addOrMerge.
-    List<String> opKeys = new List<String>{ 'addOrUpdate', 'addOrMerge' };
+    // Per commerce docs: full = addOrUpdate, shallow merge = addOrMerge,
+    // and partial item updates = partialUpdate.
+    List<String> opKeys = new List<String>{
+      'addOrUpdate',
+      'addOrMerge',
+      'partialUpdate'
+    };
 
     Integer count = 0;
     for (String key : opKeys) {
@@ -45,7 +50,8 @@ public with sharing class CoveoPayloadValidator {
     }
 
     if (count == 0) {
-      r.reason = 'No operations found in JSON: no non-empty addOrUpdate/addOrMerge arrays.';
+      r.reason =
+        'No operations found in JSON: no non-empty addOrUpdate/addOrMerge/partialUpdate arrays.';
       r.operationCount = 0;
       return r;
     }
