@@ -408,6 +408,8 @@ Select which `ICatalogJsonBuilder` implementation is active. The default is `Cat
 2. Deploy it to your org
 3. Update the `CatalogJsonBuilderMapping__mdt.Active` record with your class name
 
+If a custom builder writes a custom `ec_product_id` and you also use Buyer Group availability export, implement the optional `ICatalogProductIdentityProvider` interface as well so `ec_available_items` stays aligned with the product catalog payload.
+
 ---
 
 # ⚙️ Configuration
@@ -678,7 +680,7 @@ To create a custom builder:
 public class MyCustomBuilder implements ICatalogJsonBuilder {
   public String buildFullUpdateNdjson(
     List<Product2> products,
-    Map<Id, PricebookEntry> pbesByProduct,
+    Map<Id, Map<String, Decimal>> pricesByProduct,
     List<String> extraFieldNames
   ) {
     // Your implementation
@@ -694,6 +696,32 @@ public class MyCustomBuilder implements ICatalogJsonBuilder {
 ```
 
 2. Set `BuilderType__c` to your class name in the catalog config
+
+Optional for custom `ec_product_id` support in Buyer Group availability:
+
+```apex
+public class MyCustomBuilder
+  implements ICatalogJsonBuilder, ICatalogProductIdentityProvider {
+  public List<String> getRequiredProductFieldsForIdentity() {
+    return new List<String>{ 'StockKeepingUnit' };
+  }
+
+  public Map<Id, String> resolveEcProductIds(List<Product2> products) {
+    Map<Id, String> ecProductIdByProductId = new Map<Id, String>();
+
+    for (Product2 product : products) {
+      ecProductIdByProductId.put(
+        product.Id,
+        String.isNotBlank(product.StockKeepingUnit)
+          ? product.StockKeepingUnit
+          : String.valueOf(product.Id)
+      );
+    }
+
+    return ecProductIdByProductId;
+  }
+}
+```
 
 ---
 

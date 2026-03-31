@@ -47,6 +47,13 @@ private class BuyerGroupAvailabilityExportBatchTest {
   }
 
   private static CatalogJobConfig__mdt createConfig(Id webStoreId) {
+    return createConfig(webStoreId, null);
+  }
+
+  private static CatalogJobConfig__mdt createConfig(
+    Id webStoreId,
+    String builderType
+  ) {
     return new CatalogJobConfig__mdt(
       DeveloperName = 'BuyerGroupAvailabilityTest',
       MasterLabel = 'Buyer Group Availability Test',
@@ -56,6 +63,7 @@ private class BuyerGroupAvailabilityExportBatchTest {
       EnableBuyerGroupAvailability__c = true,
       EnablePayloadLogging__c = true,
       ProductFilter__c = 'Family = \'Hardware\'',
+      BuilderType__c = builderType,
       BatchSize__c = 10
     );
   }
@@ -146,9 +154,18 @@ private class BuyerGroupAvailabilityExportBatchTest {
   }
 
   private static Product2 createProduct(String code, String family) {
+    return createProduct(code, family, null);
+  }
+
+  private static Product2 createProduct(
+    String code,
+    String family,
+    String stockKeepingUnit
+  ) {
     Product2 product = new Product2(
       Name = 'Availability Test ' + code,
       ProductCode = code,
+      StockKeepingUnit = stockKeepingUnit,
       Family = family,
       IsActive = true
     );
@@ -346,6 +363,144 @@ private class BuyerGroupAvailabilityExportBatchTest {
       batch.getExportedItemIdsByBuyerGroup(new Map<Id, Set<Id>>()).size(),
       'Empty policy maps should return no item ids'
     );
+  }
+
+  @IsTest
+  static void testGetExportedItemIdsByBuyerGroup_customIdentityProviderUsesStockKeepingUnit() {
+    if (!hasCommerceAvailabilitySchema()) {
+      return;
+    }
+
+    Product2 hardwareProduct = createProduct(
+      'SKU-HARD-ALT-001',
+      'Hardware',
+      'STOCK-HARD-ALT-001'
+    );
+    ProductCatalog catalog = createCatalogWithProducts(
+      new List<Product2>{ hardwareProduct }
+    );
+
+    SObject store = createWebStore('Availability Provider Store');
+    Id storeId = (Id) store.get('Id');
+    SObject buyerGroup = createBuyerGroup('Provider Buyers');
+    linkWebStoreBuyerGroup(storeId, (Id) buyerGroup.get('Id'));
+
+    SObject visiblePolicy = createPolicy('Provider Policy', true, false);
+    linkPolicyBuyerGroup((Id) visiblePolicy.get('Id'), (Id) buyerGroup.get('Id'));
+    linkPolicyProduct((Id) visiblePolicy.get('Id'), hardwareProduct.Id);
+
+    CatalogJobConfig__mdt config = createConfig(
+      storeId,
+      'CatalogJsonBuilderSkuIdentityStub'
+    );
+    config.CatalogId__c = String.valueOf(catalog.Id);
+
+    BuyerGroupAvailabilityExportBatch batch =
+      new BuyerGroupAvailabilityExportBatch(config);
+
+    Map<Id, Set<String>> exportedItemIdsByBuyerGroup =
+      batch.getExportedItemIdsByBuyerGroup(
+        batch.getVisiblePolicyIdsByBuyerGroup(
+          new Set<Id>{ (Id) buyerGroup.get('Id') }
+        )
+      );
+
+    System.assertEquals(
+      new Set<String>{ 'STOCK-HARD-ALT-001' },
+      exportedItemIdsByBuyerGroup.get((Id) buyerGroup.get('Id')),
+      'Availability should align with the custom builder identity provider output'
+    );
+  }
+
+  @IsTest
+  static void testGetExportedItemIdsByBuyerGroup_legacyBuilderFallsBackToProductCode() {
+    if (!hasCommerceAvailabilitySchema()) {
+      return;
+    }
+
+    Product2 hardwareProduct = createProduct(
+      'SKU-HARD-LEGACY-001',
+      'Hardware',
+      'STOCK-HARD-LEGACY-001'
+    );
+    ProductCatalog catalog = createCatalogWithProducts(
+      new List<Product2>{ hardwareProduct }
+    );
+
+    SObject store = createWebStore('Availability Legacy Store');
+    Id storeId = (Id) store.get('Id');
+    SObject buyerGroup = createBuyerGroup('Legacy Buyers');
+    linkWebStoreBuyerGroup(storeId, (Id) buyerGroup.get('Id'));
+
+    SObject visiblePolicy = createPolicy('Legacy Policy', true, false);
+    linkPolicyBuyerGroup((Id) visiblePolicy.get('Id'), (Id) buyerGroup.get('Id'));
+    linkPolicyProduct((Id) visiblePolicy.get('Id'), hardwareProduct.Id);
+
+    CatalogJobConfig__mdt config = createConfig(
+      storeId,
+      'CatalogJsonBuilderLegacyTestStub'
+    );
+    config.CatalogId__c = String.valueOf(catalog.Id);
+
+    BuyerGroupAvailabilityExportBatch batch =
+      new BuyerGroupAvailabilityExportBatch(config);
+
+    Map<Id, Set<String>> exportedItemIdsByBuyerGroup =
+      batch.getExportedItemIdsByBuyerGroup(
+        batch.getVisiblePolicyIdsByBuyerGroup(
+          new Set<Id>{ (Id) buyerGroup.get('Id') }
+        )
+      );
+
+    System.assertEquals(
+      new Set<String>{ 'SKU-HARD-LEGACY-001' },
+      exportedItemIdsByBuyerGroup.get((Id) buyerGroup.get('Id')),
+      'Legacy builders should continue to fall back to ProductCode, then Id'
+    );
+  }
+
+  @IsTest
+  static void testGetExportedItemIdsByBuyerGroup_rejectsBlankIdentityProviderValues() {
+    if (!hasCommerceAvailabilitySchema()) {
+      return;
+    }
+
+    Product2 hardwareProduct = createProduct('SKU-HARD-BROKEN-001', 'Hardware');
+    ProductCatalog catalog = createCatalogWithProducts(
+      new List<Product2>{ hardwareProduct }
+    );
+
+    SObject store = createWebStore('Availability Broken Store');
+    Id storeId = (Id) store.get('Id');
+    SObject buyerGroup = createBuyerGroup('Broken Buyers');
+    linkWebStoreBuyerGroup(storeId, (Id) buyerGroup.get('Id'));
+
+    SObject visiblePolicy = createPolicy('Broken Policy', true, false);
+    linkPolicyBuyerGroup((Id) visiblePolicy.get('Id'), (Id) buyerGroup.get('Id'));
+    linkPolicyProduct((Id) visiblePolicy.get('Id'), hardwareProduct.Id);
+
+    CatalogJobConfig__mdt config = createConfig(
+      storeId,
+      'CatalogJsonBuilderBrokenIdentityTestStub'
+    );
+    config.CatalogId__c = String.valueOf(catalog.Id);
+
+    BuyerGroupAvailabilityExportBatch batch =
+      new BuyerGroupAvailabilityExportBatch(config);
+
+    Boolean failed = false;
+    try {
+      batch.getExportedItemIdsByBuyerGroup(
+        batch.getVisiblePolicyIdsByBuyerGroup(
+          new Set<Id>{ (Id) buyerGroup.get('Id') }
+        )
+      );
+    } catch (CatalogJobException ex) {
+      failed = true;
+      System.assert(ex.getMessage().contains('blank ec_product_id'));
+    }
+
+    System.assertEquals(true, failed);
   }
 
   @IsTest

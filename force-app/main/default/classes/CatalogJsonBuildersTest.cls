@@ -552,6 +552,7 @@ private class CatalogJsonBuildersTest {
   @IsTest
   static void testAllBuildersImplementInterface() {
     ICatalogJsonBuilder defaultBuilder = new CatalogJsonBuilderDefault();
+    ICatalogJsonBuilder commerceBuilder = new CatalogJsonBuilderCommerce();
     ICatalogJsonBuilder groupingBuilder = new CatalogJsonBuilderGrouping();
     ICatalogJsonBuilder variantBuilder = new CatalogJsonBuilderVariant();
     ICatalogJsonBuilder combinedBuilder = new CatalogJsonBuilderGroupingWithVariants();
@@ -568,17 +569,22 @@ private class CatalogJsonBuildersTest {
       priceMap,
       extraFields
     );
-    String json2 = groupingBuilder.buildFullUpdateNdjson(
+    String json2 = commerceBuilder.buildFullUpdateNdjson(
       products,
       priceMap,
       extraFields
     );
-    String json3 = variantBuilder.buildFullUpdateNdjson(
+    String json3 = groupingBuilder.buildFullUpdateNdjson(
       products,
       priceMap,
       extraFields
     );
-    String json4 = combinedBuilder.buildFullUpdateNdjson(
+    String json4 = variantBuilder.buildFullUpdateNdjson(
+      products,
+      priceMap,
+      extraFields
+    );
+    String json5 = combinedBuilder.buildFullUpdateNdjson(
       products,
       priceMap,
       extraFields
@@ -587,11 +593,26 @@ private class CatalogJsonBuildersTest {
     Test.stopTest();
 
     // Validate all produce non-null JSON with expected structure
-    for (String json : new List<String>{ json1, json2, json3, json4 }) {
+    for (String json : new List<String>{ json1, json2, json3, json4, json5 }) {
       System.assertNotEquals(null, json, 'JSON should not be null');
       System.assert(
         json.contains('addOrUpdate'),
         'Should contain addOrUpdate key'
+      );
+    }
+
+    for (
+      ICatalogJsonBuilder builder : new List<ICatalogJsonBuilder>{
+        defaultBuilder,
+        commerceBuilder,
+        groupingBuilder,
+        variantBuilder,
+        combinedBuilder
+      }
+    ) {
+      System.assert(
+        builder instanceof ICatalogProductIdentityProvider,
+        'Built-in builders should implement ICatalogProductIdentityProvider'
       );
     }
   }

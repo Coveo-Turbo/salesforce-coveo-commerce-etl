@@ -106,6 +106,15 @@ private class ProductCatalogExportBatchTest {
     return catalog;
   }
 
+  private static List<Product2> collectProducts(Database.QueryLocator locator) {
+    List<Product2> products = new List<Product2>();
+    Database.QueryLocatorIterator iterator = locator.iterator();
+    while (iterator.hasNext()) {
+      products.add((Product2) iterator.next());
+    }
+    return products;
+  }
+
   @IsTest
   static void testGetBatchSize_usesConfiguredValueAndDefault() {
     CatalogJobConfig__mdt configured = createConfig('Default', false);
@@ -223,6 +232,56 @@ private class ProductCatalogExportBatchTest {
     }
 
     System.assertEquals(true, failed);
+  }
+
+  @IsTest
+  static void testStart_includesProviderRequiredIdentityFieldsInProductQuery() {
+    recordedRequests.clear();
+    createTestProduct('EXEC-ID-001', 'Hardware');
+
+    CatalogJobConfig__mdt config = createConfig(
+      'CatalogJsonBuilderCreatedByIdStub',
+      true
+    );
+    ProductCatalogExportBatch batch = new ProductCatalogExportBatch(
+      config,
+      Test.getStandardPricebookId()
+    );
+
+    List<Product2> scopeProducts = collectProducts(batch.start(null));
+
+    Test.setMock(
+      HttpCalloutMock.class,
+      new RecordingHttpMock(
+        new Map<String, MockResponse>{
+          '/files' => new MockResponse(
+            201,
+            '201 Created',
+            '{"fileId":"file-createdby","uploadUri":"https://upload.example.com/put","requiredHeaders":{"x-amz-meta-test":"abc"}}'
+          ),
+          'upload.example.com' => new MockResponse(200, '200 OK', ''),
+          '/stream/update' => new MockResponse(
+            202,
+            '202 Accepted',
+            '{"orderingId":21,"streamId":"stream-createdby"}'
+          )
+        }
+      )
+    );
+
+    Test.startTest();
+    batch.execute(null, scopeProducts);
+    Test.stopTest();
+
+    List<Coveo_Payload_Log__c> logs = [
+      SELECT Payload__c
+      FROM Coveo_Payload_Log__c
+    ];
+    System.assertEquals(1, logs.size());
+    System.assert(
+      logs[0].Payload__c.contains(UserInfo.getUserId()),
+      'The builder-specific identity field should be available in the queried scope records'
+    );
   }
 
   @IsTest
