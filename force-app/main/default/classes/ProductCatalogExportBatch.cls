@@ -103,6 +103,9 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   }
 
   global Database.QueryLocator start(Database.BatchableContext bc) {
+    ICatalogJsonBuilder builder = CatalogProductIdentityResolver.getBuilder(
+      jobConfig
+    );
     List<String> fields = new List<String>{
       'Id',
       'Name',
@@ -115,6 +118,15 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       'Type',
       'DisplayUrl'
     };
+    for (
+      String fieldName : CatalogProductIdentityResolver.getRequiredProductFields(
+        builder
+      )
+    ) {
+      if (!fields.contains(fieldName)) {
+        fields.add(fieldName);
+      }
+    }
     Database.QueryLocator locator = CatalogJobScopeUtil.buildProductQueryLocator(
       jobConfig,
       fields,

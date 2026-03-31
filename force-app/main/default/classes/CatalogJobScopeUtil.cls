@@ -70,9 +70,7 @@ public with sharing class CatalogJobScopeUtil {
   }
 
   public static String getExportedItemId(Product2 product) {
-    return String.isNotBlank(product.ProductCode)
-      ? product.ProductCode
-      : (String) product.Id;
+    return CatalogProductIdentityResolver.resolveFallbackEcProductId(product);
   }
 
   private static List<String> buildFieldList(

@@ -32,7 +32,16 @@
  *
  * @see https://docs.coveo.com/en/m53g0506/coveo-for-commerce/catalog-variant-data-and-product-groupings
  */
-public with sharing class CatalogJsonBuilderGrouping implements ICatalogJsonBuilder {
+public with sharing class CatalogJsonBuilderGrouping
+  implements ICatalogJsonBuilder, ICatalogProductIdentityProvider {
+  public List<String> getRequiredProductFieldsForIdentity() {
+    return new List<String>{ 'ProductCode' };
+  }
+
+  public Map<Id, String> resolveEcProductIds(List<Product2> products) {
+    return CatalogProductIdentityResolver.resolveFallbackEcProductIds(products);
+  }
+
   /**
    * Builds a full update payload supporting product grouping relationships.
    * Parent products are indexed as group heads; children reference parents via ec_item_group_id.
@@ -58,7 +67,7 @@ public with sharing class CatalogJsonBuilderGrouping implements ICatalogJsonBuil
     for (Product2 p : products) {
       productCodeById.put(
         p.Id,
-        String.isNotBlank(p.ProductCode) ? p.ProductCode : (String) p.Id
+        CatalogProductIdentityResolver.resolveFallbackEcProductId(p)
       );
     }
 
@@ -80,9 +89,7 @@ public with sharing class CatalogJsonBuilderGrouping implements ICatalogJsonBuil
       ]) {
         productCodeById.put(
           parent.Id,
-          String.isNotBlank(parent.ProductCode)
-            ? parent.ProductCode
-            : (String) parent.Id
+          CatalogProductIdentityResolver.resolveFallbackEcProductId(parent)
         );
       }
     }
@@ -168,9 +175,9 @@ public with sharing class CatalogJsonBuilderGrouping implements ICatalogJsonBuil
     Map<Id, String> productCodeById,
     Map<Id, List<String>> categoriesByProductId
   ) {
-    String productId = String.isNotBlank(p.ProductCode)
-      ? p.ProductCode
-      : (String) p.Id;
+    String productId = CatalogProductIdentityResolver.resolveFallbackEcProductId(
+      p
+    );
 
     Map<String, Object> item = new Map<String, Object>();
 

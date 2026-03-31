@@ -490,6 +490,46 @@ private class CoveoCommerceSetupControllerTest {
     );
   }
 
+  @IsTest
+  static void testPreviewCatalogJobDraft_warnsWhenAvailabilityBuilderLacksIdentityProvider() {
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.previewCatalogJobDraft(
+      'Legacy Availability Store',
+      'LEGACY_AVAILABILITY_STORE',
+      'my-coveo-org',
+      'catalog-products-us',
+      'catalog-availability-us',
+      null,
+      '0ZE000000000001AAA',
+      'en-US',
+      'CatalogJsonBuilderLegacyTestStub',
+      true,
+      null,
+      new List<String>()
+    );
+    Test.stopTest();
+
+    System.assertEquals(
+      true,
+      result.get('isReady'),
+      'A legacy builder warning should not block save or launch readiness'
+    );
+
+    List<Object> warningMessages = (List<Object>) result.get('warningMessages');
+    Boolean foundIdentityWarning = false;
+    for (Object warning : warningMessages) {
+      if (String.valueOf(warning).contains('fall back to ProductCode')) {
+        foundIdentityWarning = true;
+      }
+    }
+
+    System.assertEquals(
+      true,
+      foundIdentityWarning,
+      'Preview should warn when availability is enabled with a builder that lacks the identity provider interface'
+    );
+  }
+
   // ============================================================
   // Tests for getActiveBuilderMapping()
   // ============================================================

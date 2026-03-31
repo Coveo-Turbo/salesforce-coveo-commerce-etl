@@ -1,4 +1,13 @@
-public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuilder {
+public with sharing class CatalogJsonBuilderCommerce
+  implements ICatalogJsonBuilder, ICatalogProductIdentityProvider {
+  public List<String> getRequiredProductFieldsForIdentity() {
+    return new List<String>{ 'ProductCode' };
+  }
+
+  public Map<Id, String> resolveEcProductIds(List<Product2> products) {
+    return CatalogProductIdentityResolver.resolveFallbackEcProductIds(products);
+  }
+
   public String buildFullUpdateNdjson(
     List<Product2> products,
     Map<Id, Map<String, Decimal>> pricesByProduct,
@@ -88,9 +97,8 @@ public with sharing class CatalogJsonBuilderCommerce implements ICatalogJsonBuil
       String objectType = 'Product'; // default
 
       // ---- Compute ec_product_id ----
-      String productIdForEc = String.isNotBlank(p.ProductCode)
-        ? p.ProductCode
-        : (String) p.Id;
+      String productIdForEc =
+        CatalogProductIdentityResolver.resolveFallbackEcProductId(p);
 
       // ---- Compute documentId ----
       String docId = objectType.toLowerCase() + '://' + productIdForEc;

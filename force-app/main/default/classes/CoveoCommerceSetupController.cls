@@ -248,6 +248,24 @@ public with sharing class CoveoCommerceSetupController {
         'No Builder Type is selected, so this job will fall back to the global default builder.'
       );
     }
+    if (availabilityEnabled) {
+      try {
+        if (
+          !CatalogProductIdentityResolver.supportsBuilderDrivenIdentity(
+            builderType
+          )
+        ) {
+          warningMessages.add(
+            'The selected builder does not implement ICatalogProductIdentityProvider. Buyer Group availability will fall back to ProductCode, then Salesforce Id, and may not match a custom ec_product_id.'
+          );
+        }
+      } catch (Exception e) {
+        warningMessages.add(
+          'Unable to confirm builder-driven ec_product_id support for Buyer Group availability: ' +
+          e.getMessage()
+        );
+      }
+    }
 
     Integer estimatedProductCount = 0;
     Integer buyerGroupCount = 0;

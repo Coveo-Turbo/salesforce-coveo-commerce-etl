@@ -17,7 +17,16 @@
  *
  * @see https://docs.coveo.com/en/m53g0506/coveo-for-commerce/catalog-variant-data-and-product-groupings
  */
-public with sharing class CatalogJsonBuilderDefault implements ICatalogJsonBuilder {
+public with sharing class CatalogJsonBuilderDefault
+  implements ICatalogJsonBuilder, ICatalogProductIdentityProvider {
+  public List<String> getRequiredProductFieldsForIdentity() {
+    return new List<String>{ 'ProductCode' };
+  }
+
+  public Map<Id, String> resolveEcProductIds(List<Product2> products) {
+    return CatalogProductIdentityResolver.resolveFallbackEcProductIds(products);
+  }
+
   /**
    * Builds a full update payload (addOrUpdate) for simple product exports.
    * Products are exported as flat items without variant or grouping logic.
@@ -110,9 +119,9 @@ public with sharing class CatalogJsonBuilderDefault implements ICatalogJsonBuild
     List<String> extraFieldNames
   ) {
     // Compute product identifier
-    String productId = String.isNotBlank(p.ProductCode)
-      ? p.ProductCode
-      : (String) p.Id;
+    String productId = CatalogProductIdentityResolver.resolveFallbackEcProductId(
+      p
+    );
 
     Map<String, Object> item = new Map<String, Object>();
 

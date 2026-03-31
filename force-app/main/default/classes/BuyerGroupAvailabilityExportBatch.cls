@@ -298,19 +298,16 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
       }
     }
 
-    Map<Id, String> exportedItemIdByProductId = new Map<Id, String>();
-    for (
-      Product2 product : CatalogJobScopeUtil.queryProductsByIds(
-        jobConfig,
-        productIds,
-        new List<String>{ 'Id', 'ProductCode' }
-      )
-    ) {
-      exportedItemIdByProductId.put(
-        product.Id,
-        CatalogJobScopeUtil.getExportedItemId(product)
-      );
-    }
+    ICatalogJsonBuilder builder = CatalogProductIdentityResolver.getBuilder(
+      jobConfig
+    );
+    List<Product2> exportedProducts = CatalogJobScopeUtil.queryProductsByIds(
+      jobConfig,
+      productIds,
+      CatalogProductIdentityResolver.getRequiredProductFields(builder)
+    );
+    Map<Id, String> exportedItemIdByProductId =
+      CatalogProductIdentityResolver.resolveEcProductIds(builder, exportedProducts);
 
     for (Id buyerGroupId : rawProductIdsByBuyerGroup.keySet()) {
       Set<String> exportedIds = new Set<String>();
