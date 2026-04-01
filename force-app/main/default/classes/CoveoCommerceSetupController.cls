@@ -109,6 +109,7 @@ public with sharing class CoveoCommerceSetupController {
         CoveoOrgId__c,
         SourceId__c,
         AvailabilitySourceId__c,
+        BuyerGroupAvailabilityMode__c,
         WebStoreId__c,
         Locale__c,
         IsActive__c,
@@ -127,6 +128,10 @@ public with sharing class CoveoCommerceSetupController {
       configMap.put('coveoOrgId', cfg.CoveoOrgId__c);
       configMap.put('sourceId', cfg.SourceId__c);
       configMap.put('availabilitySourceId', cfg.AvailabilitySourceId__c);
+      configMap.put(
+        'buyerGroupAvailabilityMode',
+        CatalogBuyerGroupAvailabilityMode.resolve(cfg)
+      );
       configMap.put('webStoreId', cfg.WebStoreId__c);
       configMap.put('locale', cfg.Locale__c);
       configMap.put('isActive', cfg.IsActive__c);
@@ -134,7 +139,7 @@ public with sharing class CoveoCommerceSetupController {
       configMap.put('additionalProductFields', cfg.AdditionalProductFields__c);
       configMap.put(
         'buyerGroupAvailabilityEnabled',
-        cfg.EnableBuyerGroupAvailability__c
+        CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(cfg)
       );
       configMap.put(
         'builderType',
@@ -193,7 +198,7 @@ public with sharing class CoveoCommerceSetupController {
     String webStoreId,
     String locale,
     String builderType,
-    Boolean enableBuyerGroupAvailability,
+    String buyerGroupAvailabilityMode,
     String productFilter,
     List<String> additionalProductFields
   ) {
@@ -203,7 +208,18 @@ public with sharing class CoveoCommerceSetupController {
     Integer selectedFieldCount = additionalProductFields == null
       ? 0
       : additionalProductFields.size();
-    Boolean availabilityEnabled = enableBuyerGroupAvailability == true;
+    Boolean modeSupported = CatalogBuyerGroupAvailabilityMode.isSupportedValue(
+      buyerGroupAvailabilityMode
+    );
+    String resolvedMode = CatalogBuyerGroupAvailabilityMode.resolveDraftMode(
+      buyerGroupAvailabilityMode
+    );
+    Boolean availabilityEnabled =
+      CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(resolvedMode);
+    Boolean usesPairedSource =
+      CatalogBuyerGroupAvailabilityMode.usesPairedSource(resolvedMode);
+    Boolean usesEmbedded =
+      CatalogBuyerGroupAvailabilityMode.usesEmbedded(resolvedMode);
 
     if (String.isBlank(label)) {
       validationMessages.add('Job label is required.');
@@ -222,7 +238,12 @@ public with sharing class CoveoCommerceSetupController {
     if (String.isBlank(locale)) {
       validationMessages.add('Locale is required.');
     }
-    if (availabilityEnabled && String.isBlank(availabilitySourceId)) {
+    if (!modeSupported) {
+      validationMessages.add(
+        'Buyer Group Availability Mode must be Disabled, PairedSource, Embedded, or DualWrite.'
+      );
+    }
+    if (usesPairedSource && String.isBlank(availabilitySourceId)) {
       validationMessages.add(
         'Availability Source Id is required when Buyer Group availability is enabled.'
       );
@@ -256,12 +277,12 @@ public with sharing class CoveoCommerceSetupController {
           )
         ) {
           warningMessages.add(
-            'The selected builder does not implement ICatalogProductIdentityProvider. Buyer Group availability will fall back to ProductCode, then Salesforce Id, and may not match a custom ec_product_id.'
+            'The selected builder does not implement ICatalogProductIdentityProvider. Buyer Group access updates will fall back to ProductCode, then Salesforce Id, and may not match a custom ec_product_id.'
           );
         }
       } catch (Exception e) {
         warningMessages.add(
-          'Unable to confirm builder-driven ec_product_id support for Buyer Group availability: ' +
+          'Unable to confirm builder-driven ec_product_id support for Buyer Group access: ' +
           e.getMessage()
         );
       }
@@ -305,9 +326,25 @@ public with sharing class CoveoCommerceSetupController {
       }
     }
 
+    if (usesEmbedded && String.isNotBlank(sourceId) && String.isNotBlank(webStoreId)) {
+      List<String> conflictingConfigs = findEmbeddedSourceConflicts(
+        developerName,
+        sourceId,
+        webStoreId
+      );
+      if (!conflictingConfigs.isEmpty()) {
+        warningMessages.add(
+          'Embedded access shares the product source with active configs that use a different Web Store: ' +
+          String.join(conflictingConfigs, ', ') +
+          '.'
+        );
+      }
+    }
+
     result.put('estimatedProductCount', estimatedProductCount);
     result.put('buyerGroupCount', buyerGroupCount);
     result.put('selectedFieldCount', selectedFieldCount);
+    result.put('buyerGroupAvailabilityMode', resolvedMode);
     result.put('validationMessages', validationMessages);
     result.put('warningMessages', warningMessages);
     result.put('isReady', validationMessages.isEmpty());
@@ -537,6 +574,51 @@ public with sharing class CoveoCommerceSetupController {
     return Database.countQuery(
       'SELECT COUNT() FROM WebStoreBuyerGroup WHERE WebStoreId = :webStoreId'
     );
+  }
+
+  private static List<String> findEmbeddedSourceConflicts(
+    String developerName,
+    String sourceId,
+    String webStoreId
+  ) {
+    List<String> conflictingConfigs = new List<String>();
+
+    if (String.isBlank(sourceId) || String.isBlank(webStoreId)) {
+      return conflictingConfigs;
+    }
+
+    for (CatalogJobConfig__mdt config : [
+      SELECT
+        DeveloperName,
+        MasterLabel,
+        SourceId__c,
+        WebStoreId__c,
+        IsActive__c,
+        EnableBuyerGroupAvailability__c,
+        BuyerGroupAvailabilityMode__c
+      FROM CatalogJobConfig__mdt
+      WHERE SourceId__c = :sourceId AND IsActive__c = TRUE
+    ]) {
+      if (
+        config.DeveloperName == developerName ||
+        !CatalogBuyerGroupAvailabilityMode.usesEmbedded(config)
+      ) {
+        continue;
+      }
+
+      if (
+        String.isBlank(config.WebStoreId__c) ||
+        config.WebStoreId__c == webStoreId
+      ) {
+        continue;
+      }
+
+      conflictingConfigs.add(
+        config.MasterLabel + ' (' + config.WebStoreId__c + ')'
+      );
+    }
+
+    return conflictingConfigs;
   }
 
   /**

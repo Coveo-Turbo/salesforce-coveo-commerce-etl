@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>BuyerGroupAvailabilityMode__c</fullName>
+    <description>Controls how Buyer Group visibility is indexed. Supported values are Disabled, PairedSource, Embedded, and DualWrite. Blank values fall back to the legacy EnableBuyerGroupAvailability__c behavior.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>Disabled, PairedSource, Embedded, or DualWrite. Leave blank only for legacy configs that still rely on EnableBuyerGroupAvailability__c.</inlineHelpText>
+    <label>Buyer Group Availability Mode</label>
+    <length>40</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

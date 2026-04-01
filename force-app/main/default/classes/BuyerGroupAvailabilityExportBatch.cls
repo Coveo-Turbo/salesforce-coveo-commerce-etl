@@ -33,7 +33,8 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
         CatalogId__c,
         BatchSize__c,
         EnablePayloadLogging__c,
-        EnableBuyerGroupAvailability__c
+        EnableBuyerGroupAvailability__c,
+        BuyerGroupAvailabilityMode__c
       FROM CatalogJobConfig__mdt
       WHERE DeveloperName = :jobConfigDeveloperName
       LIMIT 1
@@ -152,9 +153,9 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
   }
 
   private void validateConfig() {
-    if (jobConfig.EnableBuyerGroupAvailability__c != true) {
+    if (!CatalogBuyerGroupAvailabilityMode.usesPairedSource(jobConfig)) {
       throw new CatalogJobConfigException(
-        'EnableBuyerGroupAvailability__c must be true to run BuyerGroupAvailabilityExportBatch.'
+        'BuyerGroupAvailabilityMode__c must resolve to PairedSource or DualWrite to run BuyerGroupAvailabilityExportBatch.'
       );
     }
 

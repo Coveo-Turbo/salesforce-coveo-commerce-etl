@@ -46,16 +46,19 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       SELECT
         DeveloperName,
         Label,
-        CoveoOrgId__c,
-        SourceId__c,
-        Locale__c,
-        IsActive__c,
-        ProductFilter__c,
-        AdditionalProductFields__c,
-        BuilderType__c,
-        CatalogId__c,
-        BatchSize__c,
-        EnablePayloadLogging__c
+      CoveoOrgId__c,
+      SourceId__c,
+      WebStoreId__c,
+      Locale__c,
+      IsActive__c,
+      ProductFilter__c,
+      AdditionalProductFields__c,
+      BuilderType__c,
+      CatalogId__c,
+      BatchSize__c,
+      EnablePayloadLogging__c,
+      EnableBuyerGroupAvailability__c,
+      BuyerGroupAvailabilityMode__c
       FROM CatalogJobConfig__mdt
       WHERE DeveloperName = :jobConfigDeveloperName
       LIMIT 1
@@ -127,6 +130,17 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
         fields.add(fieldName);
       }
     }
+    if (CatalogBuyerGroupAvailabilityMode.usesEmbedded(jobConfig)) {
+      for (
+        String fieldName : CatalogBuyerGroupAccessResolver.getRequiredProductFields(
+          builder
+        )
+      ) {
+        if (!fields.contains(fieldName)) {
+          fields.add(fieldName);
+        }
+      }
+    }
     Database.QueryLocator locator = CatalogJobScopeUtil.buildProductQueryLocator(
       jobConfig,
       fields,
@@ -170,6 +184,20 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       pricesByProduct,
       extraFieldNames
     );
+    if (CatalogBuyerGroupAvailabilityMode.usesEmbedded(jobConfig)) {
+      Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId =
+        CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
+          jobConfig,
+          scope,
+          builder
+        );
+      ndjsonPayload =
+        CatalogBuyerGroupPayloadDecorator.decorateFullUpdatePayload(
+          ndjsonPayload,
+          snapshotsByProductId,
+          jobConfig.WebStoreId__c
+        );
+    }
 
     System.debug(
       LoggingLevel.INFO,

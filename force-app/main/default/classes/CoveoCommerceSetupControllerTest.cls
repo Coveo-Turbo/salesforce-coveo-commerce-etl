@@ -209,6 +209,10 @@ private class CoveoCommerceSetupControllerTest {
         'Config should have availabilitySourceId key'
       );
       System.assert(
+        config.containsKey('buyerGroupAvailabilityMode'),
+        'Config should have buyerGroupAvailabilityMode key'
+      );
+      System.assert(
         config.containsKey('webStoreId'),
         'Config should have webStoreId key'
       );
@@ -332,7 +336,7 @@ private class CoveoCommerceSetupControllerTest {
       null,
       'en-US',
       'Commerce',
-      true,
+      CatalogBuyerGroupAvailabilityMode.PAIRED_SOURCE,
       null,
       new List<String>()
     );
@@ -375,7 +379,7 @@ private class CoveoCommerceSetupControllerTest {
       null,
       'en-US',
       '',
-      false,
+      CatalogBuyerGroupAvailabilityMode.DISABLED,
       null,
       new List<String>{ 'Color__c', 'Material__c' }
     );
@@ -412,7 +416,7 @@ private class CoveoCommerceSetupControllerTest {
       null,
       'en-US',
       'Commerce',
-      false,
+      CatalogBuyerGroupAvailabilityMode.DISABLED,
       'Family = \'Tools\'',
       new List<String>{
         'Field01__c',
@@ -468,7 +472,7 @@ private class CoveoCommerceSetupControllerTest {
       null,
       'en-US',
       'Commerce',
-      false,
+      CatalogBuyerGroupAvailabilityMode.DISABLED,
       'INSERT ProductCode = \'NOPE\'',
       new List<String>()
     );
@@ -503,7 +507,7 @@ private class CoveoCommerceSetupControllerTest {
       '0ZE000000000001AAA',
       'en-US',
       'CatalogJsonBuilderLegacyTestStub',
-      true,
+      CatalogBuyerGroupAvailabilityMode.EMBEDDED,
       null,
       new List<String>()
     );

@@ -106,7 +106,7 @@
           >
             <span class="workspace-action__title">Run Console</span>
             <span class="workspace-action__meta"
-              >Launch product and availability syncs</span
+              >Launch product and Buyer Group access syncs</span
             >
           </button>
         </div>
@@ -172,7 +172,7 @@
                     <span class="setup-stat-pill__value">{activeConfigs}</span>
                   </div>
                   <div class="setup-stat-pill">
-                    <span class="setup-stat-pill__label">Availability</span>
+                    <span class="setup-stat-pill__label">Buyer Group</span>
                     <span class="setup-stat-pill__value">
                       {availabilityEnabledConfigs}
                     </span>
@@ -204,7 +204,7 @@
               <ol class="slds-list_ordered helper-list">
                 <li>Verify the Coveo Push Named Credential.</li>
                 <li>Draft or review your catalog job configurations.</li>
-                <li>Use the run center to launch and monitor syncs.</li>
+                <li>Use the run center to launch product or access syncs.</li>
                 <li>Review advanced builder mappings only when needed.</li>
               </ol>
             </section>
@@ -618,20 +618,21 @@
 
                 <section class="editor-section">
                   <div class="editor-section__header">
-                    <p class="section-label">Availability</p>
+                    <p class="section-label">Buyer Group Access</p>
                     <p class="editor-section__meta">
-                      Configure the paired Buyer Group availability source when
-                      entitlement-aware visibility is needed.
+                      Choose whether Buyer Group access stays in a paired
+                      availability source or is embedded directly on product
+                      documents.
                     </p>
                   </div>
                   <div class="workspace-grid">
-                    <lightning-input
-                      type="toggle"
-                      label="Enable Buyer Group Availability"
-                      checked={draft.enableBuyerGroupAvailability}
-                      data-field="enableBuyerGroupAvailability"
+                    <lightning-combobox
+                      label="Buyer Group Availability Mode"
+                      value={draft.buyerGroupAvailabilityMode}
+                      data-field="buyerGroupAvailabilityMode"
+                      options={buyerGroupAvailabilityModeOptions}
                       onchange={handleDraftInputChange}
-                    ></lightning-input>
+                    ></lightning-combobox>
 
                     <lightning-combobox
                       label="Web Store"
@@ -649,7 +650,7 @@
                       data-field="availabilitySourceId"
                       onchange={handleDraftInputChange}
                       placeholder="catalog-availability-us"
-                      disabled={areAvailabilityFieldsDisabled}
+                      disabled={isAvailabilitySourceDisabled}
                     ></lightning-input>
                   </div>
                 </section>
@@ -732,6 +733,12 @@
                       <span class="review-summary__label">Catalog</span>
                       <span class="review-summary__value">
                         {draftSummaryCatalogText}
+                      </span>
+                    </div>
+                    <div class="review-summary__row">
+                      <span class="review-summary__label">Access Mode</span>
+                      <span class="review-summary__value">
+                        {selectedBuyerGroupModeLabel}
                       </span>
                     </div>
                     <div class="review-summary__row">
@@ -886,10 +893,10 @@
 
                   <section class="detail-section">
                     <div class="detail-section__header">
-                      <p class="section-label">Availability</p>
+                      <p class="section-label">Buyer Group Access</p>
                       <p class="detail-section__meta">
-                        Buyer Group availability settings and availability
-                        source destination.
+                        Buyer Group mode, store targeting, and access
+                        destination details.
                       </p>
                     </div>
                     <div class="detail-grid">

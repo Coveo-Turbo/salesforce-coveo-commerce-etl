@@ -13,6 +13,16 @@ import validateBuilderClass from "@salesforce/apex/CoveoCommerceSetupController.
 
 const TRUNCATE_LENGTH = 50;
 const PREVIEW_DEBOUNCE_MS = 350;
+const BUYER_GROUP_MODE_DISABLED = "Disabled";
+const BUYER_GROUP_MODE_PAIRED = "PairedSource";
+const BUYER_GROUP_MODE_EMBEDDED = "Embedded";
+const BUYER_GROUP_MODE_DUAL = "DualWrite";
+const BUYER_GROUP_MODE_OPTIONS = Object.freeze([
+  { label: "Disabled", value: BUYER_GROUP_MODE_DISABLED },
+  { label: "Paired Source", value: BUYER_GROUP_MODE_PAIRED },
+  { label: "Embedded", value: BUYER_GROUP_MODE_EMBEDDED },
+  { label: "Dual Write", value: BUYER_GROUP_MODE_DUAL }
+]);
 
 const DEFAULT_DRAFT = Object.freeze({
   label: "",
@@ -24,7 +34,7 @@ const DEFAULT_DRAFT = Object.freeze({
   catalogId: "",
   webStoreId: "",
   builderType: "",
-  enableBuyerGroupAvailability: false,
+  buyerGroupAvailabilityMode: BUYER_GROUP_MODE_DISABLED,
   productFilter: "",
   additionalProductFields: []
 });
@@ -53,6 +63,55 @@ const STANDARD_BUILDER_CLASS_NAMES = new Set([
   "CatalogJsonBuilderVariant",
   "CatalogJsonBuilderGroupingWithVariants"
 ]);
+
+function resolveBuyerGroupAvailabilityMode(mode, legacyEnabled = false) {
+  switch (mode) {
+    case BUYER_GROUP_MODE_PAIRED:
+    case BUYER_GROUP_MODE_EMBEDDED:
+    case BUYER_GROUP_MODE_DUAL:
+    case BUYER_GROUP_MODE_DISABLED:
+      return mode;
+    default:
+      return legacyEnabled
+        ? BUYER_GROUP_MODE_PAIRED
+        : BUYER_GROUP_MODE_DISABLED;
+  }
+}
+
+function isBuyerGroupAccessEnabled(mode) {
+  return (
+    resolveBuyerGroupAvailabilityMode(mode) !== BUYER_GROUP_MODE_DISABLED
+  );
+}
+
+function usesPairedSource(mode) {
+  const resolvedMode = resolveBuyerGroupAvailabilityMode(mode);
+  return (
+    resolvedMode === BUYER_GROUP_MODE_PAIRED ||
+    resolvedMode === BUYER_GROUP_MODE_DUAL
+  );
+}
+
+function usesEmbeddedAccess(mode) {
+  const resolvedMode = resolveBuyerGroupAvailabilityMode(mode);
+  return (
+    resolvedMode === BUYER_GROUP_MODE_EMBEDDED ||
+    resolvedMode === BUYER_GROUP_MODE_DUAL
+  );
+}
+
+function formatBuyerGroupAvailabilityMode(mode) {
+  switch (resolveBuyerGroupAvailabilityMode(mode)) {
+    case BUYER_GROUP_MODE_PAIRED:
+      return "Paired Source";
+    case BUYER_GROUP_MODE_EMBEDDED:
+      return "Embedded";
+    case BUYER_GROUP_MODE_DUAL:
+      return "Dual Write";
+    default:
+      return "Disabled";
+  }
+}
 
 export default class CoveoCommerceSetup extends NavigationMixin(
   LightningElement
@@ -298,7 +357,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     if (!this.totalConfigs) {
       return "No catalog job configs created yet.";
     }
-    return `${this.activeConfigs} active configs, ${this.availabilityEnabledConfigs} availability-enabled.`;
+    return `${this.activeConfigs} active configs, ${this.availabilityEnabledConfigs} access-enabled.`;
   }
 
   get workspaceOverviewHighlights() {
@@ -425,18 +484,40 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     }));
   }
 
+  get buyerGroupAvailabilityModeOptions() {
+    return BUYER_GROUP_MODE_OPTIONS;
+  }
+
   get hasWorkspaceOptions() {
     return !this.isLoadingWorkspaceOptions;
   }
 
   get availabilityToggleLabel() {
-    return this.draft.enableBuyerGroupAvailability
-      ? "Buyer Group availability is enabled"
-      : "Buyer Group availability is disabled";
+    return `Buyer Group Access: ${this.selectedBuyerGroupModeLabel}`;
   }
 
   get areAvailabilityFieldsDisabled() {
-    return !this.draft.enableBuyerGroupAvailability;
+    return !this.draftBuyerGroupAccessEnabled;
+  }
+
+  get isAvailabilitySourceDisabled() {
+    return !this.draftUsesPairedSource;
+  }
+
+  get draftBuyerGroupAccessEnabled() {
+    return isBuyerGroupAccessEnabled(this.draft.buyerGroupAvailabilityMode);
+  }
+
+  get draftUsesPairedSource() {
+    return usesPairedSource(this.draft.buyerGroupAvailabilityMode);
+  }
+
+  get draftUsesEmbeddedAccess() {
+    return usesEmbeddedAccess(this.draft.buyerGroupAvailabilityMode);
+  }
+
+  get selectedBuyerGroupModeLabel() {
+    return formatBuyerGroupAvailabilityMode(this.draft.buyerGroupAvailabilityMode);
   }
 
   get selectedCatalogLabel() {
@@ -494,7 +575,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
         this.draft.webStoreId ||
         this.draft.builderType ||
         this.draft.productFilter ||
-        this.draft.enableBuyerGroupAvailability ||
+        this.draftBuyerGroupAccessEnabled ||
         (this.draft.additionalProductFields || []).length > 0
     );
   }
@@ -557,7 +638,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   }
 
   get draftBuyerGroupCount() {
-    if (!this.draft.enableBuyerGroupAvailability) {
+    if (!this.draftBuyerGroupAccessEnabled) {
       return "Disabled";
     }
     return this.formatCount(this.draftPreview.buyerGroupCount);
@@ -584,8 +665,11 @@ export default class CoveoCommerceSetup extends NavigationMixin(
         this.draft.additionalProductFields || []
       ).join(",")}`,
       `AvailabilitySourceId__c: ${this.draft.availabilitySourceId || ""}`,
+      `BuyerGroupAvailabilityMode__c: ${
+        this.draft.buyerGroupAvailabilityMode || BUYER_GROUP_MODE_DISABLED
+      }`,
       `WebStoreId__c: ${this.draft.webStoreId || ""}`,
-      `EnableBuyerGroupAvailability__c: ${this.draft.enableBuyerGroupAvailability}`,
+      `EnableBuyerGroupAvailability__c: ${this.draftBuyerGroupAccessEnabled}`,
       "IsActive__c: true"
     ];
 
@@ -617,7 +701,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   }
 
   get draftSummaryWebStoreText() {
-    if (!this.draft.enableBuyerGroupAvailability) {
+    if (!this.draftBuyerGroupAccessEnabled) {
       return "Not required";
     }
     return this.selectedWebStoreLabel;
@@ -699,10 +783,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
 
     return [
       {
-        label: "Availability",
-        value: this.selectedConfigRow.buyerGroupAvailabilityEnabled
-          ? "Enabled"
-          : "Disabled"
+        label: "Buyer Group Access Mode",
+        value:
+          this.selectedConfigRow.buyerGroupAvailabilityModeLabel ||
+          "Disabled"
       },
       {
         label: "Web Store",
@@ -710,7 +794,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       },
       {
         label: "Availability Source Id",
-        value: this.selectedConfigRow.availabilitySourceId || "(None)"
+        value:
+          this.selectedConfigRow.usesPairedSource
+            ? this.selectedConfigRow.availabilitySourceId || "(None)"
+            : "Not required"
       },
       {
         label: "Destination Summary",
@@ -726,6 +813,12 @@ export default class CoveoCommerceSetup extends NavigationMixin(
 
     return [
       {
+        label: "Buyer Group Availability Mode",
+        value:
+          this.selectedConfigRow.buyerGroupAvailabilityMode ||
+          BUYER_GROUP_MODE_DISABLED
+      },
+      {
         label: "Builder Type Value",
         value: this.selectedConfigRow.builderType || "(Global Default)"
       },
@@ -735,11 +828,17 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       },
       {
         label: "Web Store Id",
-        value: this.selectedConfigRow.webStoreId || "(None)"
+        value:
+          this.selectedConfigRow.buyerGroupAvailabilityEnabled
+            ? this.selectedConfigRow.webStoreId || "(None)"
+            : "Not required"
       },
       {
         label: "Availability Source Id",
-        value: this.selectedConfigRow.availabilitySourceId || "(None)"
+        value:
+          this.selectedConfigRow.usesPairedSource
+            ? this.selectedConfigRow.availabilitySourceId || "(None)"
+            : "Not required"
       }
     ];
   }
@@ -779,12 +878,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
 
   get configAvailabilityBadgeLabel() {
     if (!this.selectedConfigRow) {
-      return "Availability";
+      return "Buyer Group Access";
     }
 
-    return this.selectedConfigRow.buyerGroupAvailabilityEnabled
-      ? "Availability On"
-      : "Availability Off";
+    return this.selectedConfigRow.buyerGroupAvailabilityModeLabel;
   }
 
   get configAvailabilityBadgeClass() {
@@ -923,9 +1020,13 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       }
     }
 
-    if (fieldName === "enableBuyerGroupAvailability" && !value) {
-      nextDraft.webStoreId = "";
-      nextDraft.availabilitySourceId = "";
+    if (fieldName === "buyerGroupAvailabilityMode") {
+      if (!isBuyerGroupAccessEnabled(value)) {
+        nextDraft.webStoreId = "";
+        nextDraft.availabilitySourceId = "";
+      } else if (!usesPairedSource(value)) {
+        nextDraft.availabilitySourceId = "";
+      }
     }
 
     this.draft = nextDraft;
@@ -1008,7 +1109,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       webStoreId: this.draft.webStoreId,
       locale: this.draft.locale,
       builderType: this.draft.builderType,
-      enableBuyerGroupAvailability: this.draft.enableBuyerGroupAvailability,
+      buyerGroupAvailabilityMode: this.draft.buyerGroupAvailabilityMode,
       productFilter: this.draft.productFilter,
       additionalProductFields: this.draft.additionalProductFields
     })
@@ -1044,8 +1145,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
         config.builderType && config.builderType !== "(Global Default)"
           ? config.builderType
           : "",
-      enableBuyerGroupAvailability:
-        config.buyerGroupAvailabilityEnabled || false,
+      buyerGroupAvailabilityMode: resolveBuyerGroupAvailabilityMode(
+        config.buyerGroupAvailabilityMode,
+        config.buyerGroupAvailabilityEnabled
+      ),
       productFilter: config.productFilter || "",
       additionalProductFields: this.parseAdditionalFields(
         config.additionalProductFields
@@ -1127,6 +1230,18 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     const additionalFieldList = this.parseAdditionalFields(
       config.additionalProductFields
     );
+    const buyerGroupAvailabilityMode = resolveBuyerGroupAvailabilityMode(
+      config.buyerGroupAvailabilityMode,
+      config.buyerGroupAvailabilityEnabled
+    );
+    const buyerGroupAvailabilityEnabled = isBuyerGroupAccessEnabled(
+      buyerGroupAvailabilityMode
+    );
+    const usesPaired = usesPairedSource(buyerGroupAvailabilityMode);
+    const usesEmbedded = usesEmbeddedAccess(buyerGroupAvailabilityMode);
+    const buyerGroupAvailabilityModeLabel = formatBuyerGroupAvailabilityMode(
+      buyerGroupAvailabilityMode
+    );
     const catalogLabel = config.catalogId
       ? this.getOptionLabel(this.catalogOptions, config.catalogId)
       : "";
@@ -1136,7 +1251,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     const catalogDisplay = config.catalogId
       ? this.formatNamedValue(catalogLabel, config.catalogId)
       : "All active products";
-    const webStoreDisplay = config.buyerGroupAvailabilityEnabled
+    const webStoreDisplay = buyerGroupAvailabilityEnabled
       ? this.formatNamedValue(webStoreLabel, config.webStoreId, "Not selected")
       : "Not required";
     const builderSummary = this.getBuilderDisplayLabel(config.builderType);
@@ -1149,29 +1264,45 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       `Products: ${config.sourceId || "(Missing)"}`
     ];
 
-    if (config.buyerGroupAvailabilityEnabled) {
+    if (buyerGroupAvailabilityEnabled) {
       experienceSummaryParts.push(
         `Store: ${webStoreLabel || config.webStoreId || "(Missing)"}`
-      );
-      destinationSummaryParts.push(
-        `Availability: ${config.availabilitySourceId || "(Missing)"}`
       );
     } else {
       experienceSummaryParts.push("Store: Not required");
     }
 
+    if (usesPaired) {
+      destinationSummaryParts.push(
+        `Availability: ${config.availabilitySourceId || "(Missing)"}`
+      );
+    }
+    if (usesEmbedded) {
+      destinationSummaryParts.push(
+        `Access: ${config.sourceId || "(Missing)"} (embedded)`
+      );
+    }
+    if (!buyerGroupAvailabilityEnabled) {
+      destinationSummaryParts.push("Access: Disabled");
+    }
+
     return {
       ...config,
+      buyerGroupAvailabilityMode,
+      buyerGroupAvailabilityModeLabel,
+      buyerGroupAvailabilityEnabled,
+      usesPairedSource: usesPaired,
+      usesEmbeddedAccess: usesEmbedded,
       isSelected: config.id === selectedConfigId,
       cardClass: this.getConfigCardClass(config.id === selectedConfigId),
       activeStatusLabel: config.isActive ? "Active" : "Inactive",
-      availabilityStatusLabel: config.buyerGroupAvailabilityEnabled
-        ? "Availability On"
-        : "Availability Off",
+      availabilityStatusLabel: buyerGroupAvailabilityEnabled
+        ? buyerGroupAvailabilityModeLabel
+        : "Access Disabled",
       activeStatusClass: config.isActive
         ? "detail-pill detail-pill--success"
         : "detail-pill detail-pill--neutral",
-      availabilityStatusClass: config.buyerGroupAvailabilityEnabled
+      availabilityStatusClass: buyerGroupAvailabilityEnabled
         ? "detail-pill detail-pill--success"
         : "detail-pill detail-pill--neutral",
       productFilter_truncated: this.truncateText(
@@ -1197,9 +1328,9 @@ export default class CoveoCommerceSetup extends NavigationMixin(
         : "No product filter",
       statusSummary: [
         config.isActive ? "Active" : "Inactive",
-        config.buyerGroupAvailabilityEnabled
-          ? "Availability on"
-          : "Availability off"
+        buyerGroupAvailabilityEnabled
+          ? `Access: ${buyerGroupAvailabilityModeLabel}`
+          : "Access disabled"
       ].join(" • "),
       catalogLabel: catalogLabel || config.catalogId || "All active products",
       webStoreLabel: webStoreLabel || config.webStoreId || "Not selected",
@@ -1289,6 +1420,9 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       `CoveoOrgId__c: ${config.coveoOrgId || ""}`,
       `SourceId__c: ${config.sourceId || ""}`,
       `AvailabilitySourceId__c: ${config.availabilitySourceId || ""}`,
+      `BuyerGroupAvailabilityMode__c: ${
+        config.buyerGroupAvailabilityMode || BUYER_GROUP_MODE_DISABLED
+      }`,
       `CatalogId__c: ${config.catalogId || ""}`,
       `WebStoreId__c: ${config.webStoreId || ""}`,
       `Locale__c: ${config.locale || ""}`,
