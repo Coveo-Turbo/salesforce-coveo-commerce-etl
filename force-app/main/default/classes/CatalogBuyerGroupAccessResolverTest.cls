@@ -1,5 +1,70 @@
 @IsTest
 private class CatalogBuyerGroupAccessResolverTest {
+  private class NullFieldAccessBuilder
+    implements
+      ICatalogJsonBuilder,
+      ICatalogProductIdentityProvider,
+      ICatalogBuyerGroupAccessProvider {
+    public List<String> getRequiredProductFieldsForIdentity() {
+      return new List<String>{ 'ProductCode' };
+    }
+
+    public Map<Id, String> resolveEcProductIds(List<Product2> products) {
+      Map<Id, String> ecProductIds = new Map<Id, String>();
+      for (Product2 product : products) {
+        if (product != null && product.Id != null) {
+          ecProductIds.put(product.Id, product.ProductCode);
+        }
+      }
+      return ecProductIds;
+    }
+
+    public List<String> getRequiredProductFieldsForBuyerGroupAccess() {
+      return null;
+    }
+
+    public Map<Id, CatalogBuyerGroupAccessSnapshot> resolveBuyerGroupAccess(
+      CatalogJobConfig__mdt jobConfig,
+      List<Product2> products,
+      Map<Id, String> ecProductIdByProductId
+    ) {
+      Map<Id, CatalogBuyerGroupAccessSnapshot> snapshots =
+        new Map<Id, CatalogBuyerGroupAccessSnapshot>();
+
+      if (!products.isEmpty()) {
+        CatalogBuyerGroupAccessSnapshot snapshot =
+          new CatalogBuyerGroupAccessSnapshot();
+        snapshot.productId = products[0].Id;
+        snapshot.ecProductId = ecProductIdByProductId.get(products[0].Id);
+        snapshot.webStoreId = null;
+        snapshot.buyerGroupIds = null;
+        snapshot.buyerGroupNames = null;
+        snapshots.put(products[0].Id, snapshot);
+      }
+
+      return snapshots;
+    }
+
+    public String buildFullUpdateNdjson(
+      List<Product2> products,
+      Map<Id, Map<String, Decimal>> pricesByProduct,
+      List<String> extraFieldNames
+    ) {
+      return JSON.serialize(
+        new Map<String, Object>{ 'addOrUpdate' => new List<Object>() }
+      );
+    }
+
+    public String buildPartialMergeNdjson(
+      Map<String, Decimal> priceBySku,
+      Map<String, Boolean> inStockBySku
+    ) {
+      return JSON.serialize(
+        new Map<String, Object>{ 'addOrMerge' => new List<Object>() }
+      );
+    }
+  }
+
   private class CustomAccessBuilder
     implements
       ICatalogJsonBuilder,
@@ -175,5 +240,110 @@ private class CatalogBuyerGroupAccessResolverTest {
       );
 
     System.assertEquals(0, snapshots.size());
+  }
+
+  @IsTest
+  static void testGetProvider_returnsCustomAndFallbackProviders() {
+    System.assertEquals(
+      true,
+      CatalogBuyerGroupAccessResolver.getProvider(new CustomAccessBuilder()) instanceof
+      CustomAccessBuilder
+    );
+    System.assertEquals(
+      true,
+      CatalogBuyerGroupAccessResolver.getProvider(
+        new CatalogJobConfig__mdt(
+          BuilderType__c = 'CatalogJsonBuilderLegacyTestStub'
+        )
+      ) instanceof CatalogBuyerGroupEntitlementProvider
+    );
+  }
+
+  @IsTest
+  static void testGetRequiredProductFields_returnsEmptyWhenProviderReturnsNull() {
+    System.assertEquals(
+      0,
+      CatalogBuyerGroupAccessResolver.getRequiredProductFields(
+        new NullFieldAccessBuilder()
+      ).size()
+    );
+  }
+
+  @IsTest
+  static void testResolveBuyerGroupAccess_normalizesNullSetsAndSkipsMissingEcIds() {
+    List<Product2> products = new List<Product2>{
+      new Product2(
+        Id = Id.valueOf('01t000000000221AAA'),
+        ProductCode = 'EC-221'
+      ),
+      new Product2(
+        Id = Id.valueOf('01t000000000222AAA'),
+        ProductCode = 'EC-222'
+      )
+    };
+
+    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshots =
+      CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
+        new CatalogJobConfig__mdt(WebStoreId__c = 'fallback-store'),
+        products,
+        new Map<Id, String>{ products[0].Id => 'EC-221' },
+        new NullFieldAccessBuilder()
+      );
+
+    System.assertEquals(
+      1,
+      snapshots.size(),
+      'Products without resolved ec_product_id values should be skipped during normalization'
+    );
+    System.assertEquals(
+      0,
+      snapshots.get(products[0].Id).buyerGroupIds.size(),
+      'Null Buyer Group ids should normalize to an empty set'
+    );
+    System.assertEquals(
+      0,
+      snapshots.get(products[0].Id).buyerGroupNames.size(),
+      'Null Buyer Group names should normalize to an empty set'
+    );
+    System.assertEquals(
+      'fallback-store',
+      snapshots.get(products[0].Id).webStoreId,
+      'Blank snapshot store values should fall back to the job config store'
+    );
+  }
+
+  @IsTest
+  static void testIndexSnapshotsByEcProductId_handlesNullAndBlankSnapshots() {
+    System.assertEquals(
+      0,
+      CatalogBuyerGroupAccessResolver.indexSnapshotsByEcProductId(null, 'store-1')
+        .size()
+    );
+
+    CatalogBuyerGroupAccessSnapshot blankSnapshot =
+      new CatalogBuyerGroupAccessSnapshot();
+    blankSnapshot.productId = Id.valueOf('01t000000000231AAA');
+    blankSnapshot.ecProductId = ' ';
+
+    CatalogBuyerGroupAccessSnapshot validSnapshot =
+      new CatalogBuyerGroupAccessSnapshot();
+    validSnapshot.productId = Id.valueOf('01t000000000232AAA');
+    validSnapshot.ecProductId = 'EC-232';
+    validSnapshot.buyerGroupIds.add('BG-232');
+
+    Map<String, CatalogBuyerGroupAccessSnapshot> indexedSnapshots =
+      CatalogBuyerGroupAccessResolver.indexSnapshotsByEcProductId(
+        new Map<Id, CatalogBuyerGroupAccessSnapshot>{
+          blankSnapshot.productId => blankSnapshot,
+          validSnapshot.productId => validSnapshot
+        },
+        'store-232'
+      );
+
+    System.assertEquals(1, indexedSnapshots.size());
+    System.assertEquals(
+      'store-232',
+      indexedSnapshots.get('EC-232').webStoreId
+    );
   }
 }

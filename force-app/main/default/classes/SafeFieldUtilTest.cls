@@ -66,4 +66,37 @@ private class SafeFieldUtilTest {
       'Blank field API name should return null'
     );
   }
+
+  @IsTest
+  static void testSafeGet_handlesUnqueriedFieldsAndTypedHelpers() {
+    Account account = new Account(Name = 'Coverage Account', AnnualRevenue = 42);
+    insert account;
+
+    Account queriedAccount = [
+      SELECT Id
+      FROM Account
+      WHERE Id = :account.Id
+    ];
+
+    System.assertEquals(
+      account.Id,
+      SafeFieldUtil.safeGetId(queriedAccount, 'Id'),
+      'Queried Id fields should be returned through the typed helper'
+    );
+    System.assertEquals(
+      null,
+      SafeFieldUtil.safeGetString(queriedAccount, 'Name'),
+      'Unqueried fields should return null instead of surfacing SObject access exceptions'
+    );
+
+    Account inMemoryAccount = new Account(
+      Name = 'Revenue Account',
+      AnnualRevenue = 99
+    );
+    System.assertEquals(
+      99,
+      SafeFieldUtil.safeGetDecimal(inMemoryAccount, 'AnnualRevenue'),
+      'Decimal helpers should return in-memory field values when present'
+    );
+  }
 }
