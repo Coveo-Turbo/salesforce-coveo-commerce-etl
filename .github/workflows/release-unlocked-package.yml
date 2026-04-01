@@ -200,6 +200,19 @@ jobs:
             exit 1
           fi
 
+          HAS_PASSED_CODE_COVERAGE_CHECK=$(echo "$RESULT" | jq -r '.result.HasPassedCodeCoverageCheck // "false"')
+          PACKAGE_CODE_COVERAGE=$(echo "$RESULT" | jq -r '.result.CodeCoverage // "unknown"')
+
+          echo "Package code coverage: $PACKAGE_CODE_COVERAGE"
+          echo "Has passed package code coverage gate: $HAS_PASSED_CODE_COVERAGE_CHECK"
+
+          if [ "$HAS_PASSED_CODE_COVERAGE_CHECK" != "true" ]; then
+            echo "Error: package version was created, but Salesforce reported that the package code coverage gate did not pass."
+            echo "CodeCoverage: $PACKAGE_CODE_COVERAGE"
+            echo "HasPassedCodeCoverageCheck: $HAS_PASSED_CODE_COVERAGE_CHECK"
+            exit 1
+          fi
+
           # Extract the subscriber package version ID (04t...)
           PACKAGE_VERSION_ID=$(echo "$RESULT" | jq -r '.result.SubscriberPackageVersionId')
 

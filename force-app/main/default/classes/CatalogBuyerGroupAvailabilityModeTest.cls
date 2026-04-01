@@ -92,4 +92,28 @@ private class CatalogBuyerGroupAvailabilityModeTest {
       CatalogBuyerGroupAvailabilityMode.resolveDraftMode(null)
     );
   }
+
+  @IsTest
+  static void testResolveAndLabels_coverNullConfigAndRemainingLabels() {
+    System.assertEquals(
+      CatalogBuyerGroupAvailabilityMode.DISABLED,
+      CatalogBuyerGroupAvailabilityMode.resolve(null)
+    );
+    System.assertEquals(
+      'Paired Availability Source',
+      CatalogBuyerGroupAvailabilityMode.getLabel(
+        CatalogBuyerGroupAvailabilityMode.PAIRED_SOURCE
+      )
+    );
+    System.assertEquals(
+      'Dual Write',
+      CatalogBuyerGroupAvailabilityMode.getLabel(
+        CatalogBuyerGroupAvailabilityMode.DUAL_WRITE
+      )
+    );
+    System.assertEquals(
+      'Disabled',
+      CatalogBuyerGroupAvailabilityMode.getLabel('banana')
+    );
+  }
 }
