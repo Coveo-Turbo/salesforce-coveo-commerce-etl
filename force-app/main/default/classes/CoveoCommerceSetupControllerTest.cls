@@ -534,6 +534,89 @@ private class CoveoCommerceSetupControllerTest {
     );
   }
 
+  @IsTest
+  static void testPreviewCatalogJobDraft_validatesMissingCoreInputsAndDefaultWarnings() {
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.previewCatalogJobDraft(
+      '',
+      '',
+      '',
+      '',
+      null,
+      null,
+      null,
+      '',
+      '',
+      'banana',
+      null,
+      null
+    );
+    Test.stopTest();
+
+    System.assertEquals(
+      false,
+      result.get('isReady'),
+      'Preview should fail readiness when required core inputs are missing'
+    );
+    System.assertEquals(
+      CatalogBuyerGroupAvailabilityMode.DISABLED,
+      result.get('buyerGroupAvailabilityMode'),
+      'Unsupported modes should normalize back to Disabled in the preview response'
+    );
+    System.assertEquals(
+      0,
+      result.get('selectedFieldCount'),
+      'Null additional fields should normalize to zero selections'
+    );
+    System.assertEquals(
+      0,
+      result.get('estimatedProductCount'),
+      'Blank inputs should estimate zero active products in isolated test context'
+    );
+
+    List<Object> validationMessages = (List<Object>) result.get(
+      'validationMessages'
+    );
+    String combinedValidations = String.join(
+      new List<String>{
+        String.valueOf(validationMessages[0]),
+        String.valueOf(validationMessages[1]),
+        String.valueOf(validationMessages[2]),
+        String.valueOf(validationMessages[3]),
+        String.valueOf(validationMessages[4]),
+        String.valueOf(validationMessages[5])
+      },
+      ' '
+    );
+
+    System.assert(
+      combinedValidations.contains('Job label is required') &&
+      combinedValidations.contains('Developer Name is required') &&
+      combinedValidations.contains('Coveo Org Id is required') &&
+      combinedValidations.contains('Product Source Id is required') &&
+      combinedValidations.contains('Locale is required') &&
+      combinedValidations.contains('Buyer Group Availability Mode must be'),
+      'Preview should return the full validation summary for missing core fields and unsupported modes'
+    );
+
+    List<Object> warningMessages = (List<Object>) result.get('warningMessages');
+    String combinedWarnings = String.join(
+      new List<String>{
+        String.valueOf(warningMessages[0]),
+        String.valueOf(warningMessages[1]),
+        String.valueOf(warningMessages[2])
+      },
+      ' '
+    );
+
+    System.assert(
+      combinedWarnings.contains('No catalog is selected') &&
+      combinedWarnings.contains('global default builder') &&
+      combinedWarnings.contains('zero active products'),
+      'Preview should surface default non-blocking warnings for blank catalog, builder, and empty scope'
+    );
+  }
+
   // ============================================================
   // Tests for getActiveBuilderMapping()
   // ============================================================

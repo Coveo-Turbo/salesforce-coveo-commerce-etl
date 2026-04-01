@@ -244,6 +244,28 @@ public with sharing class CatalogJobRunner {
     Boolean runAvailability,
     String mode
   ) {
+    LaunchResult launch = createLaunchResult(config, mode);
+    JobLaunchHandle productLaunch = runProducts == true
+      ? launchProductJob(config.DeveloperName)
+      : null;
+    List<JobLaunchHandle> buyerGroupLaunches = runAvailability == true
+      ? launchBuyerGroupJobs(config)
+      : new List<JobLaunchHandle>();
+    appendLaunchHandles(
+      launch,
+      runProducts,
+      productLaunch,
+      runAvailability,
+      buyerGroupLaunches
+    );
+    return launch;
+  }
+
+  @TestVisible
+  private static LaunchResult createLaunchResult(
+    CatalogJobConfig__mdt config,
+    String mode
+  ) {
     LaunchResult launch = new LaunchResult();
     launch.runKey =
       config.DeveloperName +
@@ -260,16 +282,24 @@ public with sharing class CatalogJobRunner {
       CatalogBuyerGroupAvailabilityMode.resolve(config);
     launch.launchedAt = DateTime.now().formatGmt('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
     launch.jobs = new List<JobLaunchHandle>();
-
-    if (runProducts == true) {
-      launch.jobs.add(launchProductJob(config.DeveloperName));
-    }
-
-    if (runAvailability == true) {
-      launch.jobs.addAll(launchBuyerGroupJobs(config));
-    }
-
     return launch;
+  }
+
+  @TestVisible
+  private static void appendLaunchHandles(
+    LaunchResult launch,
+    Boolean runProducts,
+    JobLaunchHandle productLaunch,
+    Boolean runAvailability,
+    List<JobLaunchHandle> buyerGroupLaunches
+  ) {
+    if (runProducts == true && productLaunch != null) {
+      launch.jobs.add(productLaunch);
+    }
+
+    if (runAvailability == true && buyerGroupLaunches != null) {
+      launch.jobs.addAll(buyerGroupLaunches);
+    }
   }
 
   private static JobLaunchHandle launchProductJob(String developerName) {
@@ -308,6 +338,7 @@ public with sharing class CatalogJobRunner {
     return launchHandles;
   }
 
+  @TestVisible
   private static JobLaunchHandle createLaunchHandle(
     Id jobId,
     String channel,
@@ -355,6 +386,7 @@ public with sharing class CatalogJobRunner {
     ];
   }
 
+  @TestVisible
   private static void validateBuyerGroupAccessEnabled(
     CatalogJobConfig__mdt config
   ) {
@@ -367,6 +399,7 @@ public with sharing class CatalogJobRunner {
     }
   }
 
+  @TestVisible
   private static String inferChannel(String apexClassName) {
     if (apexClassName == AVAILABILITY_BATCH_CLASS) {
       return 'availability';
@@ -377,6 +410,7 @@ public with sharing class CatalogJobRunner {
     return 'products';
   }
 
+  @TestVisible
   private static Boolean isTerminalStatus(String status) {
     return status == 'Completed' ||
       status == 'Failed' ||
