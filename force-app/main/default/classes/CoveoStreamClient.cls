@@ -47,16 +47,51 @@ public with sharing class CoveoStreamClient {
     return res.getBody();
   }
 
+  @TestVisible
+  private static Boolean isThrottleResponse(HttpResponse response) {
+    if (response == null) {
+      return false;
+    }
+
+    Integer statusCode = response.getStatusCode();
+    if (statusCode == 429) {
+      return true;
+    }
+
+    String body = response.getBody();
+    return String.isNotBlank(body) &&
+      (body.contains('ORGANIZATION_IS_THROTTLED') ||
+      body.contains('STREAM_API_BURST_LIMIT_REACHED'));
+  }
+
+  @TestVisible
+  private static String buildErrorMessage(HttpResponse response) {
+    String message =
+      'Coveo error: ' +
+      response.getStatus() +
+      ' ' +
+      response.getBody();
+
+    if (!isThrottleResponse(response)) {
+      return message;
+    }
+
+    String retryAfter = response == null ? null : response.getHeader('Retry-After');
+    if (String.isNotBlank(retryAfter)) {
+      message += ' Retry after ' + retryAfter.trim() + ' seconds.';
+    }
+
+    message +=
+      ' Coveo throttled this Stream API request. Reduce request frequency or increase the embedded access batch size to lower the number of /stream/update calls.';
+    return message;
+  }
+
   private void ensureOk(HttpResponse r) {
     if (r.getStatusCode() >= 300)
-      throw new CalloutException(
-        'Coveo error: ' + r.getStatus() + ' ' + r.getBody()
-      );
+      throw new CalloutException(buildErrorMessage(r));
   }
   private void ensureAccepted(HttpResponse r) {
     if (r.getStatusCode() >= 400)
-      throw new CalloutException(
-        'Coveo error: ' + r.getStatus() + ' ' + r.getBody()
-      );
+      throw new CalloutException(buildErrorMessage(r));
   }
 }

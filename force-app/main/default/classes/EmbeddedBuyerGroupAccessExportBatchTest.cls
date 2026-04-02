@@ -65,6 +65,14 @@ private class EmbeddedBuyerGroupAccessExportBatchTest {
       Family = 'Hardware',
       IsActive = true
     );
+    if (
+      Product2.SObjectType
+        .getDescribe()
+        .fields.getMap()
+        .containsKey('Item_Number__c')
+    ) {
+      product.put('Item_Number__c', code);
+    }
     insert product;
     return product;
   }
@@ -172,6 +180,39 @@ private class EmbeddedBuyerGroupAccessExportBatchTest {
     System.assert(
       logs[0].Payload__c.contains('"sf_webstore_id"'),
       'Embedded access payloads should replace the Web Store field'
+    );
+  }
+
+  @IsTest
+  static void testGetBatchSize_usesLargeMinimumAndCapsAtPlatformMaximum() {
+    CatalogJobConfig__mdt belowMinimum = createConfig('CatalogJsonBuilderDefault');
+    belowMinimum.BatchSize__c = 20;
+    EmbeddedBuyerGroupAccessExportBatch normalizedBatch =
+      new EmbeddedBuyerGroupAccessExportBatch(belowMinimum);
+    System.assertEquals(
+      EmbeddedBuyerGroupAccessExportBatch.DEFAULT_BATCH_SIZE,
+      normalizedBatch.getBatchSize(),
+      'Embedded access syncs should clamp small batch sizes upward to reduce Stream API burst throttling'
+    );
+
+    CatalogJobConfig__mdt aboveMaximum = createConfig('CatalogJsonBuilderDefault');
+    aboveMaximum.BatchSize__c = 2500;
+    EmbeddedBuyerGroupAccessExportBatch cappedBatch =
+      new EmbeddedBuyerGroupAccessExportBatch(aboveMaximum);
+    System.assertEquals(
+      EmbeddedBuyerGroupAccessExportBatch.MAX_BATCH_SIZE,
+      cappedBatch.getBatchSize(),
+      'Embedded access syncs should respect the platform executeBatch maximum scope'
+    );
+
+    CatalogJobConfig__mdt defaultedConfig = createConfig('CatalogJsonBuilderDefault');
+    defaultedConfig.BatchSize__c = null;
+    EmbeddedBuyerGroupAccessExportBatch defaultedBatch =
+      new EmbeddedBuyerGroupAccessExportBatch(defaultedConfig);
+    System.assertEquals(
+      EmbeddedBuyerGroupAccessExportBatch.DEFAULT_BATCH_SIZE,
+      defaultedBatch.getBatchSize(),
+      'Embedded access syncs should default to the larger throttling-safe scope'
     );
   }
 }
