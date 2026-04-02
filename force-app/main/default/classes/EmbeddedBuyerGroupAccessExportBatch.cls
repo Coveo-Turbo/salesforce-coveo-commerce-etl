@@ -1,4 +1,7 @@
 global with sharing class EmbeddedBuyerGroupAccessExportBatch implements Database.Batchable<SObject>, Database.AllowsCallouts {
+  @TestVisible private static final Integer DEFAULT_BATCH_SIZE = 1000;
+  @TestVisible private static final Integer MAX_BATCH_SIZE = 2000;
+
   private final CatalogJobConfig__mdt jobConfig;
 
   public EmbeddedBuyerGroupAccessExportBatch(String jobConfigDeveloperName) {
@@ -51,10 +54,17 @@ global with sharing class EmbeddedBuyerGroupAccessExportBatch implements Databas
   }
 
   public Integer getBatchSize() {
-    if (jobConfig.BatchSize__c != null) {
-      return Integer.valueOf(jobConfig.BatchSize__c);
-    }
-    return 50;
+    // Access-only syncs emit one Stream API update per batch scope. Use a much
+    // larger default and floor than the full product sync to avoid burst
+    // throttling on large catalogs, especially in non-production orgs.
+    Integer configuredBatchSize = jobConfig.BatchSize__c == null
+      ? DEFAULT_BATCH_SIZE
+      : Integer.valueOf(jobConfig.BatchSize__c);
+    Integer normalizedBatchSize = Math.max(
+      configuredBatchSize,
+      DEFAULT_BATCH_SIZE
+    );
+    return Math.min(normalizedBatchSize, MAX_BATCH_SIZE);
   }
 
   global Database.QueryLocator start(Database.BatchableContext bc) {

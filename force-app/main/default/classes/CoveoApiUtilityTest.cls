@@ -6,11 +6,22 @@ private class CoveoApiUtilityTest {
     Integer statusCode;
     String status;
     String body;
+    Map<String, String> headers;
 
     MockResponse(Integer statusCode, String status, String body) {
+      this(statusCode, status, body, null);
+    }
+
+    MockResponse(
+      Integer statusCode,
+      String status,
+      String body,
+      Map<String, String> headers
+    ) {
       this.statusCode = statusCode;
       this.status = status;
       this.body = body;
+      this.headers = headers == null ? new Map<String, String>() : headers;
     }
   }
 
@@ -31,6 +42,9 @@ private class CoveoApiUtilityTest {
           res.setStatusCode(config.statusCode);
           res.setStatus(config.status);
           res.setBody(config.body);
+          for (String headerName : config.headers.keySet()) {
+            res.setHeader(headerName, config.headers.get(headerName));
+          }
           return res;
         }
       }
@@ -229,6 +243,49 @@ private class CoveoApiUtilityTest {
       System.assert(e.getMessage().contains('retry later'));
     }
     System.assertEquals(true, deleteFailed);
+  }
+
+  @IsTest
+  static void testStreamClientThrottleError_includesRetryAndBatchGuidance() {
+    Test.setMock(
+      HttpCalloutMock.class,
+      new RecordingHttpMock(
+        new Map<String, MockResponse>{
+          '/stream/update' => new MockResponse(
+            400,
+            '400 Bad Request',
+            '{"errorCode":"ORGANIZATION_IS_THROTTLED","message":"STREAM_API_BURST_LIMIT_REACHED"}',
+            new Map<String, String>{ 'Retry-After' => '3' }
+          )
+        }
+      )
+    );
+
+    CoveoStreamClient client = new CoveoStreamClient('org-123', 'source-456');
+
+    Boolean updateFailed = false;
+    try {
+      client.streamUpdate('file-123');
+    } catch (CalloutException e) {
+      updateFailed = true;
+      System.assert(
+        e
+          .getMessage()
+          .contains('ORGANIZATION_IS_THROTTLED'),
+        'The raw throttle error should remain visible in the exception message'
+      );
+      System.assert(
+        e.getMessage().contains('Retry after 3 seconds.'),
+        'Throttle errors should surface the Retry-After header when provided'
+      );
+      System.assert(
+        e
+          .getMessage()
+          .contains('increase the embedded access batch size'),
+        'Throttle errors should guide operators toward the safer embedded access scope size'
+      );
+    }
+    System.assertEquals(true, updateFailed);
   }
 
   @IsTest
