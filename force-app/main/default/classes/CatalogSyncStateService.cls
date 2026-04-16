@@ -1,0 +1,478 @@
+public with sharing class CatalogSyncStateService {
+  @TestVisible
+  private static Map<String, CatalogJobConfig__mdt> testConfigsByDeveloperName;
+  @TestVisible
+  private static Map<String, Catalog_Sync_State__c> testStatesByTargetKey;
+
+  public class Snapshot {
+    public String resolvedTargetKey { get; set; }
+    public String syncMode { get; set; }
+    public String baselineFullConfigDeveloperName { get; set; }
+    public String lastSuccessfulFullSyncAt { get; set; }
+    public String lastSuccessfulSyncAt { get; set; }
+    public String lastRunMode { get; set; }
+    public String lastSuccessfulConfigDeveloperName { get; set; }
+    public Boolean deltaReady { get; set; }
+    public String deltaReadinessMessage { get; set; }
+  }
+
+  public class DeltaReadiness {
+    public CatalogJobConfig__mdt baselineConfig { get; set; }
+    public Catalog_Sync_State__c stateRecord { get; set; }
+    public String resolvedTargetKey { get; set; }
+    public Boolean isReady { get; set; }
+    public String message { get; set; }
+  }
+
+  public static String buildResolvedTargetKey(CatalogJobConfig__mdt jobConfig) {
+    List<String> resolvedTarget = new List<String>{
+      'orgId',
+      normalizeText(jobConfig == null ? null : jobConfig.CoveoOrgId__c),
+      'sourceId',
+      normalizeText(jobConfig == null ? null : jobConfig.SourceId__c),
+      'builderClassName',
+      CatalogJsonBuilderFactory.resolveBuilderClassName(
+        jobConfig == null ? null : jobConfig.BuilderType__c
+      ),
+      'catalogId',
+      normalizeText(jobConfig == null ? null : jobConfig.CatalogId__c),
+      'productFilter',
+      normalizeText(
+        jobConfig == null ? null : jobConfig.ProductFilter__c
+      ),
+      'additionalProductFields',
+      canonicalizeCsv(
+        jobConfig == null ? null : jobConfig.AdditionalProductFields__c
+      ),
+      'locale',
+      normalizeText(jobConfig == null ? null : jobConfig.Locale__c),
+      'buyerGroupAvailabilityMode',
+      CatalogBuyerGroupAvailabilityMode.resolve(
+        jobConfig
+      ),
+      'embeddedWebStoreId',
+      (jobConfig != null &&
+          CatalogBuyerGroupAvailabilityMode.usesEmbedded(jobConfig))
+        ? normalizeText(jobConfig.WebStoreId__c)
+        : ''
+    };
+
+    return EncodingUtil.convertToHex(
+      Crypto.generateDigest('SHA-256', Blob.valueOf(JSON.serialize(resolvedTarget)))
+    );
+  }
+
+  public static Map<String, Snapshot> getSnapshotsByDeveloperName(
+    List<CatalogJobConfig__mdt> configs
+  ) {
+    Map<String, Snapshot> snapshotsByDeveloperName = new Map<String, Snapshot>();
+
+    if (configs == null || configs.isEmpty()) {
+      return snapshotsByDeveloperName;
+    }
+
+    Set<String> deltaBaselineNames = new Set<String>();
+    Map<String, String> targetKeyByDeveloperName = new Map<String, String>();
+
+    for (CatalogJobConfig__mdt config : configs) {
+      if (String.isBlank(config.DeveloperName)) {
+        continue;
+      }
+
+      targetKeyByDeveloperName.put(
+        config.DeveloperName,
+        buildResolvedTargetKey(config)
+      );
+
+      if (
+        CatalogSyncMode.isDelta(config) &&
+        String.isNotBlank(config.BaselineFullConfigDeveloperName__c)
+      ) {
+        deltaBaselineNames.add(config.BaselineFullConfigDeveloperName__c.trim());
+      }
+    }
+
+    Map<String, CatalogJobConfig__mdt> baselineConfigsByDeveloperName =
+      loadConfigsByDeveloperName(deltaBaselineNames);
+    Set<String> stateKeys = new Set<String>();
+    stateKeys.addAll(targetKeyByDeveloperName.values());
+
+    Map<String, String> baselineKeyByDeveloperName = new Map<String, String>();
+    for (CatalogJobConfig__mdt baselineConfig : baselineConfigsByDeveloperName.values()) {
+      String baselineTargetKey = buildResolvedTargetKey(baselineConfig);
+      baselineKeyByDeveloperName.put(
+        baselineConfig.DeveloperName,
+        baselineTargetKey
+      );
+      stateKeys.add(baselineTargetKey);
+    }
+
+    Map<String, Catalog_Sync_State__c> statesByTargetKey = loadStatesByTargetKey(
+      stateKeys
+    );
+
+    for (CatalogJobConfig__mdt config : configs) {
+      if (String.isBlank(config.DeveloperName)) {
+        continue;
+      }
+
+      String targetKey = targetKeyByDeveloperName.get(config.DeveloperName);
+      CatalogJobConfig__mdt baselineConfig = String.isBlank(
+          config.BaselineFullConfigDeveloperName__c
+        )
+        ? null
+        : baselineConfigsByDeveloperName.get(
+            config.BaselineFullConfigDeveloperName__c.trim()
+          );
+      Snapshot snapshot = buildSnapshot(
+        config,
+        baselineConfig,
+        targetKey,
+        baselineConfig == null
+          ? null
+          : baselineKeyByDeveloperName.get(baselineConfig.DeveloperName),
+        statesByTargetKey.get(targetKey)
+      );
+      snapshotsByDeveloperName.put(config.DeveloperName, snapshot);
+    }
+
+    return snapshotsByDeveloperName;
+  }
+
+  public static DeltaReadiness requireDeltaReadiness(CatalogJobConfig__mdt config) {
+    DeltaReadiness readiness = evaluateDeltaReadiness(config);
+    if (readiness.isReady != true) {
+      throw new CatalogJobConfigException(readiness.message);
+    }
+    return readiness;
+  }
+
+  public static DeltaReadiness evaluateDeltaReadiness(CatalogJobConfig__mdt config) {
+    DeltaReadiness readiness = new DeltaReadiness();
+    readiness.resolvedTargetKey = buildResolvedTargetKey(config);
+    readiness.isReady = false;
+    readiness.message = 'Delta sync state is unavailable.';
+
+    if (!CatalogSyncMode.isDelta(config)) {
+      readiness.isReady = true;
+      readiness.message = 'Full sync configuration is ready.';
+      return readiness;
+    }
+
+    if (String.isBlank(config.BaselineFullConfigDeveloperName__c)) {
+      readiness.message =
+        'BaselineFullConfigDeveloperName__c is required for Delta sync mode.';
+      return readiness;
+    }
+
+    Map<String, CatalogJobConfig__mdt> configsByDeveloperName = loadConfigsByDeveloperName(
+      new Set<String>{ config.BaselineFullConfigDeveloperName__c.trim() }
+    );
+    readiness.baselineConfig = configsByDeveloperName.get(
+      config.BaselineFullConfigDeveloperName__c.trim()
+    );
+
+    if (readiness.baselineConfig == null) {
+      readiness.message =
+        'Baseline full config "' +
+        config.BaselineFullConfigDeveloperName__c.trim() +
+        '" was not found.';
+      return readiness;
+    }
+
+    if (!CatalogSyncMode.isFull(readiness.baselineConfig)) {
+      readiness.message =
+        'Baseline full config "' +
+        readiness.baselineConfig.DeveloperName +
+        '" must use SyncMode__c = Full.';
+      return readiness;
+    }
+
+    String baselineTargetKey = buildResolvedTargetKey(readiness.baselineConfig);
+    if (baselineTargetKey != readiness.resolvedTargetKey) {
+      readiness.message =
+        'Baseline full config "' +
+        readiness.baselineConfig.DeveloperName +
+        '" does not resolve to the same export target as delta config "' +
+        config.DeveloperName +
+        '".';
+      return readiness;
+    }
+
+    readiness.stateRecord = loadStateByTargetKey(readiness.resolvedTargetKey);
+    if (
+      readiness.stateRecord == null ||
+      readiness.stateRecord.LastSuccessfulFullSyncAt__c == null
+    ) {
+      readiness.message =
+        'Run the baseline full sync once before running delta sync "' +
+        config.DeveloperName +
+        '".';
+      return readiness;
+    }
+
+    readiness.isReady = true;
+    readiness.message = 'Delta sync is ready.';
+    return readiness;
+  }
+
+  public static void recordSuccessfulFullSync(
+    CatalogJobConfig__mdt config,
+    Datetime cutoff
+  ) {
+    String targetKey = buildResolvedTargetKey(config);
+    Catalog_Sync_State__c stateRecord = loadStateByTargetKey(targetKey);
+    if (stateRecord == null) {
+      stateRecord = new Catalog_Sync_State__c();
+    }
+
+    stateRecord.ResolvedTargetKey__c = targetKey;
+    stateRecord.BaselineFullConfigDeveloperName__c = config.DeveloperName;
+    stateRecord.LastSuccessfulFullSyncAt__c = cutoff;
+    stateRecord.LastSuccessfulSyncAt__c = cutoff;
+    stateRecord.LastRunMode__c = CatalogSyncMode.FULL;
+    stateRecord.LastSuccessfulConfigDeveloperName__c = config.DeveloperName;
+    upsert stateRecord ResolvedTargetKey__c;
+  }
+
+  public static void recordSuccessfulDeltaSync(
+    CatalogJobConfig__mdt config,
+    Datetime cutoff
+  ) {
+    String targetKey = buildResolvedTargetKey(config);
+    Catalog_Sync_State__c stateRecord = loadStateByTargetKey(targetKey);
+    if (stateRecord == null) {
+      stateRecord = new Catalog_Sync_State__c();
+      stateRecord.ResolvedTargetKey__c = targetKey;
+    }
+
+    if (String.isNotBlank(config.BaselineFullConfigDeveloperName__c)) {
+      stateRecord.BaselineFullConfigDeveloperName__c =
+        config.BaselineFullConfigDeveloperName__c.trim();
+    }
+    stateRecord.LastSuccessfulSyncAt__c = cutoff;
+    stateRecord.LastRunMode__c = CatalogSyncMode.DELTA;
+    stateRecord.LastSuccessfulConfigDeveloperName__c = config.DeveloperName;
+    upsert stateRecord ResolvedTargetKey__c;
+  }
+
+  @TestVisible
+  private static void clearTestOverrides() {
+    testConfigsByDeveloperName = null;
+    testStatesByTargetKey = null;
+  }
+
+  private static Snapshot buildSnapshot(
+    CatalogJobConfig__mdt config,
+    CatalogJobConfig__mdt baselineConfig,
+    String targetKey,
+    String baselineTargetKey,
+    Catalog_Sync_State__c stateRecord
+  ) {
+    Snapshot snapshot = new Snapshot();
+    snapshot.resolvedTargetKey = targetKey;
+    snapshot.syncMode = CatalogSyncMode.resolve(config);
+    snapshot.baselineFullConfigDeveloperName = String.isBlank(
+        config.BaselineFullConfigDeveloperName__c
+      )
+      ? null
+      : config.BaselineFullConfigDeveloperName__c.trim();
+    snapshot.lastSuccessfulFullSyncAt = formatDatetime(
+      stateRecord == null ? null : stateRecord.LastSuccessfulFullSyncAt__c
+    );
+    snapshot.lastSuccessfulSyncAt = formatDatetime(
+      stateRecord == null ? null : stateRecord.LastSuccessfulSyncAt__c
+    );
+    snapshot.lastRunMode = stateRecord == null ? null : stateRecord.LastRunMode__c;
+    snapshot.lastSuccessfulConfigDeveloperName = stateRecord == null
+      ? null
+      : stateRecord.LastSuccessfulConfigDeveloperName__c;
+
+    if (!CatalogSyncMode.isDelta(config)) {
+      snapshot.deltaReady = true;
+      snapshot.deltaReadinessMessage = 'Full sync establishes the baseline.';
+      return snapshot;
+    }
+
+    if (String.isBlank(snapshot.baselineFullConfigDeveloperName)) {
+      snapshot.deltaReady = false;
+      snapshot.deltaReadinessMessage =
+        'Set BaselineFullConfigDeveloperName__c before running delta sync.';
+      return snapshot;
+    }
+
+    if (baselineConfig == null) {
+      snapshot.deltaReady = false;
+      snapshot.deltaReadinessMessage =
+        'Baseline full config "' +
+        snapshot.baselineFullConfigDeveloperName +
+        '" was not found.';
+      return snapshot;
+    }
+
+    if (!CatalogSyncMode.isFull(baselineConfig)) {
+      snapshot.deltaReady = false;
+      snapshot.deltaReadinessMessage =
+        'Baseline full config must use SyncMode__c = Full.';
+      return snapshot;
+    }
+
+    if (baselineTargetKey != targetKey) {
+      snapshot.deltaReady = false;
+      snapshot.deltaReadinessMessage =
+        'Baseline full config does not resolve to the same export target.';
+      return snapshot;
+    }
+
+    if (stateRecord == null || stateRecord.LastSuccessfulFullSyncAt__c == null) {
+      snapshot.deltaReady = false;
+      snapshot.deltaReadinessMessage =
+        'Run the baseline full sync once before running delta sync.';
+      return snapshot;
+    }
+
+    snapshot.deltaReady = true;
+    snapshot.deltaReadinessMessage = 'Ready for delta sync.';
+    return snapshot;
+  }
+
+  private static Map<String, CatalogJobConfig__mdt> loadConfigsByDeveloperName(
+    Set<String> developerNames
+  ) {
+    Map<String, CatalogJobConfig__mdt> configsByDeveloperName =
+      new Map<String, CatalogJobConfig__mdt>();
+
+    if (developerNames == null || developerNames.isEmpty()) {
+      return configsByDeveloperName;
+    }
+
+    if (Test.isRunningTest() && testConfigsByDeveloperName != null) {
+      for (String developerName : developerNames) {
+        CatalogJobConfig__mdt config = testConfigsByDeveloperName.get(
+          developerName
+        );
+        if (config != null) {
+          configsByDeveloperName.put(developerName, config);
+        }
+      }
+      return configsByDeveloperName;
+    }
+
+    for (CatalogJobConfig__mdt config : [
+      SELECT
+        DeveloperName,
+        Label,
+        CoveoOrgId__c,
+        SourceId__c,
+        AvailabilitySourceId__c,
+        WebStoreId__c,
+        Locale__c,
+        IsActive__c,
+        ProductFilter__c,
+        AdditionalProductFields__c,
+        BuilderType__c,
+        CatalogId__c,
+        BatchSize__c,
+        EnableBuyerGroupAvailability__c,
+        BuyerGroupAvailabilityMode__c,
+        SyncMode__c,
+        BaselineFullConfigDeveloperName__c
+      FROM CatalogJobConfig__mdt
+      WHERE DeveloperName IN :developerNames
+    ]) {
+      configsByDeveloperName.put(config.DeveloperName, config);
+    }
+
+    return configsByDeveloperName;
+  }
+
+  private static Map<String, Catalog_Sync_State__c> loadStatesByTargetKey(
+    Set<String> targetKeys
+  ) {
+    Map<String, Catalog_Sync_State__c> statesByTargetKey =
+      new Map<String, Catalog_Sync_State__c>();
+
+    if (targetKeys == null || targetKeys.isEmpty()) {
+      return statesByTargetKey;
+    }
+
+    if (Test.isRunningTest() && testStatesByTargetKey != null) {
+      for (String targetKey : targetKeys) {
+        Catalog_Sync_State__c stateRecord = testStatesByTargetKey.get(targetKey);
+        if (stateRecord != null) {
+          statesByTargetKey.put(targetKey, stateRecord);
+        }
+      }
+      return statesByTargetKey;
+    }
+
+    for (Catalog_Sync_State__c stateRecord : [
+      SELECT
+        Id,
+        ResolvedTargetKey__c,
+        BaselineFullConfigDeveloperName__c,
+        LastSuccessfulFullSyncAt__c,
+        LastSuccessfulSyncAt__c,
+        LastRunMode__c,
+        LastSuccessfulConfigDeveloperName__c
+      FROM Catalog_Sync_State__c
+      WHERE ResolvedTargetKey__c IN :targetKeys
+    ]) {
+      statesByTargetKey.put(stateRecord.ResolvedTargetKey__c, stateRecord);
+    }
+
+    return statesByTargetKey;
+  }
+
+  private static Catalog_Sync_State__c loadStateByTargetKey(String targetKey) {
+    if (String.isBlank(targetKey)) {
+      return null;
+    }
+
+    if (Test.isRunningTest() && testStatesByTargetKey != null) {
+      return testStatesByTargetKey.get(targetKey);
+    }
+
+    List<Catalog_Sync_State__c> stateRecords = [
+      SELECT
+        Id,
+        ResolvedTargetKey__c,
+        BaselineFullConfigDeveloperName__c,
+        LastSuccessfulFullSyncAt__c,
+        LastSuccessfulSyncAt__c,
+        LastRunMode__c,
+        LastSuccessfulConfigDeveloperName__c
+      FROM Catalog_Sync_State__c
+      WHERE ResolvedTargetKey__c = :targetKey
+      LIMIT 1
+    ];
+
+    return stateRecords.isEmpty() ? null : stateRecords[0];
+  }
+
+  private static String canonicalizeCsv(String csvValue) {
+    List<String> normalizedValues = new List<String>();
+
+    if (String.isBlank(csvValue)) {
+      return '';
+    }
+
+    for (String token : csvValue.split(',')) {
+      String normalizedToken = normalizeText(token).toLowerCase();
+      if (String.isNotBlank(normalizedToken) && !normalizedValues.contains(normalizedToken)) {
+        normalizedValues.add(normalizedToken);
+      }
+    }
+
+    normalizedValues.sort();
+    return String.join(normalizedValues, ',');
+  }
+
+  private static String normalizeText(String value) {
+    return String.isBlank(value) ? '' : value.trim();
+  }
+
+  private static String formatDatetime(Datetime value) {
+    return value == null ? null : value.formatGmt('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
+  }
+}

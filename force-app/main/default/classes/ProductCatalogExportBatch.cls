@@ -20,6 +20,7 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   // Track the first orderingId from the initial batch to use in deleteOlderThan
   // Using Database.Stateful only for this field to preserve ordering across batches
   public Long firstOrderingId;
+  public Datetime runCutoff;
 
   public ProductCatalogExportBatch(String jobConfigDeveloperName) {
     this(loadJobConfig(jobConfigDeveloperName), getStandardPricebookId());
@@ -32,6 +33,12 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   ) {
     if (jobConfig == null) {
       throw new CatalogJobException('Catalog job config is required.');
+    }
+
+    if (!CatalogSyncMode.isFull(jobConfig)) {
+      throw new CatalogJobConfigException(
+        'ProductCatalogExportBatch requires SyncMode__c = Full.'
+      );
     }
 
     this.jobConfig = jobConfig;
@@ -54,11 +61,13 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       ProductFilter__c,
       AdditionalProductFields__c,
       BuilderType__c,
-      CatalogId__c,
-      BatchSize__c,
+        CatalogId__c,
+        BatchSize__c,
       EnablePayloadLogging__c,
       EnableBuyerGroupAvailability__c,
-      BuyerGroupAvailabilityMode__c
+      BuyerGroupAvailabilityMode__c,
+      SyncMode__c,
+      BaselineFullConfigDeveloperName__c
       FROM CatalogJobConfig__mdt
       WHERE DeveloperName = :jobConfigDeveloperName
       LIMIT 1
@@ -73,7 +82,12 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     return configs[0];
   }
 
-  private static Id getStandardPricebookId() {
+  @TestVisible
+  public static Id getStandardPricebookId() {
+    if (Test.isRunningTest()) {
+      return Test.getStandardPricebookId();
+    }
+
     return [
       SELECT Id
       FROM Pricebook2
@@ -106,41 +120,10 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   }
 
   global Database.QueryLocator start(Database.BatchableContext bc) {
-    ICatalogJsonBuilder builder = CatalogProductIdentityResolver.getBuilder(
+    runCutoff = System.now();
+    List<String> fields = CatalogProductExportSupport.getRequiredProductFields(
       jobConfig
     );
-    List<String> fields = new List<String>{
-      'Id',
-      'Name',
-      'StockKeepingUnit',
-      'Family',
-      'ProductCode',
-      'Description',
-      'QuantityUnitOfMeasure',
-      'IsActive',
-      'Type',
-      'DisplayUrl'
-    };
-    for (
-      String fieldName : CatalogProductIdentityResolver.getRequiredProductFields(
-        builder
-      )
-    ) {
-      if (!fields.contains(fieldName)) {
-        fields.add(fieldName);
-      }
-    }
-    if (CatalogBuyerGroupAvailabilityMode.usesEmbedded(jobConfig)) {
-      for (
-        String fieldName : CatalogBuyerGroupAccessResolver.getRequiredProductFields(
-          builder
-        )
-      ) {
-        if (!fields.contains(fieldName)) {
-          fields.add(fieldName);
-        }
-      }
-    }
     Database.QueryLocator locator = CatalogJobScopeUtil.buildProductQueryLocator(
       jobConfig,
       fields,
@@ -152,52 +135,15 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   }
 
   global void execute(Database.BatchableContext bc, List<Product2> scope) {
-    // Query all active pricebook entries for products in scope
-    // Note: Only active entries with prices are included to optimize query volume
-    Map<Id, Map<String, Decimal>> pricesByProduct = new Map<Id, Map<String, Decimal>>();
+    Map<Id, Map<String, Decimal>> pricesByProduct =
+      CatalogProductExportSupport.loadPricesByProduct(scope, stdPricebookId);
 
-    for (PricebookEntry pbe : [
-      SELECT Id, Product2Id, Pricebook2Id, UnitPrice
-      FROM PricebookEntry
-      WHERE Product2Id IN :scope AND IsActive = TRUE AND UnitPrice != NULL
-    ]) {
-      if (pbe.Product2Id == null) {
-        continue;
-      }
-
-      if (!pricesByProduct.containsKey(pbe.Product2Id)) {
-        pricesByProduct.put(pbe.Product2Id, new Map<String, Decimal>());
-      }
-
-      // Use empty string for standard pricebook, PricebookId string for others
-      String key = (pbe.Pricebook2Id == stdPricebookId)
-        ? ''
-        : String.valueOf(pbe.Pricebook2Id);
-      pricesByProduct.get(pbe.Product2Id).put(key, pbe.UnitPrice);
-    }
-
-    ICatalogJsonBuilder builder = CatalogJsonBuilderFactory.getForBuilderType(
-      jobConfig.BuilderType__c
-    );
-    String ndjsonPayload = builder.buildFullUpdateNdjson(
+    String ndjsonPayload = CatalogProductExportSupport.buildFullUpdatePayload(
+      jobConfig,
       scope,
       pricesByProduct,
       extraFieldNames
     );
-    if (CatalogBuyerGroupAvailabilityMode.usesEmbedded(jobConfig)) {
-      Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId =
-        CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
-          jobConfig,
-          scope,
-          builder
-        );
-      ndjsonPayload =
-        CatalogBuyerGroupPayloadDecorator.decorateFullUpdatePayload(
-          ndjsonPayload,
-          snapshotsByProductId,
-          jobConfig.WebStoreId__c
-        );
-    }
 
     System.debug(
       LoggingLevel.INFO,
@@ -210,69 +156,36 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     );
     System.debug('Coveo payload validation: ' + JSON.serialize(vr));
 
-    Blob ndjson = Blob.valueOf(ndjsonPayload);
-
-    CoveoStreamClient client = new CoveoStreamClient(
-      jobConfig.CoveoOrgId__c,
-      jobConfig.SourceId__c
-    );
-    Map<String, Object> container = client.createFileContainer();
-    System.debug(
-      LoggingLevel.DEBUG,
-      'Coveo file container response: ' + JSON.serialize(container)
-    );
-    client.uploadNdjson(
-      (String) container.get('uploadUri'),
-      (Map<String, Object>) container.get('requiredHeaders'),
-      ndjson
-    );
-
-    String updateResponse = client.streamUpdate(
-      (String) container.get('fileId')
-    );
+    CatalogProductExportSupport.StreamResult streamResult =
+      CatalogProductExportSupport.streamPayload(jobConfig, ndjsonPayload);
 
     System.debug(
       LoggingLevel.DEBUG,
-      'Coveo stream update response: ' + updateResponse
-    );
-
-    // Parse orderingId from response body
-    Map<String, Object> resMap = (Map<String, Object>) JSON.deserializeUntyped(
-      updateResponse
+      'Coveo stream update response: ' + streamResult.responseBody
     );
 
     // Capture the first orderingId from the first batch execution
     // This will be used in finish() to delete items from previous runs only
-    if (resMap.containsKey('orderingId') && resMap.get('orderingId') != null) {
-      Long oid = Long.valueOf(String.valueOf(resMap.get('orderingId')));
-      if (firstOrderingId == null) {
-        firstOrderingId = oid;
-      }
+    if (streamResult.orderingId != null && firstOrderingId == null) {
+      firstOrderingId = streamResult.orderingId;
     }
 
-    // Enqueue payload log AFTER callout to respect Salesforce governor limits
-    // Callout → DML ordering is required
-    if (jobConfig.EnablePayloadLogging__c == true) {
-      Coveo_Payload_Log__c log = new Coveo_Payload_Log__c(
-        ScopeSize__c = scope.size(),
-        OperationCount__c = vr.operationCount,
-        IsValid__c = vr.isValid,
-        Reason__c = vr.reason,
-        Payload__c = ndjsonPayload.left(32000) // guard against LT max
-      );
-
-      // Enqueue queueable job to insert log asynchronously
-      // This runs in a separate transaction, avoiding mixed DML
-      System.enqueueJob(
-        new CoveoPayloadLogQueueable(new List<Coveo_Payload_Log__c>{ log })
-      );
-    }
+    CatalogProductExportSupport.enqueuePayloadLogIfEnabled(
+      jobConfig,
+      scope.size(),
+      vr,
+      ndjsonPayload
+    );
   }
 
   global void finish(Database.BatchableContext bc) {
     System.debug(
       'ProductCatalogExportBatch.finish: firstOrderingId=' + firstOrderingId
     );
+
+    if (!batchCompletedWithoutErrors(bc)) {
+      return;
+    }
 
     // Delete older items for this specific source
     // Use firstOrderingId to preserve all items from the current run
@@ -282,8 +195,31 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       firstOrderingId
     );
 
+    CatalogSyncStateService.recordSuccessfulFullSync(
+      jobConfig,
+      runCutoff == null ? System.now() : runCutoff
+    );
+
     // Payload logs are inserted asynchronously via CoveoPayloadLogQueueable
     // when EnablePayloadLogging__c is enabled
+  }
+
+  @TestVisible
+  static Boolean batchCompletedWithoutErrors(Database.BatchableContext bc) {
+    if (bc == null) {
+      return true;
+    }
+
+    List<AsyncApexJob> jobs = [
+      SELECT Status, NumberOfErrors
+      FROM AsyncApexJob
+      WHERE Id = :bc.getJobId()
+      LIMIT 1
+    ];
+
+    return !jobs.isEmpty() &&
+      jobs[0].Status == 'Completed' &&
+      jobs[0].NumberOfErrors == 0;
   }
 
   @TestVisible

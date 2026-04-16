@@ -236,6 +236,23 @@ private class CoveoCommerceSetupControllerTest {
         config.containsKey('buyerGroupAvailabilityEnabled'),
         'Config should have buyerGroupAvailabilityEnabled key'
       );
+      System.assert(config.containsKey('syncMode'), 'Config should have syncMode key');
+      System.assert(
+        config.containsKey('baselineFullConfigDeveloperName'),
+        'Config should have baselineFullConfigDeveloperName key'
+      );
+      System.assert(
+        config.containsKey('deltaReady'),
+        'Config should have deltaReady key'
+      );
+      System.assert(
+        config.containsKey('lastSuccessfulFullSyncAt'),
+        'Config should have lastSuccessfulFullSyncAt key'
+      );
+      System.assert(
+        config.containsKey('lastSuccessfulSyncAt'),
+        'Config should have lastSuccessfulSyncAt key'
+      );
     }
   }
 
@@ -332,6 +349,8 @@ private class CoveoCommerceSetupControllerTest {
       'my-coveo-org',
       'catalog-products-us',
       null,
+      CatalogSyncMode.FULL,
+      null,
       null,
       null,
       'en-US',
@@ -375,6 +394,8 @@ private class CoveoCommerceSetupControllerTest {
       'my-coveo-org',
       'catalog-products-us',
       null,
+      CatalogSyncMode.FULL,
+      null,
       null,
       null,
       'en-US',
@@ -411,6 +432,8 @@ private class CoveoCommerceSetupControllerTest {
       'SCOPED_CATALOG_STORE',
       'my-coveo-org',
       'catalog-products-us',
+      null,
+      CatalogSyncMode.FULL,
       null,
       String.valueOf(previewData.get('catalogId')),
       null,
@@ -468,6 +491,8 @@ private class CoveoCommerceSetupControllerTest {
       'my-coveo-org',
       'catalog-products-us',
       null,
+      CatalogSyncMode.FULL,
+      null,
       String.valueOf(previewData.get('catalogId')),
       null,
       'en-US',
@@ -503,6 +528,8 @@ private class CoveoCommerceSetupControllerTest {
       'my-coveo-org',
       'catalog-products-us',
       'catalog-availability-us',
+      CatalogSyncMode.FULL,
+      null,
       null,
       '0ZE000000000001AAA',
       'en-US',
@@ -542,6 +569,8 @@ private class CoveoCommerceSetupControllerTest {
       '',
       '',
       '',
+      null,
+      CatalogSyncMode.FULL,
       null,
       null,
       null,
@@ -614,6 +643,58 @@ private class CoveoCommerceSetupControllerTest {
       combinedWarnings.contains('global default builder') &&
       combinedWarnings.contains('zero active products'),
       'Preview should surface default non-blocking warnings for blank catalog, builder, and empty scope'
+    );
+  }
+
+  @IsTest
+  static void testPreviewCatalogJobDraft_requiresBaselineForDeltaSync() {
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.previewCatalogJobDraft(
+      'Hourly Delta Sync',
+      'HOURLY_DELTA_SYNC',
+      'my-coveo-org',
+      'catalog-products-us',
+      null,
+      CatalogSyncMode.DELTA,
+      null,
+      null,
+      null,
+      'en-US',
+      'Commerce',
+      CatalogBuyerGroupAvailabilityMode.DISABLED,
+      null,
+      new List<String>()
+    );
+    Test.stopTest();
+
+    System.assertEquals(
+      CatalogSyncMode.DELTA,
+      result.get('syncMode'),
+      'Preview should normalize the draft sync mode'
+    );
+    System.assertEquals(
+      false,
+      result.get('isReady'),
+      'Delta previews should block readiness until a baseline full config is provided'
+    );
+
+    List<Object> validationMessages = (List<Object>) result.get(
+      'validationMessages'
+    );
+    Boolean foundBaselineMessage = false;
+    for (Object message : validationMessages) {
+      if (
+        String.valueOf(message)
+          .contains('Baseline Full Config Developer Name is required')
+      ) {
+        foundBaselineMessage = true;
+      }
+    }
+
+    System.assertEquals(
+      true,
+      foundBaselineMessage,
+      'Delta previews should explain that a baseline full config is required'
     );
   }
 

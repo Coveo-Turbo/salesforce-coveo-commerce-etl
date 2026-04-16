@@ -1,6 +1,7 @@
 import { LightningElement, wire, track } from "lwc";
 import { NavigationMixin } from "lightning/navigation";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
+import { refreshApex } from "@salesforce/apex";
 
 import getNamedCredentialStatus from "@salesforce/apex/CoveoCommerceSetupController.getNamedCredentialStatus";
 import getCatalogJobConfigs from "@salesforce/apex/CoveoCommerceSetupController.getCatalogJobConfigs";
@@ -13,10 +14,17 @@ import validateBuilderClass from "@salesforce/apex/CoveoCommerceSetupController.
 
 const TRUNCATE_LENGTH = 50;
 const PREVIEW_DEBOUNCE_MS = 350;
+const CONFIG_REFRESH_INTERVAL_MS = 15000;
 const BUYER_GROUP_MODE_DISABLED = "Disabled";
 const BUYER_GROUP_MODE_PAIRED = "PairedSource";
 const BUYER_GROUP_MODE_EMBEDDED = "Embedded";
 const BUYER_GROUP_MODE_DUAL = "DualWrite";
+const SYNC_MODE_FULL = "Full";
+const SYNC_MODE_DELTA = "Delta";
+const SYNC_MODE_OPTIONS = Object.freeze([
+  { label: "Full", value: SYNC_MODE_FULL },
+  { label: "Delta", value: SYNC_MODE_DELTA }
+]);
 const BUYER_GROUP_MODE_OPTIONS = Object.freeze([
   { label: "Disabled", value: BUYER_GROUP_MODE_DISABLED },
   { label: "Paired Source", value: BUYER_GROUP_MODE_PAIRED },
@@ -30,6 +38,8 @@ const DEFAULT_DRAFT = Object.freeze({
   coveoOrgId: "",
   sourceId: "",
   availabilitySourceId: "",
+  syncMode: SYNC_MODE_FULL,
+  baselineFullConfigDeveloperName: "",
   locale: "en-US",
   catalogId: "",
   webStoreId: "",
@@ -113,6 +123,10 @@ function formatBuyerGroupAvailabilityMode(mode) {
   }
 }
 
+function resolveSyncMode(mode) {
+  return mode === SYNC_MODE_DELTA ? SYNC_MODE_DELTA : SYNC_MODE_FULL;
+}
+
 export default class CoveoCommerceSetup extends NavigationMixin(
   LightningElement
 ) {
@@ -148,6 +162,13 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   namedCredentialSetupUrl = "/lightning/setup/NamedCredential/home";
   customMetadataSetupUrl = "/lightning/setup/CustomMetadata/home";
   previewRefreshTimeout;
+  configRefreshTimerId;
+  wiredConfigsResult;
+  isRefreshingCatalogConfigs = false;
+
+  connectedCallback() {
+    this.startCatalogConfigRefresh();
+  }
 
   @wire(getNamedCredentialStatus)
   wiredCredentialStatus({ data, error }) {
@@ -162,7 +183,9 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   }
 
   @wire(getCatalogJobConfigs)
-  wiredConfigs({ data, error }) {
+  wiredConfigs(result) {
+    this.wiredConfigsResult = result;
+    const { data, error } = result;
     this.isLoadingConfigs = false;
     if (data) {
       this.rawCatalogConfigs = data;
@@ -227,6 +250,11 @@ export default class CoveoCommerceSetup extends NavigationMixin(
 
   disconnectedCallback() {
     window.clearTimeout(this.previewRefreshTimeout);
+    this.stopCatalogConfigRefresh();
+  }
+
+  async handleRefreshCatalogJobs() {
+    await this.refreshCatalogJobConfigs();
   }
 
   get credentialStatusLabel() {
@@ -488,6 +516,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     return BUYER_GROUP_MODE_OPTIONS;
   }
 
+  get syncModeOptions() {
+    return SYNC_MODE_OPTIONS;
+  }
+
   get hasWorkspaceOptions() {
     return !this.isLoadingWorkspaceOptions;
   }
@@ -520,6 +552,14 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     return formatBuyerGroupAvailabilityMode(this.draft.buyerGroupAvailabilityMode);
   }
 
+  get selectedSyncModeLabel() {
+    return resolveSyncMode(this.draft.syncMode);
+  }
+
+  get isDeltaDraft() {
+    return this.selectedSyncModeLabel === SYNC_MODE_DELTA;
+  }
+
   get selectedCatalogLabel() {
     return (
       this.getOptionLabel(this.catalogOptions, this.draft.catalogId) ||
@@ -539,6 +579,14 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       this.getOptionLabel(this.builderTypeOptions, this.draft.builderType) ||
       "Global default"
     );
+  }
+
+  get draftSummaryBaselineText() {
+    if (!this.isDeltaDraft) {
+      return "Self (full sync establishes the baseline)";
+    }
+
+    return this.draft.baselineFullConfigDeveloperName || "(Required)";
   }
 
   get existingConfigLabelMatch() {
@@ -569,7 +617,9 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       this.draft.label ||
         this.draft.developerName ||
         this.draft.coveoOrgId ||
-        this.draft.sourceId ||
+      this.draft.sourceId ||
+        this.isDeltaDraft ||
+        this.draft.baselineFullConfigDeveloperName ||
         this.draft.availabilitySourceId ||
         this.draft.catalogId ||
         this.draft.webStoreId ||
@@ -657,6 +707,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       `MasterLabel: ${this.draft.label || "(Required)"}`,
       `CoveoOrgId__c: ${this.draft.coveoOrgId || "(Required)"}`,
       `SourceId__c: ${this.draft.sourceId || "(Required)"}`,
+      `SyncMode__c: ${this.selectedSyncModeLabel}`,
+      `BaselineFullConfigDeveloperName__c: ${
+        this.isDeltaDraft ? this.draft.baselineFullConfigDeveloperName || "(Required)" : ""
+      }`,
       `Locale__c: ${this.draft.locale || "(Required)"}`,
       `CatalogId__c: ${this.draft.catalogId || ""}`,
       `BuilderType__c: ${this.draft.builderType || ""}`,
@@ -1029,6 +1083,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       }
     }
 
+    if (fieldName === "syncMode" && resolveSyncMode(value) !== SYNC_MODE_DELTA) {
+      nextDraft.baselineFullConfigDeveloperName = "";
+    }
+
     this.draft = nextDraft;
     this.schedulePreviewRefresh();
   }
@@ -1105,6 +1163,9 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       coveoOrgId: this.draft.coveoOrgId,
       sourceId: this.draft.sourceId,
       availabilitySourceId: this.draft.availabilitySourceId,
+      syncMode: this.selectedSyncModeLabel,
+      baselineFullConfigDeveloperName:
+        this.draft.baselineFullConfigDeveloperName,
       catalogId: this.draft.catalogId,
       webStoreId: this.draft.webStoreId,
       locale: this.draft.locale,
@@ -1138,6 +1199,9 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       coveoOrgId: config.coveoOrgId || "",
       sourceId: config.sourceId || "",
       availabilitySourceId: config.availabilitySourceId || "",
+      syncMode: resolveSyncMode(config.syncMode),
+      baselineFullConfigDeveloperName:
+        config.baselineFullConfigDeveloperName || "",
       locale: config.locale || "en-US",
       catalogId: config.catalogId || "",
       webStoreId: config.webStoreId || "",
@@ -1209,6 +1273,45 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     return new Intl.NumberFormat().format(value || 0);
   }
 
+  startCatalogConfigRefresh() {
+    if (this.configRefreshTimerId) {
+      return;
+    }
+
+    this.configRefreshTimerId = window.setInterval(() => {
+      this.refreshCatalogJobConfigs();
+    }, CONFIG_REFRESH_INTERVAL_MS);
+  }
+
+  stopCatalogConfigRefresh() {
+    if (!this.configRefreshTimerId) {
+      return;
+    }
+
+    window.clearInterval(this.configRefreshTimerId);
+    this.configRefreshTimerId = null;
+  }
+
+  async refreshCatalogJobConfigs() {
+    if (
+      !this.wiredConfigsResult ||
+      this.isRefreshingCatalogConfigs ||
+      document.visibilityState === "hidden"
+    ) {
+      return;
+    }
+
+    this.isRefreshingCatalogConfigs = true;
+    try {
+      await refreshApex(this.wiredConfigsResult);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("Error refreshing catalog job configurations:", error);
+    } finally {
+      this.isRefreshingCatalogConfigs = false;
+    }
+  }
+
   refreshCatalogConfigs() {
     const selectedConfigId = this.selectedConfigRow?.id;
     this.catalogConfigs = (this.rawCatalogConfigs || []).map((config) =>
@@ -1230,6 +1333,9 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     const additionalFieldList = this.parseAdditionalFields(
       config.additionalProductFields
     );
+    const syncMode =
+      config.syncMode === SYNC_MODE_DELTA ? SYNC_MODE_DELTA : SYNC_MODE_FULL;
+    const deltaReady = syncMode === SYNC_MODE_DELTA ? config.deltaReady === true : true;
     const buyerGroupAvailabilityMode = resolveBuyerGroupAvailabilityMode(
       config.buyerGroupAvailabilityMode,
       config.buyerGroupAvailabilityEnabled
@@ -1262,6 +1368,17 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     const destinationSummaryParts = [
       `Org: ${config.coveoOrgId || "(Missing)"}`,
       `Products: ${config.sourceId || "(Missing)"}`
+    ];
+    const syncSummaryParts = [
+      `Mode: ${syncMode}`,
+      syncMode === SYNC_MODE_DELTA
+        ? deltaReady
+          ? "Delta ready"
+          : config.deltaReadinessMessage || "Delta blocked"
+        : "Seeds the trusted baseline",
+      `Baseline: ${
+        config.baselineFullConfigDeveloperName || (syncMode === SYNC_MODE_DELTA ? "(Missing)" : "Self")
+      }`
     ];
 
     if (buyerGroupAvailabilityEnabled) {
@@ -1328,9 +1445,27 @@ export default class CoveoCommerceSetup extends NavigationMixin(
         : "No product filter",
       statusSummary: [
         config.isActive ? "Active" : "Inactive",
+        `Sync: ${syncMode}`,
         buyerGroupAvailabilityEnabled
           ? `Access: ${buyerGroupAvailabilityModeLabel}`
           : "Access disabled"
+      ].join(" • "),
+      syncMode,
+      syncModeLabel: syncMode,
+      deltaReady,
+      deltaReadinessMessage:
+        config.deltaReadinessMessage ||
+        (syncMode === SYNC_MODE_DELTA
+          ? "Run the baseline full sync once before delta sync."
+          : "Full sync establishes the baseline."),
+      baselineFullConfigDeveloperName:
+        config.baselineFullConfigDeveloperName || "",
+      syncSummary: syncSummaryParts.join(" • "),
+      lastSuccessfulFullSyncAt: config.lastSuccessfulFullSyncAt || "",
+      lastSuccessfulSyncAt: config.lastSuccessfulSyncAt || "",
+      lastSyncSummary: [
+        `Last full: ${this.formatOptionalTimestamp(config.lastSuccessfulFullSyncAt, "Never")}`,
+        `Last sync: ${this.formatOptionalTimestamp(config.lastSuccessfulSyncAt, "Never")}`
       ].join(" • "),
       catalogLabel: catalogLabel || config.catalogId || "All active products",
       webStoreLabel: webStoreLabel || config.webStoreId || "Not selected",
@@ -1431,13 +1566,37 @@ export default class CoveoCommerceSetup extends NavigationMixin(
           ? ""
           : config.builderType || ""
       }`,
+      `SyncMode__c: ${config.syncMode || SYNC_MODE_FULL}`,
+      `BaselineFullConfigDeveloperName__c: ${
+        config.baselineFullConfigDeveloperName || ""
+      }`,
       `EnableBuyerGroupAvailability__c: ${Boolean(
         config.buyerGroupAvailabilityEnabled
       )}`,
       `ProductFilter__c: ${config.productFilter || ""}`,
       `AdditionalProductFields__c: ${(config.additionalFieldList || []).join(",")}`,
-      `IsActive__c: ${Boolean(config.isActive)}`
+      `IsActive__c: ${Boolean(config.isActive)}`,
+      `LastSuccessfulFullSyncAt: ${config.lastSuccessfulFullSyncAt || ""}`,
+      `LastSuccessfulSyncAt: ${config.lastSuccessfulSyncAt || ""}`,
+      `LastRunMode: ${config.lastRunMode || ""}`
     ].join("\n");
+  }
+
+  formatOptionalTimestamp(isoValue, fallbackValue) {
+    if (!isoValue) {
+      return fallbackValue;
+    }
+
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+      }).format(new Date(isoValue));
+    } catch (error) {
+      return isoValue;
+    }
   }
 
   showToast(title, message, variant) {

@@ -202,4 +202,16 @@ private class CatalogJsonBuilderFactoryTest {
 
     System.assert(exceptionThrown, 'Should throw exception for unknown class');
   }
+
+  @IsTest
+  static void testResolveBuilderClassName_returnsCanonicalClassNames() {
+    System.assertEquals(
+      'CatalogJsonBuilderGrouping',
+      CatalogJsonBuilderFactory.resolveBuilderClassName('grouping')
+    );
+    System.assertEquals(
+      'CatalogJsonBuilderDefault',
+      CatalogJsonBuilderFactory.resolveBuilderClassName('Default')
+    );
+  }
 }

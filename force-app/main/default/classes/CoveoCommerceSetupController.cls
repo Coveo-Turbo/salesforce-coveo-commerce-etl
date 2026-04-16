@@ -100,8 +100,7 @@ public with sharing class CoveoCommerceSetupController {
   @AuraEnabled(cacheable=true)
   public static List<Map<String, Object>> getCatalogJobConfigs() {
     List<Map<String, Object>> configs = new List<Map<String, Object>>();
-
-    for (CatalogJobConfig__mdt cfg : [
+    List<CatalogJobConfig__mdt> configRecords = [
       SELECT
         Id,
         DeveloperName,
@@ -117,10 +116,19 @@ public with sharing class CoveoCommerceSetupController {
         AdditionalProductFields__c,
         BuilderType__c,
         CatalogId__c,
-        EnableBuyerGroupAvailability__c
+        EnableBuyerGroupAvailability__c,
+        SyncMode__c,
+        BaselineFullConfigDeveloperName__c
       FROM CatalogJobConfig__mdt
       ORDER BY MasterLabel
-    ]) {
+    ];
+    Map<String, CatalogSyncStateService.Snapshot> snapshotsByDeveloperName =
+      CatalogSyncStateService.getSnapshotsByDeveloperName(configRecords);
+
+    for (CatalogJobConfig__mdt cfg : configRecords) {
+      CatalogSyncStateService.Snapshot snapshot = snapshotsByDeveloperName.get(
+        cfg.DeveloperName
+      );
       Map<String, Object> configMap = new Map<String, Object>();
       configMap.put('id', cfg.Id);
       configMap.put('developerName', cfg.DeveloperName);
@@ -148,6 +156,29 @@ public with sharing class CoveoCommerceSetupController {
           : '(Global Default)'
       );
       configMap.put('catalogId', cfg.CatalogId__c);
+      configMap.put('syncMode', CatalogSyncMode.resolve(cfg));
+      configMap.put(
+        'baselineFullConfigDeveloperName',
+        cfg.BaselineFullConfigDeveloperName__c
+      );
+      configMap.put('deltaReady', snapshot == null ? true : snapshot.deltaReady);
+      configMap.put(
+        'deltaReadinessMessage',
+        snapshot == null ? null : snapshot.deltaReadinessMessage
+      );
+      configMap.put(
+        'lastSuccessfulFullSyncAt',
+        snapshot == null ? null : snapshot.lastSuccessfulFullSyncAt
+      );
+      configMap.put(
+        'lastSuccessfulSyncAt',
+        snapshot == null ? null : snapshot.lastSuccessfulSyncAt
+      );
+      configMap.put('lastRunMode', snapshot == null ? null : snapshot.lastRunMode);
+      configMap.put(
+        'lastSuccessfulConfigDeveloperName',
+        snapshot == null ? null : snapshot.lastSuccessfulConfigDeveloperName
+      );
       configs.add(configMap);
     }
 
@@ -194,6 +225,8 @@ public with sharing class CoveoCommerceSetupController {
     String coveoOrgId,
     String sourceId,
     String availabilitySourceId,
+    String syncMode,
+    String baselineFullConfigDeveloperName,
     String catalogId,
     String webStoreId,
     String locale,
@@ -208,6 +241,13 @@ public with sharing class CoveoCommerceSetupController {
     Integer selectedFieldCount = additionalProductFields == null
       ? 0
       : additionalProductFields.size();
+    Boolean syncModeSupported = CatalogSyncMode.isSupportedValue(syncMode);
+    String resolvedSyncMode = CatalogSyncMode.resolve(syncMode);
+    String normalizedBaselineFullConfigDeveloperName = String.isBlank(
+        baselineFullConfigDeveloperName
+      )
+      ? null
+      : baselineFullConfigDeveloperName.trim();
     Boolean modeSupported = CatalogBuyerGroupAvailabilityMode.isSupportedValue(
       buyerGroupAvailabilityMode
     );
@@ -235,12 +275,23 @@ public with sharing class CoveoCommerceSetupController {
     if (String.isBlank(sourceId)) {
       validationMessages.add('Product Source Id is required.');
     }
+    if (!syncModeSupported) {
+      validationMessages.add('Sync Type must be Full or Delta.');
+    }
     if (String.isBlank(locale)) {
       validationMessages.add('Locale is required.');
     }
     if (!modeSupported) {
       validationMessages.add(
         'Buyer Group Availability Mode must be Disabled, PairedSource, Embedded, or DualWrite.'
+      );
+    }
+    if (
+      resolvedSyncMode == CatalogSyncMode.DELTA &&
+      String.isBlank(normalizedBaselineFullConfigDeveloperName)
+    ) {
+      validationMessages.add(
+        'Baseline Full Config Developer Name is required for Delta syncs.'
       );
     }
     if (usesPairedSource && String.isBlank(availabilitySourceId)) {
@@ -344,6 +395,11 @@ public with sharing class CoveoCommerceSetupController {
     result.put('estimatedProductCount', estimatedProductCount);
     result.put('buyerGroupCount', buyerGroupCount);
     result.put('selectedFieldCount', selectedFieldCount);
+    result.put('syncMode', resolvedSyncMode);
+    result.put(
+      'baselineFullConfigDeveloperName',
+      normalizedBaselineFullConfigDeveloperName
+    );
     result.put('buyerGroupAvailabilityMode', resolvedMode);
     result.put('validationMessages', validationMessages);
     result.put('warningMessages', warningMessages);

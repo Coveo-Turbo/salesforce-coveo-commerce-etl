@@ -12,6 +12,13 @@
         </div>
         <div class="cc-hero__actions">
           <lightning-button
+            label="Refresh Status"
+            variant="neutral"
+            onclick={handleRefreshStatus}
+            icon-name="utility:refresh"
+            icon-position="right"
+          ></lightning-button>
+          <lightning-button
             label="Run All Products"
             variant="brand"
             onclick={handleRunAllProducts}
@@ -86,6 +93,9 @@
                     <div class="cc-badge-group">
                       <span class={config.activeStatusClass}>
                         {config.activeStatusLabel}
+                      </span>
+                      <span class={config.productSyncStatusClass}>
+                        {config.productSyncStatusLabel}
                       </span>
                       <span class={config.availabilityStatusClass}>
                         {config.availabilityStatusLabel}
@@ -163,6 +173,9 @@
                   <span class={selectedConfigStatusClass}>
                     {selectedConfig.activeStatusLabel}
                   </span>
+                  <span class={selectedConfigProductSyncClass}>
+                    {selectedConfig.productSyncStatusLabel}
+                  </span>
                   <span class={selectedConfigAvailabilityClass}>
                     {selectedConfig.availabilityStatusLabel}
                   </span>
@@ -174,9 +187,10 @@
               <div class="cc-launchpad">
                 <div class="cc-launchpad__actions">
                   <lightning-button
-                    label="Run Products"
+                    label={selectedProductRunLabel}
                     variant="brand"
                     onclick={handleRunSelectedProducts}
+                    disabled={selectedConfig.productDisabled}
                   ></lightning-button>
                   <lightning-button
                     label="Run Access"
@@ -189,13 +203,13 @@
                       label="Run Both"
                       variant="brand-outline"
                       onclick={handleRunSelectedBoth}
-                      disabled={selectedConfig.availabilityDisabled}
+                      disabled={selectedConfig.bothDisabled}
                     ></lightning-button>
                   </template>
                 </div>
-                <template if:true={availabilityDisabledMessage}>
+                <template if:true={launchpadNote}>
                   <p class="cc-launchpad__note">
-                    {availabilityDisabledMessage}
+                    {launchpadNote}
                   </p>
                 </template>
               </div>

@@ -1,7 +1,8 @@
 import { LightningElement, wire } from "lwc";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
+import { refreshApex } from "@salesforce/apex";
 
-import listConfigs from "@salesforce/apex/CatalogJobRunner.listConfigs";
+import getConsoleConfigs from "@salesforce/apex/CatalogJobRunner.getConsoleConfigs";
 import runSingle from "@salesforce/apex/CatalogJobRunner.runSingle";
 import runSingleAvailability from "@salesforce/apex/CatalogJobRunner.runSingleAvailability";
 import runSingleBoth from "@salesforce/apex/CatalogJobRunner.runSingleBoth";
@@ -11,6 +12,7 @@ import runAllActiveBoth from "@salesforce/apex/CatalogJobRunner.runAllActiveBoth
 import getRunSnapshots from "@salesforce/apex/CatalogJobRunner.getRunSnapshots";
 
 const POLL_INTERVAL_MS = 4000;
+const CONFIG_REFRESH_INTERVAL_MS = 15000;
 const RUN_STORAGE_KEY = "catalogJobConsoleRuns:v1";
 const ACTIVITY_STORAGE_KEY = "catalogJobConsoleActivity:v1";
 const MAX_RUNS = 8;
@@ -19,6 +21,8 @@ const BUYER_GROUP_MODE_DISABLED = "Disabled";
 const BUYER_GROUP_MODE_PAIRED = "PairedSource";
 const BUYER_GROUP_MODE_EMBEDDED = "Embedded";
 const BUYER_GROUP_MODE_DUAL = "DualWrite";
+const SYNC_MODE_FULL = "Full";
+const SYNC_MODE_DELTA = "Delta";
 
 function resolveBuyerGroupAvailabilityMode(mode, legacyEnabled = false) {
   switch (mode) {
@@ -76,19 +80,26 @@ export default class CatalogJobConsole extends LightningElement {
   runSessions = [];
   activityFeed = [];
   pollTimerId;
+  configRefreshTimerId;
   isPolling = false;
+  isRefreshingConfigs = false;
+  wiredConfigsResult;
 
   connectedCallback() {
     this.restoreRunState();
     this.startPollingIfNeeded();
+    this.startConfigRefresh();
   }
 
   disconnectedCallback() {
     this.stopPolling();
+    this.stopConfigRefresh();
   }
 
-  @wire(listConfigs)
-  wiredConfigs({ data, error }) {
+  @wire(getConsoleConfigs)
+  wiredConfigs(result) {
+    this.wiredConfigsResult = result;
+    const { data, error } = result;
     if (data) {
       const nextSelectedId = data.some(
         (config) => config.DeveloperName === this.selectedConfigId
@@ -104,6 +115,10 @@ export default class CatalogJobConsole extends LightningElement {
       this.error = error;
       this.configs = undefined;
     }
+  }
+
+  async handleRefreshStatus() {
+    await this.refreshConfigs();
   }
 
   get hasConfigs() {
@@ -132,6 +147,13 @@ export default class CatalogJobConsole extends LightningElement {
   get selectedConfigAvailabilityClass() {
     return (
       this.selectedConfig?.availabilityStatusClass ||
+      "cc-badge cc-badge--neutral"
+    );
+  }
+
+  get selectedConfigProductSyncClass() {
+    return (
+      this.selectedConfig?.productSyncStatusClass ||
       "cc-badge cc-badge--neutral"
     );
   }
@@ -200,6 +222,18 @@ export default class CatalogJobConsole extends LightningElement {
 
     return [
       {
+        label: "Sync Mode",
+        value: this.selectedConfig.syncModeLabel
+      },
+      {
+        label: "Delta Status",
+        value: this.selectedConfig.deltaStatusDetail
+      },
+      {
+        label: "Baseline Full",
+        value: this.selectedConfig.baselineFullConfigLabel
+      },
+      {
         label: "Catalog",
         value: this.selectedConfig.catalogLabel
       },
@@ -234,6 +268,14 @@ export default class CatalogJobConsole extends LightningElement {
       {
         label: "Extra Fields",
         value: this.selectedConfig.extraFieldsSummary
+      },
+      {
+        label: "Last Full Sync",
+        value: this.selectedConfig.lastSuccessfulFullSyncLabel
+      },
+      {
+        label: "Last Successful Sync",
+        value: this.selectedConfig.lastSuccessfulSyncLabel
       }
     ];
   }
@@ -261,7 +303,7 @@ export default class CatalogJobConsole extends LightningElement {
     if (!this.selectedConfig) {
       return "Choose a configuration to launch products or Buyer Group access syncs.";
     }
-    return `${this.selectedConfig.catalogLabel} • ${this.selectedConfig.localeLabel} • ${this.selectedConfig.builderLabel}`;
+    return `${this.selectedConfig.syncModeLabel} • ${this.selectedConfig.catalogLabel} • ${this.selectedConfig.localeLabel} • ${this.selectedConfig.builderLabel}`;
   }
 
   get availabilityDisabledMessage() {
@@ -269,6 +311,25 @@ export default class CatalogJobConsole extends LightningElement {
       return "";
     }
     return "Buyer Group access is disabled for this configuration.";
+  }
+
+  get productDisabledMessage() {
+    if (!this.selectedConfig?.productDisabled) {
+      return "";
+    }
+
+    return (
+      this.selectedConfig.deltaReadinessMessage ||
+      "This product sync is not ready to launch."
+    );
+  }
+
+  get launchpadNote() {
+    return this.productDisabledMessage || this.availabilityDisabledMessage;
+  }
+
+  get selectedProductRunLabel() {
+    return this.selectedConfig?.productRunLabel || "Run Products";
   }
 
   get showRunSelectedBoth() {
@@ -304,7 +365,7 @@ export default class CatalogJobConsole extends LightningElement {
         runSingle({
           jobConfigDeveloperName: this.selectedConfig.developerName
         }),
-      `${this.selectedConfig.label}: started product sync`
+      `${this.selectedConfig.label}: started ${this.selectedConfig.syncModeLabel.toLowerCase()} product sync`
     );
   }
 
@@ -332,7 +393,7 @@ export default class CatalogJobConsole extends LightningElement {
         runSingleBoth({
           jobConfigDeveloperName: this.selectedConfig.developerName
         }),
-      `${this.selectedConfig.label}: started product and access syncs`
+      `${this.selectedConfig.label}: started ${this.selectedConfig.syncModeLabel.toLowerCase()} product and access syncs`
     );
   }
 
@@ -374,6 +435,7 @@ export default class CatalogJobConsole extends LightningElement {
       this.recordLaunches(launches);
       this.showToast("Sync started", successMessage, "success");
       await this.pollRunSnapshots();
+      await this.refreshConfigs();
       this.startPollingIfNeeded();
     } catch (error) {
       const message = this.reduceError(error);
@@ -445,6 +507,7 @@ export default class CatalogJobConsole extends LightningElement {
       const snapshots = await getRunSnapshots({ jobIds: pendingJobIds });
       if (snapshots?.length) {
         this.mergeSnapshots(snapshots);
+        await this.refreshConfigs();
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -499,6 +562,45 @@ export default class CatalogJobConsole extends LightningElement {
     this.pollTimerId = window.setInterval(() => {
       this.pollRunSnapshots();
     }, POLL_INTERVAL_MS);
+  }
+
+  startConfigRefresh() {
+    if (this.configRefreshTimerId) {
+      return;
+    }
+
+    this.configRefreshTimerId = window.setInterval(() => {
+      this.refreshConfigs();
+    }, CONFIG_REFRESH_INTERVAL_MS);
+  }
+
+  stopConfigRefresh() {
+    if (!this.configRefreshTimerId) {
+      return;
+    }
+
+    window.clearInterval(this.configRefreshTimerId);
+    this.configRefreshTimerId = null;
+  }
+
+  async refreshConfigs() {
+    if (
+      !this.wiredConfigsResult ||
+      this.isRefreshingConfigs ||
+      document.visibilityState === "hidden"
+    ) {
+      return;
+    }
+
+    this.isRefreshingConfigs = true;
+    try {
+      await refreshApex(this.wiredConfigsResult);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("Catalog job config refresh error", error);
+    } finally {
+      this.isRefreshingConfigs = false;
+    }
   }
 
   stopPolling() {
@@ -579,6 +681,8 @@ export default class CatalogJobConsole extends LightningElement {
     );
     const extraFields = this.splitCsv(config.AdditionalProductFields__c);
     const isSelected = config.DeveloperName === selectedConfigId;
+    const syncMode =
+      config.SyncMode__c === SYNC_MODE_DELTA ? SYNC_MODE_DELTA : SYNC_MODE_FULL;
     const buyerGroupAvailabilityMode = resolveBuyerGroupAvailabilityMode(
       config.BuyerGroupAvailabilityMode__c,
       config.EnableBuyerGroupAvailability__c
@@ -596,12 +700,47 @@ export default class CatalogJobConsole extends LightningElement {
       config.AvailabilitySourceId__c,
       buyerGroupAvailabilityMode
     );
+    const deltaReady =
+      syncMode === SYNC_MODE_DELTA ? config.deltaReady === true : true;
+    const deltaReadinessMessage =
+      config.deltaReadinessMessage ||
+      (syncMode === SYNC_MODE_DELTA
+        ? "Run the baseline full sync once before delta sync."
+        : "Full sync establishes the baseline.");
+    const productDisabled = syncMode === SYNC_MODE_DELTA && !deltaReady;
 
     return {
       ...config,
       id: config.DeveloperName,
       developerName: config.DeveloperName,
       label: config.Label,
+      syncMode,
+      syncModeLabel:
+        syncMode === SYNC_MODE_DELTA ? "Delta Product Sync" : "Full Product Sync",
+      baselineFullConfigLabel: this.normalizeText(
+        config.BaselineFullConfigDeveloperName__c,
+        syncMode === SYNC_MODE_DELTA ? "Not configured" : "Self"
+      ),
+      lastSuccessfulFullSyncLabel: this.formatOptionalTimestamp(
+        config.lastSuccessfulFullSyncAt,
+        "Never"
+      ),
+      lastSuccessfulSyncLabel: this.formatOptionalTimestamp(
+        config.lastSuccessfulSyncAt,
+        "Never"
+      ),
+      deltaReady,
+      deltaReadinessMessage,
+      deltaStatusDetail:
+        syncMode === SYNC_MODE_DELTA
+          ? deltaReady
+            ? "Ready to launch"
+            : deltaReadinessMessage
+          : "This run seeds the trusted baseline",
+      productRunLabel:
+        syncMode === SYNC_MODE_DELTA ? "Run Delta Products" : "Run Full Products",
+      productDisabled,
+      bothDisabled: productDisabled || buyerGroupAccessEnabled !== true,
       buyerGroupAvailabilityMode,
       buyerGroupAvailabilityModeLabel,
       buyerGroupAccessEnabled,
@@ -633,6 +772,18 @@ export default class CatalogJobConsole extends LightningElement {
       extraFieldsTitle: extraFields.length
         ? extraFields.join(", ")
         : "No extra fields",
+      productSyncStatusLabel:
+        syncMode === SYNC_MODE_DELTA
+          ? deltaReady
+            ? "Delta Ready"
+            : "Delta Blocked"
+          : "Full Baseline",
+      productSyncStatusClass:
+        syncMode === SYNC_MODE_DELTA
+          ? deltaReady
+            ? "cc-badge cc-badge--brand"
+            : "cc-badge cc-badge--danger"
+          : "cc-badge cc-badge--info",
       activeStatusLabel: config.IsActive__c ? "Active" : "Inactive",
       activeStatusClass: config.IsActive__c
         ? "cc-badge cc-badge--success"
@@ -995,6 +1146,10 @@ export default class CatalogJobConsole extends LightningElement {
     } catch (error) {
       return isoValue;
     }
+  }
+
+  formatOptionalTimestamp(isoValue, fallback) {
+    return isoValue ? this.formatTimestamp(isoValue) : fallback;
   }
 
   showToast(title, message, variant) {

@@ -338,6 +338,13 @@
             </div>
             <div class="workspace-page-actions">
               <lightning-button
+                label="Refresh Job Status"
+                variant="neutral"
+                onclick={handleRefreshCatalogJobs}
+                icon-name="utility:refresh"
+                icon-position="right"
+              ></lightning-button>
+              <lightning-button
                 label="Open Custom Metadata Setup"
                 variant="brand-outline"
                 onclick={handleOpenCustomMetadata}
@@ -443,6 +450,12 @@
                             </p>
                           </div>
                           <div class="config-card__fact">
+                            <p class="config-card__fact-label">Sync</p>
+                            <p class="config-card__fact-value">
+                              {config.syncSummary}
+                            </p>
+                          </div>
+                          <div class="config-card__fact">
                             <p class="config-card__fact-label">Scope</p>
                             <p class="config-card__fact-value">
                               {config.scopeSummary}
@@ -452,7 +465,7 @@
 
                         <div class="config-card__footer">
                           <p class="config-card__supporting">
-                            {config.additionalFieldSummary}
+                            {config.additionalFieldSummary} • {config.lastSyncSummary}
                           </p>
                           <div class="config-card__actions">
                             <lightning-button
@@ -553,6 +566,26 @@
                       placeholder="catalog-products-us"
                       required
                     ></lightning-input>
+
+                    <lightning-combobox
+                      label="Sync Type"
+                      value={draft.syncMode}
+                      data-field="syncMode"
+                      options={syncModeOptions}
+                      onchange={handleDraftInputChange}
+                      field-level-help="Full sync seeds the trusted baseline. Delta sync exports only changed root products and requires a baseline full config."
+                    ></lightning-combobox>
+
+                    <template if:true={isDeltaDraft}>
+                      <lightning-input
+                        label="Baseline Full Config Developer Name"
+                        value={draft.baselineFullConfigDeveloperName}
+                        data-field="baselineFullConfigDeveloperName"
+                        onchange={handleDraftInputChange}
+                        placeholder="WEEKLY_FULL_SYNC"
+                        field-level-help="Required for Delta syncs. Use the Developer Name of the Full catalog job that establishes the export baseline."
+                      ></lightning-input>
+                    </template>
 
                     <lightning-combobox
                       label="Locale"
@@ -733,6 +766,18 @@
                       <span class="review-summary__label">Catalog</span>
                       <span class="review-summary__value">
                         {draftSummaryCatalogText}
+                      </span>
+                    </div>
+                    <div class="review-summary__row">
+                      <span class="review-summary__label">Sync Type</span>
+                      <span class="review-summary__value">
+                        {selectedSyncModeLabel}
+                      </span>
+                    </div>
+                    <div class="review-summary__row">
+                      <span class="review-summary__label">Baseline</span>
+                      <span class="review-summary__value">
+                        {draftSummaryBaselineText}
                       </span>
                     </div>
                     <div class="review-summary__row">

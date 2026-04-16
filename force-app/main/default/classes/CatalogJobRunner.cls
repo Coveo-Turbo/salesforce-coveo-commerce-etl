@@ -30,6 +30,9 @@ public with sharing class CatalogJobRunner {
     public String mode { get; set; }
 
     @AuraEnabled
+    public String productSyncMode { get; set; }
+
+    @AuraEnabled
     public Boolean availabilityEnabled { get; set; }
 
     @AuraEnabled
@@ -95,15 +98,75 @@ public with sharing class CatalogJobRunner {
         CatalogId__c,
         BatchSize__c,
         EnableBuyerGroupAvailability__c,
-        BuyerGroupAvailabilityMode__c
+        BuyerGroupAvailabilityMode__c,
+        SyncMode__c,
+        BaselineFullConfigDeveloperName__c
       FROM CatalogJobConfig__mdt
       ORDER BY Label
     ];
   }
 
+  @AuraEnabled(cacheable=true)
+  public static List<Map<String, Object>> getConsoleConfigs() {
+    List<CatalogJobConfig__mdt> configs = listConfigs();
+    Map<String, CatalogSyncStateService.Snapshot> snapshotsByDeveloperName =
+      CatalogSyncStateService.getSnapshotsByDeveloperName(configs);
+    List<Map<String, Object>> consoleConfigs = new List<Map<String, Object>>();
+
+    for (CatalogJobConfig__mdt config : configs) {
+      CatalogSyncStateService.Snapshot snapshot = snapshotsByDeveloperName.get(
+        config.DeveloperName
+      );
+      consoleConfigs.add(
+        new Map<String, Object>{
+          'DeveloperName' => config.DeveloperName,
+          'Label' => config.Label,
+          'CoveoOrgId__c' => config.CoveoOrgId__c,
+          'SourceId__c' => config.SourceId__c,
+          'AvailabilitySourceId__c' => config.AvailabilitySourceId__c,
+          'WebStoreId__c' => config.WebStoreId__c,
+          'Locale__c' => config.Locale__c,
+          'IsActive__c' => config.IsActive__c,
+          'ProductFilter__c' => config.ProductFilter__c,
+          'AdditionalProductFields__c' => config.AdditionalProductFields__c,
+          'BuilderType__c' => config.BuilderType__c,
+          'CatalogId__c' => config.CatalogId__c,
+          'BatchSize__c' => config.BatchSize__c,
+          'EnableBuyerGroupAvailability__c' =>
+            config.EnableBuyerGroupAvailability__c,
+          'BuyerGroupAvailabilityMode__c' =>
+            config.BuyerGroupAvailabilityMode__c,
+          'SyncMode__c' => CatalogSyncMode.resolve(config),
+          'BaselineFullConfigDeveloperName__c' =>
+            config.BaselineFullConfigDeveloperName__c,
+          'deltaReady' => snapshot == null ? true : snapshot.deltaReady,
+          'deltaReadinessMessage' => snapshot == null
+            ? null
+            : snapshot.deltaReadinessMessage,
+          'lastSuccessfulFullSyncAt' => snapshot == null
+            ? null
+            : snapshot.lastSuccessfulFullSyncAt,
+          'lastSuccessfulSyncAt' => snapshot == null
+            ? null
+            : snapshot.lastSuccessfulSyncAt,
+          'lastRunMode' => snapshot == null ? null : snapshot.lastRunMode,
+          'lastSuccessfulConfigDeveloperName' => snapshot == null
+            ? null
+            : snapshot.lastSuccessfulConfigDeveloperName,
+          'resolvedTargetKey' => snapshot == null
+            ? CatalogSyncStateService.buildResolvedTargetKey(config)
+            : snapshot.resolvedTargetKey
+        }
+      );
+    }
+
+    return consoleConfigs;
+  }
+
   @AuraEnabled
   public static LaunchResult runSingle(String jobConfigDeveloperName) {
     CatalogJobConfig__mdt config = getConfig(jobConfigDeveloperName);
+    validateProductSyncReady(config);
     return launchForConfig(config, true, false, 'products');
   }
 
@@ -118,6 +181,7 @@ public with sharing class CatalogJobRunner {
   public static LaunchResult runSingleBoth(String jobConfigDeveloperName) {
     CatalogJobConfig__mdt config = getConfig(jobConfigDeveloperName);
     validateBuyerGroupAccessEnabled(config);
+    validateProductSyncReady(config);
     return launchForConfig(config, true, true, 'both');
   }
 
@@ -125,6 +189,9 @@ public with sharing class CatalogJobRunner {
   public static List<LaunchResult> runAllActive() {
     List<LaunchResult> launches = new List<LaunchResult>();
     for (CatalogJobConfig__mdt config : getActiveConfigs()) {
+      if (!isProductSyncReady(config)) {
+        continue;
+      }
       launches.add(launchForConfig(config, true, false, 'products'));
     }
     return launches;
@@ -145,6 +212,9 @@ public with sharing class CatalogJobRunner {
   public static List<LaunchResult> runAllActiveBoth() {
     List<LaunchResult> launches = new List<LaunchResult>();
     for (CatalogJobConfig__mdt config : getActiveConfigs()) {
+      if (!isProductSyncReady(config)) {
+        continue;
+      }
       launches.add(
         launchForConfig(
           config,
@@ -246,7 +316,7 @@ public with sharing class CatalogJobRunner {
   ) {
     LaunchResult launch = createLaunchResult(config, mode);
     JobLaunchHandle productLaunch = runProducts == true
-      ? launchProductJob(config.DeveloperName)
+      ? launchProductJob(config)
       : null;
     List<JobLaunchHandle> buyerGroupLaunches = runAvailability == true
       ? launchBuyerGroupJobs(config)
@@ -276,6 +346,7 @@ public with sharing class CatalogJobRunner {
     launch.developerName = config.DeveloperName;
     launch.label = config.Label;
     launch.mode = mode;
+    launch.productSyncMode = CatalogSyncMode.resolve(config);
     launch.availabilityEnabled =
       CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(config);
     launch.buyerGroupAvailabilityMode =
@@ -302,10 +373,19 @@ public with sharing class CatalogJobRunner {
     }
   }
 
-  private static JobLaunchHandle launchProductJob(String developerName) {
-    ProductCatalogExportBatch batch = new ProductCatalogExportBatch(developerName);
-    Id jobId = Database.executeBatch(batch, batch.getBatchSize());
-    return createLaunchHandle(jobId, 'products', 'Product Sync');
+  private static JobLaunchHandle launchProductJob(CatalogJobConfig__mdt config) {
+    if (CatalogSyncMode.isDelta(config)) {
+      DeltaProductCatalogExportBatch deltaBatch =
+        new DeltaProductCatalogExportBatch(config.DeveloperName);
+      Id deltaJobId = Database.executeBatch(deltaBatch, deltaBatch.getBatchSize());
+      return createLaunchHandle(deltaJobId, 'products', 'Delta Product Sync');
+    }
+
+    ProductCatalogExportBatch fullBatch = new ProductCatalogExportBatch(
+      config.DeveloperName
+    );
+    Id fullJobId = Database.executeBatch(fullBatch, fullBatch.getBatchSize());
+    return createLaunchHandle(fullJobId, 'products', 'Full Product Sync');
   }
 
   private static JobLaunchHandle launchAvailabilityJob(String developerName) {
@@ -356,6 +436,19 @@ public with sharing class CatalogJobRunner {
       SELECT
         DeveloperName,
         Label,
+        CoveoOrgId__c,
+        SourceId__c,
+        AvailabilitySourceId__c,
+        WebStoreId__c,
+        Locale__c,
+        IsActive__c,
+        ProductFilter__c,
+        AdditionalProductFields__c,
+        BuilderType__c,
+        CatalogId__c,
+        BatchSize__c,
+        SyncMode__c,
+        BaselineFullConfigDeveloperName__c,
         EnableBuyerGroupAvailability__c,
         BuyerGroupAvailabilityMode__c
       FROM CatalogJobConfig__mdt
@@ -378,6 +471,19 @@ public with sharing class CatalogJobRunner {
       SELECT
         DeveloperName,
         Label,
+        CoveoOrgId__c,
+        SourceId__c,
+        AvailabilitySourceId__c,
+        WebStoreId__c,
+        Locale__c,
+        IsActive__c,
+        ProductFilter__c,
+        AdditionalProductFields__c,
+        BuilderType__c,
+        CatalogId__c,
+        BatchSize__c,
+        SyncMode__c,
+        BaselineFullConfigDeveloperName__c,
         EnableBuyerGroupAvailability__c,
         BuyerGroupAvailabilityMode__c
       FROM CatalogJobConfig__mdt
@@ -396,6 +502,27 @@ public with sharing class CatalogJobRunner {
         config.Label +
         '.'
       );
+    }
+  }
+
+  @TestVisible
+  private static void validateProductSyncReady(CatalogJobConfig__mdt config) {
+    if (CatalogSyncMode.isDelta(config)) {
+      CatalogSyncStateService.requireDeltaReadiness(config);
+    }
+  }
+
+  @TestVisible
+  private static Boolean isProductSyncReady(CatalogJobConfig__mdt config) {
+    if (!CatalogSyncMode.isDelta(config)) {
+      return true;
+    }
+
+    try {
+      CatalogSyncStateService.requireDeltaReadiness(config);
+      return true;
+    } catch (Exception e) {
+      return false;
     }
   }
 
