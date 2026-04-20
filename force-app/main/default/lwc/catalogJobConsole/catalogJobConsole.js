@@ -10,6 +10,8 @@ import runAllActive from "@salesforce/apex/CatalogJobRunner.runAllActive";
 import runAllActiveAvailability from "@salesforce/apex/CatalogJobRunner.runAllActiveAvailability";
 import runAllActiveBoth from "@salesforce/apex/CatalogJobRunner.runAllActiveBoth";
 import getRunSnapshots from "@salesforce/apex/CatalogJobRunner.getRunSnapshots";
+import abortCurrentProductRun from "@salesforce/apex/CatalogJobRunner.abortCurrentProductRun";
+import abortRunJob from "@salesforce/apex/CatalogJobRunner.abortRunJob";
 
 const POLL_INTERVAL_MS = 4000;
 const CONFIG_REFRESH_INTERVAL_MS = 15000;
@@ -23,6 +25,18 @@ const BUYER_GROUP_MODE_EMBEDDED = "Embedded";
 const BUYER_GROUP_MODE_DUAL = "DualWrite";
 const SYNC_MODE_FULL = "Full";
 const SYNC_MODE_DELTA = "Delta";
+const SCHEDULE_CADENCE_MINUTES = "Minutes";
+const SCHEDULE_CADENCE_HOURLY = "Hourly";
+const SCHEDULE_CADENCE_WEEKLY = "Weekly";
+const SCHEDULE_DAY_LABELS = {
+  SUN: "Sunday",
+  MON: "Monday",
+  TUE: "Tuesday",
+  WED: "Wednesday",
+  THU: "Thursday",
+  FRI: "Friday",
+  SAT: "Saturday"
+};
 
 function resolveBuyerGroupAvailabilityMode(mode, legacyEnabled = false) {
   switch (mode) {
@@ -39,9 +53,7 @@ function resolveBuyerGroupAvailabilityMode(mode, legacyEnabled = false) {
 }
 
 function isBuyerGroupAccessEnabled(mode) {
-  return (
-    resolveBuyerGroupAvailabilityMode(mode) !== BUYER_GROUP_MODE_DISABLED
-  );
+  return resolveBuyerGroupAvailabilityMode(mode) !== BUYER_GROUP_MODE_DISABLED;
 }
 
 function usesPairedSource(mode) {
@@ -158,6 +170,12 @@ export default class CatalogJobConsole extends LightningElement {
     );
   }
 
+  get selectedConfigQuickStatusClass() {
+    return (
+      this.selectedConfig?.quickStatusClass || "cc-badge cc-badge--neutral"
+    );
+  }
+
   get totalJobs() {
     return this.configs ? this.configs.length : 0;
   }
@@ -168,10 +186,42 @@ export default class CatalogJobConsole extends LightningElement {
       : 0;
   }
 
+  get fullSyncJobs() {
+    return this.configs
+      ? this.configs.filter((config) => config.syncMode === SYNC_MODE_FULL)
+          .length
+      : 0;
+  }
+
+  get deltaSyncJobs() {
+    return this.configs
+      ? this.configs.filter((config) => config.syncMode === SYNC_MODE_DELTA)
+          .length
+      : 0;
+  }
+
   get availabilityReadyJobs() {
     return this.configs
       ? this.configs.filter((config) => config.buyerGroupAccessEnabled).length
       : 0;
+  }
+
+  get inventoryTableRows() {
+    if (!this.hasConfigs) {
+      return [];
+    }
+
+    return [...this.configs].sort((left, right) => {
+      if (left.syncMode !== right.syncMode) {
+        return left.syncMode === SYNC_MODE_FULL ? -1 : 1;
+      }
+
+      if (left.IsActive__c !== right.IsActive__c) {
+        return left.IsActive__c ? -1 : 1;
+      }
+
+      return (left.label || "").localeCompare(right.label || "");
+    });
   }
 
   get liveRunsCount() {
@@ -276,6 +326,14 @@ export default class CatalogJobConsole extends LightningElement {
       {
         label: "Last Successful Sync",
         value: this.selectedConfig.lastSuccessfulSyncLabel
+      },
+      {
+        label: "Current Product Job",
+        value: this.selectedConfig.quickStatusSummary
+      },
+      {
+        label: "Schedule",
+        value: this.selectedConfig.scheduleSummary
       }
     ];
   }
@@ -326,6 +384,22 @@ export default class CatalogJobConsole extends LightningElement {
 
   get launchpadNote() {
     return this.productDisabledMessage || this.availabilityDisabledMessage;
+  }
+
+  get selectedProductStatusSummary() {
+    return this.selectedConfig?.quickStatusSummary || "No active product run";
+  }
+
+  get selectedProductStatusMeta() {
+    return this.selectedConfig?.quickStatusMeta || "Manual launch only";
+  }
+
+  get canAbortSelectedProductRun() {
+    return this.selectedConfig?.canAbortCurrentProductRun === true;
+  }
+
+  get abortSelectedProductRunDisabled() {
+    return !this.canAbortSelectedProductRun;
   }
 
   get selectedProductRunLabel() {
@@ -402,6 +476,52 @@ export default class CatalogJobConsole extends LightningElement {
       () => runAllActive(),
       "Started product syncs for all active configurations"
     );
+  }
+
+  async handleAbortSelectedProductRun() {
+    if (!this.selectedConfig || !this.canAbortSelectedProductRun) {
+      return;
+    }
+
+    try {
+      const jobId = await abortCurrentProductRun({
+        jobConfigDeveloperName: this.selectedConfig.developerName
+      });
+      this.addActivity(
+        `${this.selectedConfig.label}: abort requested for product job ${jobId}`
+      );
+      this.showToast(
+        "Abort requested",
+        `${this.selectedConfig.label}: stopping the active product sync`,
+        "success"
+      );
+      await this.pollRunSnapshots();
+      await this.refreshConfigs();
+    } catch (error) {
+      this.showToast("Error", this.reduceError(error), "error");
+      // eslint-disable-next-line no-console
+      console.error("Abort current product run error", error);
+    }
+  }
+
+  async handleAbortStage(event) {
+    const jobId = event.currentTarget?.dataset?.jobId;
+    const jobLabel = event.currentTarget?.dataset?.jobLabel || "job";
+    if (!jobId) {
+      return;
+    }
+
+    try {
+      await abortRunJob({ jobId });
+      this.addActivity(`Abort requested for ${jobLabel}`);
+      this.showToast("Abort requested", `Stopping ${jobLabel}`, "success");
+      await this.pollRunSnapshots();
+      await this.refreshConfigs();
+    } catch (error) {
+      this.showToast("Error", this.reduceError(error), "error");
+      // eslint-disable-next-line no-console
+      console.error("Abort run stage error", error);
+    }
   }
 
   async handleRunAllAvailability() {
@@ -483,6 +603,10 @@ export default class CatalogJobConsole extends LightningElement {
         jobId: job.jobId,
         channel: job.channel,
         label: job.label,
+        impactedProductCount: job.impactedProductCount,
+        changedRootProductCount: job.changedRootProductCount,
+        exportProductCount: job.exportProductCount,
+        scopeSummary: job.scopeSummary || "",
         status: "Queued",
         jobItemsProcessed: 0,
         totalJobItems: 0,
@@ -540,7 +664,14 @@ export default class CatalogJobConsole extends LightningElement {
 
         return {
           ...job,
-          ...snapshot
+          ...snapshot,
+          impactedProductCount:
+            snapshot.impactedProductCount ?? job.impactedProductCount,
+          changedRootProductCount:
+            snapshot.changedRootProductCount ?? job.changedRootProductCount,
+          exportProductCount:
+            snapshot.exportProductCount ?? job.exportProductCount,
+          scopeSummary: snapshot.scopeSummary ?? job.scopeSummary
         };
       });
 
@@ -707,7 +838,18 @@ export default class CatalogJobConsole extends LightningElement {
       (syncMode === SYNC_MODE_DELTA
         ? "Run the baseline full sync once before delta sync."
         : "Full sync establishes the baseline.");
+    const deltaStatusDetail =
+      syncMode === SYNC_MODE_DELTA
+        ? deltaReady
+          ? "Ready to launch"
+          : deltaReadinessMessage
+        : "This run seeds the trusted baseline";
     const productDisabled = syncMode === SYNC_MODE_DELTA && !deltaReady;
+    const scheduleSummary = this.describeScheduleCadence(config);
+    const quickStatus = this.describeQuickStatus(config, {
+      syncMode,
+      scheduleSummary
+    });
 
     return {
       ...config,
@@ -716,7 +858,9 @@ export default class CatalogJobConsole extends LightningElement {
       label: config.Label,
       syncMode,
       syncModeLabel:
-        syncMode === SYNC_MODE_DELTA ? "Delta Product Sync" : "Full Product Sync",
+        syncMode === SYNC_MODE_DELTA
+          ? "Delta Product Sync"
+          : "Full Product Sync",
       baselineFullConfigLabel: this.normalizeText(
         config.BaselineFullConfigDeveloperName__c,
         syncMode === SYNC_MODE_DELTA ? "Not configured" : "Self"
@@ -731,14 +875,11 @@ export default class CatalogJobConsole extends LightningElement {
       ),
       deltaReady,
       deltaReadinessMessage,
-      deltaStatusDetail:
-        syncMode === SYNC_MODE_DELTA
-          ? deltaReady
-            ? "Ready to launch"
-            : deltaReadinessMessage
-          : "This run seeds the trusted baseline",
+      deltaStatusDetail,
       productRunLabel:
-        syncMode === SYNC_MODE_DELTA ? "Run Delta Products" : "Run Full Products",
+        syncMode === SYNC_MODE_DELTA
+          ? "Run Delta Products"
+          : "Run Full Products",
       productDisabled,
       bothDisabled: productDisabled || buyerGroupAccessEnabled !== true,
       buyerGroupAvailabilityMode,
@@ -746,6 +887,9 @@ export default class CatalogJobConsole extends LightningElement {
       buyerGroupAccessEnabled,
       usesPairedSource: usesPaired,
       usesEmbeddedAccess: usesEmbedded,
+      inventoryRowClass: isSelected
+        ? "cc-config-table__row cc-config-table__row--selected"
+        : "cc-config-table__row",
       cardClass: this.getConfigCardClass(isSelected),
       catalogLabel: this.normalizeText(config.CatalogId__c, "Catalog not set"),
       localeLabel: this.normalizeText(config.Locale__c, "Default locale"),
@@ -794,7 +938,46 @@ export default class CatalogJobConsole extends LightningElement {
       availabilityStatusClass: buyerGroupAccessEnabled
         ? "cc-badge cc-badge--info"
         : "cc-badge cc-badge--neutral",
-      availabilityDisabled: buyerGroupAccessEnabled !== true
+      availabilityDisabled: buyerGroupAccessEnabled !== true,
+      inventorySyncSummary: `${syncMode === SYNC_MODE_DELTA ? "Delta" : "Full"} Product Sync`,
+      inventorySyncMeta:
+        syncMode === SYNC_MODE_DELTA
+          ? deltaStatusDetail
+          : `Baseline: ${this.normalizeText(
+              config.BaselineFullConfigDeveloperName__c,
+              "Self"
+            )}`,
+      quickStatusSummary: quickStatus.summary,
+      quickStatusMeta: quickStatus.meta,
+      quickStatusClass: quickStatus.className,
+      quickStatusLabel: quickStatus.label,
+      canAbortCurrentProductRun: quickStatus.canAbort,
+      currentProductJobId: config.currentProductJobId || "",
+      currentProductConfigDeveloperName:
+        config.currentProductConfigDeveloperName || "",
+      scheduleSummary,
+      inventoryExperienceSummary: `${this.normalizeText(
+        config.CatalogId__c,
+        "Catalog not set"
+      )} • ${this.normalizeText(config.Locale__c, "Default locale")}`,
+      inventoryExperienceMeta: this.describeBuilder(config.BuilderType__c),
+      inventorySourceSummary: this.normalizeText(
+        config.SourceId__c,
+        "No product source"
+      ),
+      inventorySourceMeta: filterText,
+      inventoryAccessSummary: buyerGroupAvailabilityModeLabel,
+      inventoryAccessMeta: accessDestinationLabel,
+      inventoryStatusSummary: quickStatus.summary,
+      inventoryStatusMeta: quickStatus.meta,
+      inventoryLastSyncSummary: this.formatOptionalTimestamp(
+        config.lastSuccessfulSyncAt,
+        "Never"
+      ),
+      inventoryLastSyncMeta: `Full baseline: ${this.formatOptionalTimestamp(
+        config.lastSuccessfulFullSyncAt,
+        "Never"
+      )}`
     };
   }
 
@@ -854,10 +1037,8 @@ export default class CatalogJobConsole extends LightningElement {
   decorateRunStage(job) {
     const status = job.status || "Queued";
     const progressPercent = this.getJobProgressPercent(job);
-    const batchesLabel =
-      job.totalJobItems > 0
-        ? `${job.jobItemsProcessed || 0} / ${job.totalJobItems} batches`
-        : "Waiting for batch metrics";
+    const scopeSummary = this.describeJobScope(job);
+    const batchesLabel = this.describeJobBatches(job, status);
 
     return {
       ...job,
@@ -866,12 +1047,17 @@ export default class CatalogJobConsole extends LightningElement {
       statusLabel: this.describeStageChange(job.channel, status),
       statusClass: this.getStageStatusClass(status),
       batchesLabel,
-      timingLabel: this.describeStageDuration(job)
+      extendedStatus: scopeSummary || job.extendedStatus || "",
+      timingLabel: this.describeStageDuration(job),
+      canAbort: !!job.jobId && status !== "Completed" && status !== "Failed" && status !== "Aborted"
     };
   }
 
   getRunStartTime(runSession, stages) {
-    const timestamps = [runSession.launchedAt, ...stages.map((stage) => stage.createdDate)]
+    const timestamps = [
+      runSession.launchedAt,
+      ...stages.map((stage) => stage.createdDate)
+    ]
       .map((value) => this.toTimestamp(value))
       .filter((value) => value !== null);
 
@@ -971,6 +1157,60 @@ export default class CatalogJobConsole extends LightningElement {
     return 0;
   }
 
+  describeJobBatches(job, status) {
+    if (job.totalJobItems > 0) {
+      return `${job.jobItemsProcessed || 0} / ${job.totalJobItems} batches`;
+    }
+
+    if (job.exportProductCount === 0 && status === "Completed") {
+      return "No changed products to export";
+    }
+
+    if (job.exportProductCount > 0) {
+      return `${job.exportProductCount} product${
+        job.exportProductCount === 1 ? "" : "s"
+      } in export scope`;
+    }
+
+    if (status === "Processing") {
+      return "Preparing batch metrics";
+    }
+
+    return "Waiting for batch metrics";
+  }
+
+  describeJobScope(job) {
+    if (job.scopeSummary) {
+      return job.scopeSummary;
+    }
+
+    if (
+      job.impactedProductCount === undefined &&
+      job.changedRootProductCount === undefined &&
+      job.exportProductCount === undefined
+    ) {
+      return "";
+    }
+
+    if (job.exportProductCount === 0 && job.impactedProductCount > 0) {
+      return `${job.impactedProductCount} impacted product${
+        job.impactedProductCount === 1 ? "" : "s"
+      } since last sync, but none matched this export scope`;
+    }
+
+    if (job.exportProductCount === 0) {
+      return "No changed products since last sync";
+    }
+
+    return `${job.impactedProductCount || 0} impacted product${
+      job.impactedProductCount === 1 ? "" : "s"
+    } • ${job.changedRootProductCount || 0} changed root${
+      job.changedRootProductCount === 1 ? "" : "s"
+    } • ${job.exportProductCount} product${
+      job.exportProductCount === 1 ? "" : "s"
+    } queued for export`;
+  }
+
   safePercent(processed, total) {
     if (!total) {
       return 0;
@@ -1040,6 +1280,171 @@ export default class CatalogJobConsole extends LightningElement {
       default:
         return `${subject} queued`;
     }
+  }
+
+  describeQuickStatus(config, { syncMode, scheduleSummary }) {
+    const currentStatus = config.currentProductJobStatus;
+    const currentJobId = config.currentProductJobId;
+    const currentRunLabel =
+      config.currentProductRunMode === SYNC_MODE_DELTA ? "Delta" : "Full";
+    const currentConfigDeveloperName =
+      config.currentProductConfigDeveloperName || config.DeveloperName;
+
+    if (config.currentProductIsActive === true && currentStatus) {
+      const statusLabel = this.describeAsyncJobStatus(currentStatus);
+      const startedAtLabel = this.formatOptionalTimestamp(
+        config.currentProductStartedAt,
+        "Just now"
+      );
+      const currentConfigMatches =
+        currentConfigDeveloperName === config.DeveloperName;
+
+      return {
+        summary: `${currentRunLabel} sync ${statusLabel.toLowerCase()}`,
+        meta: currentConfigMatches
+          ? `Started ${startedAtLabel} • Job ${currentJobId}`
+          : `Running via ${currentConfigDeveloperName} • Job ${currentJobId}`,
+        label: statusLabel,
+        className: this.getQuickStatusClass(currentStatus),
+        canAbort: Boolean(currentJobId)
+      };
+    }
+
+    if (config.isScheduled === true) {
+      const scheduleStateLabel = this.describeScheduleState(config.scheduleState);
+      return {
+        summary: scheduleStateLabel,
+        meta: scheduleSummary,
+        label: scheduleStateLabel,
+        className: this.getScheduleStateClass(config.scheduleState),
+        canAbort: false
+      };
+    }
+
+    return {
+      summary: "Manual launch only",
+      meta:
+        syncMode === SYNC_MODE_DELTA
+          ? config.deltaReady === true
+            ? "Ready to launch from this console"
+            : config.deltaReadinessMessage || "Waiting for baseline"
+          : "Launch from this console when needed",
+      label: "Manual",
+      className: "cc-badge cc-badge--neutral",
+      canAbort: false
+    };
+  }
+
+  describeAsyncJobStatus(status) {
+    switch (status) {
+      case "Holding":
+      case "Queued":
+      case "Preparing":
+        return "Queued";
+      case "Processing":
+        return "Running";
+      case "Completed":
+        return "Complete";
+      case "Aborted":
+        return "Aborted";
+      case "Failed":
+        return "Failed";
+      default:
+        return this.normalizeText(status, "Queued");
+    }
+  }
+
+  describeScheduleState(state) {
+    switch (state) {
+      case "WAITING":
+        return "Waiting";
+      case "ACQUIRED":
+      case "EXECUTING":
+        return "Starting";
+      case "PAUSED":
+      case "PAUSED_BLOCKED":
+        return "Paused";
+      case "BLOCKED":
+        return "Blocked";
+      default:
+        return "Scheduled";
+    }
+  }
+
+  getQuickStatusClass(status) {
+    switch (status) {
+      case "Processing":
+        return "cc-badge cc-badge--brand";
+      case "Holding":
+      case "Queued":
+      case "Preparing":
+        return "cc-badge cc-badge--neutral";
+      case "Failed":
+      case "Aborted":
+        return "cc-badge cc-badge--danger";
+      default:
+        return "cc-badge cc-badge--success";
+    }
+  }
+
+  getScheduleStateClass(state) {
+    switch (state) {
+      case "WAITING":
+        return "cc-badge cc-badge--info";
+      case "ACQUIRED":
+      case "EXECUTING":
+        return "cc-badge cc-badge--brand";
+      case "BLOCKED":
+      case "PAUSED":
+      case "PAUSED_BLOCKED":
+        return "cc-badge cc-badge--danger";
+      default:
+        return "cc-badge cc-badge--neutral";
+    }
+  }
+
+  describeScheduleCadence(config) {
+    if (config.isScheduled !== true) {
+      return "Not scheduled";
+    }
+
+    if (config.scheduleCadenceRecognized !== true) {
+      return this.formatOptionalTimestamp(
+        config.scheduleNextFireTime,
+        "Scheduled in Salesforce"
+      );
+    }
+
+    if (config.scheduleCadenceType === SCHEDULE_CADENCE_MINUTES) {
+      const intervalMinutes = Number(config.scheduleIntervalMinutes) || 15;
+      return `Every ${intervalMinutes} minute${
+        intervalMinutes === 1 ? "" : "s"
+      }`;
+    }
+
+    if (config.scheduleCadenceType === SCHEDULE_CADENCE_HOURLY) {
+      const intervalHours = Number(config.scheduleIntervalHours) || 1;
+      const minuteOfHour = Number(config.scheduleMinuteOfHour) || 0;
+      return `Every ${intervalHours} hour${
+        intervalHours === 1 ? "" : "s"
+      } at :${this.padNumber(minuteOfHour)}`;
+    }
+
+    if (config.scheduleCadenceType === SCHEDULE_CADENCE_WEEKLY) {
+      const dayLabel =
+        SCHEDULE_DAY_LABELS[config.scheduleDayOfWeek] || "Unknown day";
+      const hourOfDay = Number(config.scheduleHourOfDay) || 0;
+      const minuteOfHour = Number(config.scheduleMinuteOfHour) || 0;
+      return `${dayLabel} ${this.padNumber(hourOfDay)}:${this.padNumber(
+        minuteOfHour
+      )}`;
+    }
+
+    return "Scheduled in Salesforce";
+  }
+
+  padNumber(value) {
+    return String(value).padStart(2, "0");
   }
 
   describeBuilder(builderType) {

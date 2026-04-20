@@ -131,7 +131,8 @@ private class CatalogJobRunnerTest {
     } else {
       System.assert(
         exceptionMessage.contains('List has no rows') ||
-          exceptionMessage.contains('No CatalogJobConfig__mdt record found'),
+          exceptionMessage.contains('No CatalogJobConfig__mdt record found') ||
+          exceptionMessage.contains('Run the baseline full sync once before running delta sync'),
         'Known-config launches can fail in tests when org prerequisites are unavailable. ' +
           exceptionMessage
       );
@@ -604,6 +605,31 @@ private class CatalogJobRunnerTest {
   }
 
   @IsTest
+  static void testCreateLaunchHandle_assignsDeltaScopeSummary() {
+    CatalogDeltaScopeResolver.ScopeMetrics metrics =
+      new CatalogDeltaScopeResolver.ScopeMetrics();
+    metrics.impactedProductCount = 3;
+    metrics.rootProductCount = 2;
+    metrics.exportProductCount = 5;
+
+    CatalogJobRunner.JobLaunchHandle handle = CatalogJobRunner.createLaunchHandle(
+      Test.getStandardPricebookId(),
+      'products',
+      'Delta Product Sync',
+      metrics
+    );
+
+    System.assertEquals(3, handle.impactedProductCount);
+    System.assertEquals(2, handle.changedRootProductCount);
+    System.assertEquals(5, handle.exportProductCount);
+    System.assert(
+      handle.scopeSummary.contains('3 impacted products since last sync')
+    );
+    System.assert(handle.scopeSummary.contains('2 changed roots'));
+    System.assert(handle.scopeSummary.contains('5 products queued for export'));
+  }
+
+  @IsTest
   static void testValidateBuyerGroupAccessEnabled_handlesEnabledAndDisabledModes() {
     CatalogJobConfig__mdt embeddedConfig = new CatalogJobConfig__mdt(
       Label = 'Embedded Config',
@@ -658,10 +684,74 @@ private class CatalogJobRunnerTest {
       System.assert(config.containsKey('deltaReadinessMessage'));
       System.assert(config.containsKey('lastSuccessfulFullSyncAt'));
       System.assert(config.containsKey('lastSuccessfulSyncAt'));
+      System.assert(config.containsKey('currentProductJobId'));
+      System.assert(config.containsKey('currentProductJobStatus'));
+      System.assert(config.containsKey('currentProductRunMode'));
+      System.assert(config.containsKey('currentProductConfigDeveloperName'));
+      System.assert(config.containsKey('currentProductStartedAt'));
+      System.assert(config.containsKey('currentProductIsActive'));
+      System.assert(config.containsKey('isScheduled'));
+      System.assert(config.containsKey('scheduleState'));
       System.assert(config.containsKey('resolvedTargetKey'));
     }
 
     System.assertNotEquals(null, configs);
+  }
+
+  @IsTest
+  static void testAbortCurrentProductRun_abortsTrackedAsyncJob() {
+    List<CatalogJobConfig__mdt> configs = CatalogJobRunner.listConfigs();
+    if (configs.isEmpty()) {
+      System.assert(true, 'No metadata configs available in this test context');
+      return;
+    }
+
+    CatalogJobConfig__mdt config = configs[0];
+    Id jobId;
+
+    Test.startTest();
+    jobId = System.enqueueJob(new NoOpQueueable());
+    CatalogSyncStateService.recordStartedProductSync(
+      config,
+      CatalogSyncMode.resolve(config),
+      jobId,
+      System.now()
+    );
+    CatalogSyncStateService.testAsyncJobStatusesById = new Map<String, String>{
+      String.valueOf(jobId) => 'Processing'
+    };
+    CatalogSyncStateService.testAsyncJobCreatedDatesById =
+      new Map<String, Datetime>{ String.valueOf(jobId) => System.now() };
+    String abortedJobId = CatalogJobRunner.abortCurrentProductRun(
+      config.DeveloperName
+    );
+    Test.stopTest();
+
+    System.assertEquals(String.valueOf(jobId), abortedJobId);
+
+    List<CatalogJobRunner.RunSnapshot> snapshots = CatalogJobRunner.getRunSnapshots(
+      new List<String>{ String.valueOf(jobId) }
+    );
+    System.assertEquals(1, snapshots.size());
+    System.assertEquals('Aborted', snapshots[0].status);
+  }
+
+  @IsTest
+  static void testAbortRunJob_abortsQueuedAsyncJob() {
+    Id jobId;
+
+    Test.startTest();
+    jobId = System.enqueueJob(new NoOpQueueable());
+    String abortedJobId = CatalogJobRunner.abortRunJob(String.valueOf(jobId));
+    Test.stopTest();
+
+    System.assertEquals(String.valueOf(jobId), abortedJobId);
+
+    List<CatalogJobRunner.RunSnapshot> snapshots = CatalogJobRunner.getRunSnapshots(
+      new List<String>{ String.valueOf(jobId) }
+    );
+    System.assertEquals(1, snapshots.size());
+    System.assertEquals('Aborted', snapshots[0].status);
   }
 
   @IsTest

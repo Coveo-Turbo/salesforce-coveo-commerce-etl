@@ -9,7 +9,9 @@ import getActiveBuilderMapping from "@salesforce/apex/CoveoCommerceSetupControll
 import getBuilderClassOptions from "@salesforce/apex/CoveoCommerceSetupController.getBuilderClassOptions";
 import getSetupWorkspaceOptions from "@salesforce/apex/CoveoCommerceSetupController.getSetupWorkspaceOptions";
 import previewCatalogJobDraft from "@salesforce/apex/CoveoCommerceSetupController.previewCatalogJobDraft";
+import saveCatalogJobSchedule from "@salesforce/apex/CoveoCommerceSetupController.saveCatalogJobSchedule";
 import testNamedCredentialConnection from "@salesforce/apex/CoveoCommerceSetupController.testNamedCredentialConnection";
+import clearCatalogJobSchedule from "@salesforce/apex/CoveoCommerceSetupController.clearCatalogJobSchedule";
 import validateBuilderClass from "@salesforce/apex/CoveoCommerceSetupController.validateBuilderClass";
 
 const TRUNCATE_LENGTH = 50;
@@ -25,6 +27,29 @@ const SYNC_MODE_OPTIONS = Object.freeze([
   { label: "Full", value: SYNC_MODE_FULL },
   { label: "Delta", value: SYNC_MODE_DELTA }
 ]);
+const SCHEDULE_CADENCE_MINUTES = "Minutes";
+const SCHEDULE_CADENCE_HOURLY = "Hourly";
+const SCHEDULE_CADENCE_WEEKLY = "Weekly";
+const SCHEDULE_CADENCE_OPTIONS = Object.freeze([
+  { label: "Minutes", value: SCHEDULE_CADENCE_MINUTES },
+  { label: "Hourly", value: SCHEDULE_CADENCE_HOURLY },
+  { label: "Weekly", value: SCHEDULE_CADENCE_WEEKLY }
+]);
+const SCHEDULE_DAY_OPTIONS = Object.freeze([
+  { label: "Sunday", value: "SUN" },
+  { label: "Monday", value: "MON" },
+  { label: "Tuesday", value: "TUE" },
+  { label: "Wednesday", value: "WED" },
+  { label: "Thursday", value: "THU" },
+  { label: "Friday", value: "FRI" },
+  { label: "Saturday", value: "SAT" }
+]);
+const SCHEDULE_DAY_LABELS = Object.freeze(
+  SCHEDULE_DAY_OPTIONS.reduce((labels, option) => {
+    labels[option.value] = option.label;
+    return labels;
+  }, {})
+);
 const BUYER_GROUP_MODE_OPTIONS = Object.freeze([
   { label: "Disabled", value: BUYER_GROUP_MODE_DISABLED },
   { label: "Paired Source", value: BUYER_GROUP_MODE_PAIRED },
@@ -89,9 +114,7 @@ function resolveBuyerGroupAvailabilityMode(mode, legacyEnabled = false) {
 }
 
 function isBuyerGroupAccessEnabled(mode) {
-  return (
-    resolveBuyerGroupAvailabilityMode(mode) !== BUYER_GROUP_MODE_DISABLED
-  );
+  return resolveBuyerGroupAvailabilityMode(mode) !== BUYER_GROUP_MODE_DISABLED;
 }
 
 function usesPairedSource(mode) {
@@ -127,6 +150,16 @@ function resolveSyncMode(mode) {
   return mode === SYNC_MODE_DELTA ? SYNC_MODE_DELTA : SYNC_MODE_FULL;
 }
 
+function padNumber(value) {
+  return String(value).padStart(2, "0");
+}
+
+function getDefaultScheduleCadenceType(syncMode) {
+  return resolveSyncMode(syncMode) === SYNC_MODE_DELTA
+    ? SCHEDULE_CADENCE_HOURLY
+    : SCHEDULE_CADENCE_WEEKLY;
+}
+
 export default class CoveoCommerceSetup extends NavigationMixin(
   LightningElement
 ) {
@@ -158,6 +191,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   @track draft = { ...DEFAULT_DRAFT };
   @track draftPreview = { ...DEFAULT_PREVIEW };
   @track isLoadingDraftPreview = false;
+  @track scheduleDraft = null;
+  @track isSavingSchedule = false;
+  @track isClearingSchedule = false;
+  @track detailAccordionOpenSections = ["summary"];
 
   namedCredentialSetupUrl = "/lightning/setup/NamedCredential/home";
   customMetadataSetupUrl = "/lightning/setup/CustomMetadata/home";
@@ -165,6 +202,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   configRefreshTimerId;
   wiredConfigsResult;
   isRefreshingCatalogConfigs = false;
+  scheduleDraftConfigId;
 
   connectedCallback() {
     this.startCatalogConfigRefresh();
@@ -310,6 +348,44 @@ export default class CoveoCommerceSetup extends NavigationMixin(
 
   get totalConfigs() {
     return this.catalogConfigs ? this.catalogConfigs.length : 0;
+  }
+
+  get fullSyncConfigs() {
+    return this.catalogConfigs
+      ? this.catalogConfigs.filter(
+          (config) => config.syncMode !== SYNC_MODE_DELTA
+        ).length
+      : 0;
+  }
+
+  get deltaSyncConfigs() {
+    return this.catalogConfigs
+      ? this.catalogConfigs.filter(
+          (config) => config.syncMode === SYNC_MODE_DELTA
+        ).length
+      : 0;
+  }
+
+  get scheduledConfigs() {
+    return this.catalogConfigs
+      ? this.catalogConfigs.filter((config) => config.isScheduled).length
+      : 0;
+  }
+
+  get inventoryTableRows() {
+    if (!this.catalogConfigs?.length) {
+      return [];
+    }
+
+    return [...this.catalogConfigs].sort((left, right) => {
+      if (left.syncMode !== right.syncMode) {
+        return left.syncMode === SYNC_MODE_FULL ? -1 : 1;
+      }
+      if (left.isActive !== right.isActive) {
+        return left.isActive ? -1 : 1;
+      }
+      return (left.label || "").localeCompare(right.label || "");
+    });
   }
 
   get availabilityEnabledConfigs() {
@@ -520,6 +596,14 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     return SYNC_MODE_OPTIONS;
   }
 
+  get scheduleCadenceOptions() {
+    return SCHEDULE_CADENCE_OPTIONS;
+  }
+
+  get scheduleDayOptions() {
+    return SCHEDULE_DAY_OPTIONS;
+  }
+
   get hasWorkspaceOptions() {
     return !this.isLoadingWorkspaceOptions;
   }
@@ -549,7 +633,9 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   }
 
   get selectedBuyerGroupModeLabel() {
-    return formatBuyerGroupAvailabilityMode(this.draft.buyerGroupAvailabilityMode);
+    return formatBuyerGroupAvailabilityMode(
+      this.draft.buyerGroupAvailabilityMode
+    );
   }
 
   get selectedSyncModeLabel() {
@@ -617,7 +703,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       this.draft.label ||
         this.draft.developerName ||
         this.draft.coveoOrgId ||
-      this.draft.sourceId ||
+        this.draft.sourceId ||
         this.isDeltaDraft ||
         this.draft.baselineFullConfigDeveloperName ||
         this.draft.availabilitySourceId ||
@@ -709,7 +795,9 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       `SourceId__c: ${this.draft.sourceId || "(Required)"}`,
       `SyncMode__c: ${this.selectedSyncModeLabel}`,
       `BaselineFullConfigDeveloperName__c: ${
-        this.isDeltaDraft ? this.draft.baselineFullConfigDeveloperName || "(Required)" : ""
+        this.isDeltaDraft
+          ? this.draft.baselineFullConfigDeveloperName || "(Required)"
+          : ""
       }`,
       `Locale__c: ${this.draft.locale || "(Required)"}`,
       `CatalogId__c: ${this.draft.catalogId || ""}`,
@@ -773,6 +861,54 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     return this.selectedConfigRow.jobSummary;
   }
 
+  get selectedConfigOverviewFields() {
+    if (!this.selectedConfigRow) {
+      return [];
+    }
+
+    const selectedConfig = this.selectedConfigRow;
+    const lastSyncValue = this.formatOptionalTimestamp(
+      selectedConfig.lastSuccessfulSyncAt,
+      "Never"
+    );
+    const lastFullSyncValue = this.formatOptionalTimestamp(
+      selectedConfig.lastSuccessfulFullSyncAt,
+      "Never"
+    );
+
+    return [
+      {
+        key: "syncType",
+        label: "Sync Type",
+        value: selectedConfig.syncMode || SYNC_MODE_FULL,
+        helper:
+          selectedConfig.syncMode === SYNC_MODE_DELTA
+            ? selectedConfig.deltaReady
+              ? "Trusted baseline available."
+              : selectedConfig.deltaReadinessMessage
+            : "Establishes the trusted export baseline."
+      },
+      {
+        key: "schedule",
+        label: "Schedule",
+        value: this.selectedConfigScheduleCadence,
+        helper: this.selectedConfigScheduleState
+      },
+      {
+        key: "lastSync",
+        label: "Last Successful Sync",
+        value: lastSyncValue,
+        helper: `Last full baseline: ${lastFullSyncValue}`
+      },
+      {
+        key: "accessMode",
+        label: "Buyer Group Access",
+        value: selectedConfig.buyerGroupAvailabilityModeLabel || "Disabled",
+        helper: selectedConfig.destinationSummary || "No destination summary"
+      }
+    ];
+  }
+
   get configSummaryFields() {
     if (!this.selectedConfigRow) {
       return [];
@@ -792,6 +928,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       {
         label: "Status",
         value: this.selectedConfigRow.statusSummary || "(None)"
+      },
+      {
+        label: "Sync Type",
+        value: this.selectedConfigRow.syncMode || SYNC_MODE_FULL
       },
       {
         label: "Resolved Builder",
@@ -839,8 +979,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       {
         label: "Buyer Group Access Mode",
         value:
-          this.selectedConfigRow.buyerGroupAvailabilityModeLabel ||
-          "Disabled"
+          this.selectedConfigRow.buyerGroupAvailabilityModeLabel || "Disabled"
       },
       {
         label: "Web Store",
@@ -848,10 +987,9 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       },
       {
         label: "Availability Source Id",
-        value:
-          this.selectedConfigRow.usesPairedSource
-            ? this.selectedConfigRow.availabilitySourceId || "(None)"
-            : "Not required"
+        value: this.selectedConfigRow.usesPairedSource
+          ? this.selectedConfigRow.availabilitySourceId || "(None)"
+          : "Not required"
       },
       {
         label: "Destination Summary",
@@ -882,17 +1020,15 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       },
       {
         label: "Web Store Id",
-        value:
-          this.selectedConfigRow.buyerGroupAvailabilityEnabled
-            ? this.selectedConfigRow.webStoreId || "(None)"
-            : "Not required"
+        value: this.selectedConfigRow.buyerGroupAvailabilityEnabled
+          ? this.selectedConfigRow.webStoreId || "(None)"
+          : "Not required"
       },
       {
         label: "Availability Source Id",
-        value:
-          this.selectedConfigRow.usesPairedSource
-            ? this.selectedConfigRow.availabilitySourceId || "(None)"
-            : "Not required"
+        value: this.selectedConfigRow.usesPairedSource
+          ? this.selectedConfigRow.availabilitySourceId || "(None)"
+          : "Not required"
       }
     ];
   }
@@ -942,6 +1078,174 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     return this.selectedConfigRow?.buyerGroupAvailabilityEnabled
       ? "slds-theme_success"
       : "slds-theme_default";
+  }
+
+  get hasSelectedConfigSchedule() {
+    return this.selectedConfigRow?.isScheduled === true;
+  }
+
+  get selectedConfigScheduleCadence() {
+    return this.selectedConfigRow?.scheduleCadenceSummary || "Not scheduled";
+  }
+
+  get selectedConfigScheduleState() {
+    return this.selectedConfigRow?.scheduleStateLabel || "Not scheduled";
+  }
+
+  get selectedConfigScheduleNextRun() {
+    return this.formatOptionalTimestamp(
+      this.selectedConfigRow?.scheduleNextFireTime,
+      "Not scheduled"
+    );
+  }
+
+  get selectedConfigScheduleLastRun() {
+    return this.formatOptionalTimestamp(
+      this.selectedConfigRow?.schedulePreviousFireTime,
+      "Never"
+    );
+  }
+
+  get selectedConfigScheduledJobName() {
+    return this.selectedConfigRow?.scheduledJobName || "Not scheduled";
+  }
+
+  get selectedConfigScheduleCronExpression() {
+    return this.selectedConfigRow?.scheduleCronExpression || "Not scheduled";
+  }
+
+  get selectedScheduleCadenceType() {
+    return (
+      this.scheduleDraft?.cadenceType ||
+      getDefaultScheduleCadenceType(this.selectedConfigRow?.syncMode)
+    );
+  }
+
+  get isScheduleDraftHourly() {
+    return this.selectedScheduleCadenceType === SCHEDULE_CADENCE_HOURLY;
+  }
+
+  get isScheduleDraftMinutes() {
+    return this.selectedScheduleCadenceType === SCHEDULE_CADENCE_MINUTES;
+  }
+
+  get isScheduleDraftWeekly() {
+    return this.selectedScheduleCadenceType === SCHEDULE_CADENCE_WEEKLY;
+  }
+
+  get scheduleIntervalMinutesValue() {
+    return this.scheduleDraft?.intervalMinutes || "15";
+  }
+
+  get scheduleIntervalHoursValue() {
+    return this.scheduleDraft?.intervalHours || "1";
+  }
+
+  get scheduleDayOfWeekValue() {
+    return this.scheduleDraft?.dayOfWeek || "SUN";
+  }
+
+  get scheduleHourOfDayValue() {
+    return this.scheduleDraft?.hourOfDay || "2";
+  }
+
+  get scheduleMinuteOfHourValue() {
+    return this.scheduleDraft?.minuteOfHour || "0";
+  }
+
+  get scheduleMinuteLabel() {
+    return this.isScheduleDraftMinutes
+      ? "Starting Minute (0-59)"
+      : "Minute (0-59)";
+  }
+
+  get scheduleSaveButtonLabel() {
+    return this.isSavingSchedule ? "Saving..." : "Save Schedule";
+  }
+
+  get isScheduleSaveDisabled() {
+    return (
+      !this.selectedConfigRow ||
+      this.isSavingSchedule ||
+      this.isClearingSchedule
+    );
+  }
+
+  get isScheduleClearDisabled() {
+    return (
+      !this.selectedConfigRow ||
+      !this.hasSelectedConfigSchedule ||
+      this.isSavingSchedule ||
+      this.isClearingSchedule
+    );
+  }
+
+  get isScheduleResetDisabled() {
+    return (
+      !this.selectedConfigRow ||
+      this.isSavingSchedule ||
+      this.isClearingSchedule
+    );
+  }
+
+  get showCustomScheduleNotice() {
+    return (
+      this.hasSelectedConfigSchedule &&
+      this.selectedConfigRow?.scheduleCadenceRecognized === false
+    );
+  }
+
+  get showDeltaScheduleNotice() {
+    return (
+      this.selectedConfigRow?.syncMode === SYNC_MODE_DELTA &&
+      this.selectedConfigRow?.deltaReady === false
+    );
+  }
+
+  get hasRelatedScheduleConfigs() {
+    return this.relatedScheduleConfigs.length > 0;
+  }
+
+  get relatedScheduleConfigs() {
+    if (!this.selectedConfigRow || !this.catalogConfigs?.length) {
+      return [];
+    }
+
+    const selectedConfig = this.selectedConfigRow;
+    const relatedConfigs =
+      selectedConfig.syncMode === SYNC_MODE_DELTA
+        ? this.catalogConfigs.filter(
+            (config) =>
+              config.developerName ===
+              selectedConfig.baselineFullConfigDeveloperName
+          )
+        : this.catalogConfigs.filter(
+            (config) =>
+              config.syncMode === SYNC_MODE_DELTA &&
+              config.baselineFullConfigDeveloperName ===
+                selectedConfig.developerName
+          );
+
+    return relatedConfigs
+      .filter((config) => config.id !== selectedConfig.id)
+      .map((config) => ({
+        id: config.id,
+        title: `${config.label} • ${config.syncMode}`,
+        meta: [
+          config.scheduleCadenceSummary || "Not scheduled",
+          config.scheduleStateLabel || "Not scheduled"
+        ].join(" • ")
+      }));
+  }
+
+  handleDetailSectionToggle(event) {
+    const openSections = event.detail?.openSections;
+    if (Array.isArray(openSections)) {
+      this.detailAccordionOpenSections = [...openSections];
+      return;
+    }
+
+    this.detailAccordionOpenSections = openSections ? [openSections] : [];
   }
 
   handleTestConnection() {
@@ -1047,6 +1351,93 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     }
   }
 
+  handleScheduleDraftChange(event) {
+    const fieldName = event.target.dataset.field;
+    if (!fieldName) {
+      return;
+    }
+
+    this.scheduleDraft = {
+      ...this.buildScheduleDraftFromConfig(this.selectedConfigRow),
+      ...this.scheduleDraft,
+      [fieldName]: event.detail?.value ?? event.target.value ?? ""
+    };
+  }
+
+  handleResetScheduleDraft() {
+    this.initializeScheduleDraft(this.selectedConfigRow, true);
+  }
+
+  async handleSaveSchedule() {
+    if (!this.selectedConfigRow) {
+      return;
+    }
+
+    const validationMessage = this.validateScheduleDraft();
+    if (validationMessage) {
+      this.showToast("Schedule needs attention", validationMessage, "warning");
+      return;
+    }
+
+    this.isSavingSchedule = true;
+
+    try {
+      await saveCatalogJobSchedule({
+        jobConfigDeveloperName: this.selectedConfigRow.developerName,
+        cadenceType: this.selectedScheduleCadenceType,
+        intervalMinutes: this.parseInteger(this.scheduleDraft?.intervalMinutes),
+        intervalHours: this.parseInteger(this.scheduleDraft?.intervalHours),
+        dayOfWeek: this.scheduleDraft?.dayOfWeek,
+        hourOfDay: this.parseInteger(this.scheduleDraft?.hourOfDay),
+        minuteOfHour: this.parseInteger(this.scheduleDraft?.minuteOfHour)
+      });
+      await this.refreshCatalogJobConfigs();
+      this.initializeScheduleDraft(this.selectedConfigRow, true);
+      this.showToast(
+        "Schedule saved",
+        `Updated the native Salesforce schedule for ${this.selectedConfigRow.label}.`,
+        "success"
+      );
+    } catch (error) {
+      this.showToast(
+        "Unable to save schedule",
+        this.reduceError(error),
+        "error"
+      );
+    } finally {
+      this.isSavingSchedule = false;
+    }
+  }
+
+  async handleClearSchedule() {
+    if (!this.selectedConfigRow) {
+      return;
+    }
+
+    this.isClearingSchedule = true;
+
+    try {
+      await clearCatalogJobSchedule({
+        jobConfigDeveloperName: this.selectedConfigRow.developerName
+      });
+      await this.refreshCatalogJobConfigs();
+      this.initializeScheduleDraft(this.selectedConfigRow, true);
+      this.showToast(
+        "Schedule removed",
+        `Removed the native Salesforce schedule for ${this.selectedConfigRow.label}.`,
+        "success"
+      );
+    } catch (error) {
+      this.showToast(
+        "Unable to remove schedule",
+        this.reduceError(error),
+        "error"
+      );
+    } finally {
+      this.isClearingSchedule = false;
+    }
+  }
+
   handleDraftInputChange(event) {
     const fieldName = event.target.dataset.field;
     if (!fieldName) {
@@ -1083,7 +1474,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       }
     }
 
-    if (fieldName === "syncMode" && resolveSyncMode(value) !== SYNC_MODE_DELTA) {
+    if (
+      fieldName === "syncMode" &&
+      resolveSyncMode(value) !== SYNC_MODE_DELTA
+    ) {
       nextDraft.baselineFullConfigDeveloperName = "";
     }
 
@@ -1320,6 +1714,8 @@ export default class CoveoCommerceSetup extends NavigationMixin(
 
     if (!this.catalogConfigs.length) {
       this.selectedConfigRow = null;
+      this.scheduleDraft = null;
+      this.scheduleDraftConfigId = null;
       return;
     }
 
@@ -1335,7 +1731,8 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     );
     const syncMode =
       config.syncMode === SYNC_MODE_DELTA ? SYNC_MODE_DELTA : SYNC_MODE_FULL;
-    const deltaReady = syncMode === SYNC_MODE_DELTA ? config.deltaReady === true : true;
+    const deltaReady =
+      syncMode === SYNC_MODE_DELTA ? config.deltaReady === true : true;
     const buyerGroupAvailabilityMode = resolveBuyerGroupAvailabilityMode(
       config.buyerGroupAvailabilityMode,
       config.buyerGroupAvailabilityEnabled
@@ -1377,9 +1774,37 @@ export default class CoveoCommerceSetup extends NavigationMixin(
           : config.deltaReadinessMessage || "Delta blocked"
         : "Seeds the trusted baseline",
       `Baseline: ${
-        config.baselineFullConfigDeveloperName || (syncMode === SYNC_MODE_DELTA ? "(Missing)" : "Self")
+        config.baselineFullConfigDeveloperName ||
+        (syncMode === SYNC_MODE_DELTA ? "(Missing)" : "Self")
       }`
     ];
+    const isScheduled = config.isScheduled === true;
+    const scheduleCadenceSummary = this.describeScheduleCadence(config);
+    const scheduleStateLabel = this.describeScheduleState(config);
+    const inventoryExperienceSummaryParts = [
+      catalogLabel || config.catalogId || "All active products",
+      config.locale || "(Missing)"
+    ];
+    const inventorySupportParts = [
+      buyerGroupAvailabilityEnabled
+        ? `Access: ${buyerGroupAvailabilityModeLabel}`
+        : "Access: Disabled",
+      syncMode === SYNC_MODE_DELTA
+        ? deltaReady
+          ? "Delta ready"
+          : config.deltaReadinessMessage || "Waiting for baseline"
+        : "Trusted baseline",
+      `Last sync: ${this.formatOptionalTimestamp(
+        config.lastSuccessfulSyncAt,
+        "Never"
+      )}`
+    ];
+
+    if (buyerGroupAvailabilityEnabled) {
+      inventoryExperienceSummaryParts.push(
+        webStoreLabel || config.webStoreId || "(Missing)"
+      );
+    }
 
     if (buyerGroupAvailabilityEnabled) {
       experienceSummaryParts.push(
@@ -1419,9 +1844,31 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       activeStatusClass: config.isActive
         ? "detail-pill detail-pill--success"
         : "detail-pill detail-pill--neutral",
-      availabilityStatusClass: buyerGroupAvailabilityEnabled
+      availabilityStatusClass:
+        syncMode === SYNC_MODE_DELTA
+          ? deltaReady
+            ? "detail-pill detail-pill--success"
+            : "detail-pill detail-pill--warning"
+          : "detail-pill detail-pill--neutral",
+      availabilityStatusLabel:
+        syncMode === SYNC_MODE_DELTA
+          ? deltaReady
+            ? "Delta Ready"
+            : "Blocked"
+          : "Baseline",
+      syncStatusLabel: `${syncMode} Sync`,
+      syncStatusClass:
+        syncMode === SYNC_MODE_DELTA
+          ? "detail-pill detail-pill--brand"
+          : "detail-pill detail-pill--neutral",
+      scheduleStatusLabel: isScheduled ? "Scheduled" : "Manual",
+      scheduleStatusClass: isScheduled
         ? "detail-pill detail-pill--success"
         : "detail-pill detail-pill--neutral",
+      inventoryRowClass:
+        config.id === selectedConfigId
+          ? "config-table__row config-table__row--selected"
+          : "config-table__row",
       productFilter_truncated: this.truncateText(
         config.productFilter,
         TRUNCATE_LENGTH
@@ -1467,6 +1914,85 @@ export default class CoveoCommerceSetup extends NavigationMixin(
         `Last full: ${this.formatOptionalTimestamp(config.lastSuccessfulFullSyncAt, "Never")}`,
         `Last sync: ${this.formatOptionalTimestamp(config.lastSuccessfulSyncAt, "Never")}`
       ].join(" • "),
+      isScheduled,
+      scheduledJobName: config.scheduledJobName || "",
+      scheduleState: config.scheduleState || "",
+      scheduleStateLabel,
+      scheduleCronExpression: config.scheduleCronExpression || "",
+      scheduleNextFireTime: config.scheduleNextFireTime || "",
+      schedulePreviousFireTime: config.schedulePreviousFireTime || "",
+      scheduleTimesTriggered: config.scheduleTimesTriggered || 0,
+      scheduleCadenceRecognized: config.scheduleCadenceRecognized === true,
+      scheduleCadenceType: config.scheduleCadenceType || "",
+      scheduleIntervalMinutes:
+        config.scheduleIntervalMinutes === null ||
+        config.scheduleIntervalMinutes === undefined
+          ? null
+          : Number(config.scheduleIntervalMinutes),
+      scheduleIntervalHours:
+        config.scheduleIntervalHours === null ||
+        config.scheduleIntervalHours === undefined
+          ? null
+          : Number(config.scheduleIntervalHours),
+      scheduleDayOfWeek: config.scheduleDayOfWeek || "",
+      scheduleHourOfDay:
+        config.scheduleHourOfDay === null ||
+        config.scheduleHourOfDay === undefined
+          ? null
+          : Number(config.scheduleHourOfDay),
+      scheduleMinuteOfHour:
+        config.scheduleMinuteOfHour === null ||
+        config.scheduleMinuteOfHour === undefined
+          ? null
+          : Number(config.scheduleMinuteOfHour),
+      scheduleCadenceSummary,
+      scheduleSummary: isScheduled
+        ? `${scheduleCadenceSummary} • Next ${this.formatOptionalTimestamp(
+            config.scheduleNextFireTime,
+            "Pending"
+          )}`
+        : "Not scheduled",
+      inventoryExperienceSummary: inventoryExperienceSummaryParts.join(" • "),
+      inventoryExperienceMeta: [
+        `Locale: ${config.locale || "(Missing)"}`,
+        buyerGroupAvailabilityEnabled
+          ? `Store: ${webStoreLabel || config.webStoreId || "(Missing)"}`
+          : "Store: Not required"
+      ].join(" • "),
+      inventoryRunSummary: isScheduled
+        ? `${syncMode} • ${scheduleCadenceSummary}`
+        : `${syncMode} • Manual launch`,
+      inventoryRunMeta:
+        syncMode === SYNC_MODE_DELTA
+          ? deltaReady
+            ? "Trusted baseline available"
+            : config.deltaReadinessMessage || "Waiting for baseline"
+          : "Trusted baseline export",
+      inventoryTargetSummary: [
+        `Products: ${config.sourceId || "(Missing)"}`,
+        `Org: ${config.coveoOrgId || "(Missing)"}`
+      ].join(" • "),
+      inventoryScheduleSummary: isScheduled ? scheduleCadenceSummary : "Manual",
+      inventoryScheduleMeta: isScheduled
+        ? scheduleStateLabel
+        : "Launch from the run console",
+      inventorySourceSummary: config.sourceId || "(Missing)",
+      inventorySourceMeta: config.coveoOrgId || "(Missing)",
+      inventoryAccessSummary: buyerGroupAvailabilityModeLabel,
+      inventoryAccessMeta: usesPaired
+        ? `Availability: ${config.availabilitySourceId || "(Missing)"}`
+        : usesEmbedded
+          ? "Embedded in product source"
+          : "No access export",
+      inventoryLastSyncSummary: this.formatOptionalTimestamp(
+        config.lastSuccessfulSyncAt,
+        "Never"
+      ),
+      inventoryLastSyncMeta: `Full baseline: ${this.formatOptionalTimestamp(
+        config.lastSuccessfulFullSyncAt,
+        "Never"
+      )}`,
+      inventorySupportSummary: inventorySupportParts.join(" • "),
       catalogLabel: catalogLabel || config.catalogId || "All active products",
       webStoreLabel: webStoreLabel || config.webStoreId || "Not selected",
       catalogDisplay,
@@ -1486,8 +2012,11 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   }
 
   setSelectedConfig(configId) {
+    const previousSelectedConfigId = this.selectedConfigRow?.id;
     if (!configId || !this.catalogConfigs?.length) {
       this.selectedConfigRow = null;
+      this.scheduleDraft = null;
+      this.scheduleDraftConfigId = null;
       return;
     }
 
@@ -1508,6 +2037,15 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     });
 
     this.selectedConfigRow = nextSelectedConfig;
+
+    if (
+      nextSelectedConfig &&
+      (previousSelectedConfigId !== nextSelectedConfig.id ||
+        !this.scheduleDraft ||
+        this.scheduleDraftConfigId !== nextSelectedConfig.id)
+    ) {
+      this.initializeScheduleDraft(nextSelectedConfig, true);
+    }
   }
 
   getBuilderDisplayLabel(builderTypeValue) {
@@ -1578,8 +2116,198 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       `IsActive__c: ${Boolean(config.isActive)}`,
       `LastSuccessfulFullSyncAt: ${config.lastSuccessfulFullSyncAt || ""}`,
       `LastSuccessfulSyncAt: ${config.lastSuccessfulSyncAt || ""}`,
-      `LastRunMode: ${config.lastRunMode || ""}`
+      `LastRunMode: ${config.lastRunMode || ""}`,
+      `ScheduledJobName: ${config.scheduledJobName || ""}`,
+      `ScheduleCronExpression: ${config.scheduleCronExpression || ""}`,
+      `ScheduleState: ${config.scheduleState || ""}`
     ].join("\n");
+  }
+
+  buildScheduleDraftFromConfig(config) {
+    const defaultCadenceType = getDefaultScheduleCadenceType(config?.syncMode);
+    const recognizedCadenceType =
+      config?.scheduleCadenceRecognized && config?.scheduleCadenceType
+        ? config.scheduleCadenceType
+        : defaultCadenceType;
+    const defaultHourOfDay =
+      resolveSyncMode(config?.syncMode) === SYNC_MODE_DELTA ? "0" : "2";
+
+    return {
+      cadenceType: recognizedCadenceType,
+      intervalMinutes:
+        config?.scheduleCadenceRecognized &&
+        config?.scheduleCadenceType === SCHEDULE_CADENCE_MINUTES
+          ? String(config.scheduleIntervalMinutes)
+          : "15",
+      intervalHours:
+        config?.scheduleCadenceRecognized &&
+        config?.scheduleCadenceType === SCHEDULE_CADENCE_HOURLY
+          ? String(config.scheduleIntervalHours)
+          : "1",
+      dayOfWeek:
+        config?.scheduleCadenceRecognized &&
+        config?.scheduleCadenceType === SCHEDULE_CADENCE_WEEKLY &&
+        config?.scheduleDayOfWeek
+          ? config.scheduleDayOfWeek
+          : "SUN",
+      hourOfDay:
+        config?.scheduleCadenceRecognized &&
+        config?.scheduleCadenceType === SCHEDULE_CADENCE_WEEKLY &&
+        config?.scheduleHourOfDay !== null &&
+        config?.scheduleHourOfDay !== undefined
+          ? String(config.scheduleHourOfDay)
+          : defaultHourOfDay,
+      minuteOfHour:
+        config?.scheduleCadenceRecognized &&
+        config?.scheduleMinuteOfHour !== null &&
+        config?.scheduleMinuteOfHour !== undefined
+          ? String(config.scheduleMinuteOfHour)
+          : "0"
+    };
+  }
+
+  initializeScheduleDraft(config, forceReset = false) {
+    if (!config) {
+      this.scheduleDraft = null;
+      this.scheduleDraftConfigId = null;
+      return;
+    }
+
+    if (
+      !forceReset &&
+      this.scheduleDraft &&
+      this.scheduleDraftConfigId === config.id
+    ) {
+      return;
+    }
+
+    this.scheduleDraft = this.buildScheduleDraftFromConfig(config);
+    this.scheduleDraftConfigId = config.id;
+  }
+
+  validateScheduleDraft() {
+    const cadenceType = this.selectedScheduleCadenceType;
+    const minuteOfHour = this.parseInteger(this.scheduleDraft?.minuteOfHour);
+
+    if (minuteOfHour === null || minuteOfHour < 0 || minuteOfHour > 59) {
+      return "Minute must be a whole number between 0 and 59.";
+    }
+
+    if (cadenceType === SCHEDULE_CADENCE_MINUTES) {
+      const intervalMinutes = this.parseInteger(
+        this.scheduleDraft?.intervalMinutes
+      );
+      if (
+        intervalMinutes === null ||
+        intervalMinutes < 1 ||
+        intervalMinutes > 59
+      ) {
+        return "Minute schedules require an interval between 1 and 59 minutes.";
+      }
+      if (60 % intervalMinutes !== 0) {
+        return "Minute schedules require an interval that evenly divides 60.";
+      }
+      if (60 / intervalMinutes > 4) {
+        return "Minute schedules currently support up to four runs per hour.";
+      }
+      return "";
+    }
+
+    if (cadenceType === SCHEDULE_CADENCE_HOURLY) {
+      const intervalHours = this.parseInteger(
+        this.scheduleDraft?.intervalHours
+      );
+      if (intervalHours === null || intervalHours < 1 || intervalHours > 24) {
+        return "Hourly schedules require an interval between 1 and 24 hours.";
+      }
+      return "";
+    }
+
+    if (cadenceType === SCHEDULE_CADENCE_WEEKLY) {
+      const hourOfDay = this.parseInteger(this.scheduleDraft?.hourOfDay);
+      if (hourOfDay === null || hourOfDay < 0 || hourOfDay > 23) {
+        return "Weekly schedules require an hour between 0 and 23.";
+      }
+      if (!this.scheduleDraft?.dayOfWeek) {
+        return "Weekly schedules require a day of week.";
+      }
+      return "";
+    }
+
+    return "Choose a supported schedule cadence.";
+  }
+
+  parseInteger(rawValue) {
+    if (rawValue === null || rawValue === undefined || rawValue === "") {
+      return null;
+    }
+
+    const parsedValue = Number.parseInt(rawValue, 10);
+    return Number.isNaN(parsedValue) ? null : parsedValue;
+  }
+
+  describeScheduleState(config) {
+    if (config.isScheduled !== true) {
+      return "Not scheduled";
+    }
+
+    switch (config.scheduleState) {
+      case "WAITING":
+        return "Scheduled";
+      case "ACQUIRED":
+        return "Queued";
+      case "EXECUTING":
+        return "Running";
+      case "PAUSED":
+      case "PAUSED_BLOCKED":
+        return "Paused";
+      case "BLOCKED":
+        return "Blocked";
+      default:
+        return config.scheduleState || "Scheduled";
+    }
+  }
+
+  describeScheduleCadence(config) {
+    if (config.isScheduled !== true) {
+      return "Not scheduled";
+    }
+
+    if (config.scheduleCadenceRecognized !== true) {
+      return config.scheduleCronExpression
+        ? `Custom cron: ${config.scheduleCronExpression}`
+        : "Scheduled";
+    }
+
+    if (config.scheduleCadenceType === SCHEDULE_CADENCE_HOURLY) {
+      const intervalHours = Number(config.scheduleIntervalHours) || 1;
+      const minuteOfHour = Number(config.scheduleMinuteOfHour) || 0;
+      return `Every ${intervalHours} hour${
+        intervalHours === 1 ? "" : "s"
+      } at :${padNumber(minuteOfHour)}`;
+    }
+
+    if (config.scheduleCadenceType === SCHEDULE_CADENCE_MINUTES) {
+      const intervalMinutes = Number(config.scheduleIntervalMinutes) || 15;
+      const minuteOfHour = Number(config.scheduleMinuteOfHour) || 0;
+      return minuteOfHour > 0
+        ? `Every ${intervalMinutes} minute${
+            intervalMinutes === 1 ? "" : "s"
+          } starting at :${padNumber(minuteOfHour)}`
+        : `Every ${intervalMinutes} minute${intervalMinutes === 1 ? "" : "s"}`;
+    }
+
+    if (config.scheduleCadenceType === SCHEDULE_CADENCE_WEEKLY) {
+      const dayLabel =
+        SCHEDULE_DAY_LABELS[config.scheduleDayOfWeek] || "Unknown day";
+      const hourOfDay = Number(config.scheduleHourOfDay) || 0;
+      const minuteOfHour = Number(config.scheduleMinuteOfHour) || 0;
+      return `Every ${dayLabel} at ${padNumber(hourOfDay)}:${padNumber(
+        minuteOfHour
+      )}`;
+    }
+
+    return config.scheduleCronExpression || "Scheduled";
   }
 
   formatOptionalTimestamp(isoValue, fallbackValue) {

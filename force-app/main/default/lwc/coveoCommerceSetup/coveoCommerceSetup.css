@@ -307,10 +307,7 @@
 
 .jobs-workspace {
   display: grid;
-  grid-template-columns: minmax(22rem, 28rem) minmax(0, 1.45fr) minmax(
-      22rem,
-      0.95fr
-    );
+  grid-template-columns: minmax(0, 1.45fr) minmax(22rem, 0.95fr);
   gap: 1.25rem;
   align-items: start;
 }
@@ -323,6 +320,10 @@
 
 .jobs-detail-panel {
   margin-top: 1.25rem;
+}
+
+.jobs-inventory {
+  grid-column: 1 / -1;
 }
 
 .editor-section + .editor-section {
@@ -482,6 +483,10 @@
   margin-top: 0.9rem;
 }
 
+.config-card__facts--compact {
+  gap: 0.55rem;
+}
+
 .config-card__fact {
   border-top: 1px solid #eef2f7;
   padding-top: 0.75rem;
@@ -510,9 +515,9 @@
 
 .config-card__footer {
   display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-start;
   margin-top: 1rem;
   padding-top: 0.9rem;
   border-top: 1px solid #eef2f7;
@@ -522,13 +527,158 @@
   margin: 0;
   color: #54698d;
   font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .config-card__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  justify-content: flex-end;
+  justify-content: flex-start;
+}
+
+.config-table-shell {
+  border: 1px solid #dde7f0;
+  border-radius: 0.95rem;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+}
+
+.config-table-scroll {
+  overflow-x: auto;
+}
+
+.config-table {
+  width: 100%;
+  min-width: 78rem;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.config-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.85rem 0.9rem;
+  border-bottom: 1px solid #dde7f0;
+  background: #f7f9fb;
+  color: #54698d;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.config-table tbody td {
+  padding: 0.9rem;
+  border-bottom: 1px solid #eef2f7;
+  vertical-align: top;
+}
+
+.config-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.config-table__row {
+  background: #fff;
+  transition: background-color 160ms ease;
+}
+
+.config-table__row:hover {
+  background: #f8fbff;
+}
+
+.config-table__row--selected {
+  background: linear-gradient(180deg, #f5faff 0%, #edf4ff 100%);
+}
+
+.config-table__job-button {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.config-table__job-title {
+  color: #032d60;
+  font-size: 0.97rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.config-table__job-meta {
+  color: #54698d;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.config-table__badge-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.config-table__primary {
+  margin: 0;
+  color: #16325c;
+  font-size: 0.89rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.config-table__secondary {
+  margin: 0.2rem 0 0;
+  color: #54698d;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.config-table__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 7.5rem;
+}
+
+.table-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #c9d8e6;
+  border-radius: 0.65rem;
+  background: #fff;
+  color: #16325c;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+.table-action:hover {
+  border-color: #0176d3;
+  box-shadow: 0 0 0 2px rgb(1 118 211 / 8%);
+}
+
+.table-action--primary {
+  border-color: #0176d3;
+  background: #0176d3;
+  color: #fff;
+}
+
+.table-action--primary:hover {
+  border-color: #015fb2;
+  background: #015fb2;
 }
 
 .config-detail-panel__actions {
@@ -695,6 +845,10 @@
   padding: 0.8rem;
 }
 
+.detail-field--full {
+  grid-column: 1 / -1;
+}
+
 .detail-field__label {
   margin: 0 0 0.25rem;
   color: #54698d;
@@ -739,9 +893,113 @@
   color: #16325c;
 }
 
+.detail-pill--warning {
+  background: #fff6e5;
+  color: #8a4b08;
+}
+
+.detail-pill--brand {
+  background: #eef4ff;
+  color: #0b5cab;
+}
+
 .detail-empty-value {
   margin: 0;
   color: #54698d;
+}
+
+.selected-config-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.selected-config-overview-card {
+  border: 1px solid #dde7f0;
+  border-radius: 0.85rem;
+  background: linear-gradient(180deg, #ffffff 0%, #f7f9fb 100%);
+  padding: 0.95rem;
+}
+
+.selected-config-overview-card__label {
+  margin: 0 0 0.25rem;
+  color: #54698d;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.selected-config-overview-card__value {
+  margin: 0;
+  color: #032d60;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.selected-config-overview-card__helper {
+  margin: 0.35rem 0 0;
+  color: #54698d;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.config-detail-accordion {
+  margin-top: 0.25rem;
+}
+
+.config-detail-accordion .detail-section {
+  border: 0;
+  background: transparent;
+  padding: 0.2rem 0 0;
+}
+
+.schedule-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+}
+
+.schedule-related-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.75rem;
+}
+
+.schedule-related-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+  border: 1px solid #d8dde6;
+  border-radius: 0.85rem;
+  background: linear-gradient(180deg, #fff 0%, #f8fbff 100%);
+  padding: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.schedule-related-card:hover {
+  border-color: #0176d3;
+  box-shadow: 0 0 0 2px rgb(1 118 211 / 10%);
+  transform: translateY(-1px);
+}
+
+.schedule-related-card__title {
+  color: #032d60;
+  font-weight: 700;
+}
+
+.schedule-related-card__meta {
+  color: #54698d;
+  font-size: 0.84rem;
+  line-height: 1.45;
 }
 
 .code-preview pre,
@@ -823,11 +1081,11 @@
   }
 
   .jobs-workspace {
-    grid-template-columns: minmax(20rem, 25rem) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .jobs-review {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 }
 
@@ -852,8 +1110,11 @@
 @media (max-width: 768px) {
   .workspace-grid,
   .review-stat-grid,
+  .selected-config-overview-grid,
   .config-modal-layout,
-  .detail-grid {
+  .detail-grid,
+  .schedule-form-grid,
+  .schedule-related-grid {
     grid-template-columns: 1fr;
   }
 
@@ -864,6 +1125,10 @@
   .workspace-page-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .config-table {
+    min-width: 64rem;
   }
 
   .review-summary__value {

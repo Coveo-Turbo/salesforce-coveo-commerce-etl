@@ -4,40 +4,88 @@ public with sharing class CatalogDeltaScopeResolver {
     .getDescribe()
     .fields.getMap();
 
+  public class ScopeMetrics {
+    public Integer impactedProductCount { get; set; }
+    public Integer rootProductCount { get; set; }
+    public Integer exportProductCount { get; set; }
+  }
+
   public static Set<Id> resolveExportProductIds(
     CatalogJobConfig__mdt jobConfig,
     Datetime lowerExclusive,
     Datetime upperInclusive
   ) {
+    return computeScope(jobConfig, lowerExclusive, upperInclusive).exportProductIds;
+  }
+
+  public static ScopeMetrics describeScope(
+    CatalogJobConfig__mdt jobConfig,
+    Datetime lowerExclusive,
+    Datetime upperInclusive
+  ) {
+    ScopeComputation computation = computeScope(
+      jobConfig,
+      lowerExclusive,
+      upperInclusive
+    );
+
+    ScopeMetrics metrics = new ScopeMetrics();
+    metrics.impactedProductCount = computation.changedProductIds.size();
+    metrics.rootProductCount = computation.rootProductIds.size();
+    metrics.exportProductCount = computation.exportProductIds.size();
+    return metrics;
+  }
+
+  @TestVisible
+  private class ScopeComputation {
+    public Set<Id> changedProductIds = new Set<Id>();
+    public Set<Id> rootProductIds = new Set<Id>();
+    public Set<Id> exportProductIds = new Set<Id>();
+  }
+
+  @TestVisible
+  private static ScopeComputation computeScope(
+    CatalogJobConfig__mdt jobConfig,
+    Datetime lowerExclusive,
+    Datetime upperInclusive
+  ) {
+    ScopeComputation computation = new ScopeComputation();
+
     if (
       jobConfig == null ||
       lowerExclusive == null ||
       upperInclusive == null ||
       lowerExclusive.getTime() >= upperInclusive.getTime()
     ) {
-      return new Set<Id>();
+      return computation;
     }
 
-    Set<Id> changedProductIds = collectChangedProductIds(
+    computation.changedProductIds = collectChangedProductIds(
       jobConfig,
       lowerExclusive,
       upperInclusive
     );
-    if (changedProductIds.isEmpty()) {
-      return new Set<Id>();
+    if (computation.changedProductIds.isEmpty()) {
+      return computation;
     }
 
-    Set<Id> rootProductIds = resolveRootProductIds(jobConfig, changedProductIds);
-    if (rootProductIds.isEmpty()) {
-      return new Set<Id>();
+    computation.rootProductIds = resolveRootProductIds(
+      jobConfig,
+      computation.changedProductIds
+    );
+    if (computation.rootProductIds.isEmpty()) {
+      return computation;
     }
 
-    Set<Id> expandedProductIds = expandExportProductIds(jobConfig, rootProductIds);
+    Set<Id> expandedProductIds = expandExportProductIds(
+      jobConfig,
+      computation.rootProductIds
+    );
     if (expandedProductIds.isEmpty()) {
-      return new Set<Id>();
+      return computation;
     }
 
-    Set<Id> scopedProductIds = new Set<Id>();
+    computation.exportProductIds = new Set<Id>();
     for (
       Product2 product : CatalogJobScopeUtil.queryProductsByIds(
         jobConfig,
@@ -45,10 +93,10 @@ public with sharing class CatalogDeltaScopeResolver {
         new List<String>{ 'Id' }
       )
     ) {
-      scopedProductIds.add(product.Id);
+      computation.exportProductIds.add(product.Id);
     }
 
-    return scopedProductIds;
+    return computation;
   }
 
   @TestVisible

@@ -258,6 +258,27 @@ private class DeltaProductCatalogExportBatchTest {
   }
 
   @IsTest
+  static void testStart_preservesProvidedRunCutoff() {
+    Product2 product = createProduct('CUTOFF-001');
+    Datetime baseline = System.now().addMinutes(-10);
+    Datetime runCutoff = System.now().addMinutes(2);
+    CatalogJobConfig__mdt config = createConfig();
+
+    DeltaProductCatalogExportBatch batch = new DeltaProductCatalogExportBatch(
+      config,
+      Test.getStandardPricebookId(),
+      baseline,
+      runCutoff
+    );
+
+    List<Product2> scopeProducts = collectProducts(batch.start(null));
+
+    System.assertEquals(1, scopeProducts.size());
+    System.assertEquals(product.Id, scopeProducts[0].Id);
+    System.assertEquals(runCutoff, batch.runCutoff);
+  }
+
+  @IsTest
   static void testConstructorRejectsNullConfig() {
     try {
       new DeltaProductCatalogExportBatch(

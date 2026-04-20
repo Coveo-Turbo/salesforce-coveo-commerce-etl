@@ -11,7 +11,21 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
     this(
       loadJobConfig(jobConfigDeveloperName),
       ProductCatalogExportBatch.getStandardPricebookId(),
+      null,
       null
+    );
+  }
+
+  public DeltaProductCatalogExportBatch(
+    String jobConfigDeveloperName,
+    Datetime baselineTimestamp,
+    Datetime runCutoff
+  ) {
+    this(
+      loadJobConfig(jobConfigDeveloperName),
+      ProductCatalogExportBatch.getStandardPricebookId(),
+      baselineTimestamp,
+      runCutoff
     );
   }
 
@@ -20,6 +34,16 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
     CatalogJobConfig__mdt jobConfig,
     Id stdPricebookId,
     Datetime baselineTimestamp
+  ) {
+    this(jobConfig, stdPricebookId, baselineTimestamp, null);
+  }
+
+  @TestVisible
+  private DeltaProductCatalogExportBatch(
+    CatalogJobConfig__mdt jobConfig,
+    Id stdPricebookId,
+    Datetime baselineTimestamp,
+    Datetime runCutoff
   ) {
     if (jobConfig == null) {
       throw new CatalogJobException('Catalog job config is required.');
@@ -34,6 +58,7 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
     this.jobConfig = jobConfig;
     this.stdPricebookId = stdPricebookId;
     this.baselineTimestamp = baselineTimestamp;
+    this.runCutoff = runCutoff;
     extraFieldNames.addAll(
       CatalogProductExportSupport.parseExtraFieldNames(
         jobConfig.AdditionalProductFields__c
@@ -100,7 +125,9 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
       baselineTimestamp = readiness.stateRecord.LastSuccessfulSyncAt__c;
     }
 
-    runCutoff = System.now();
+    if (runCutoff == null) {
+      runCutoff = System.now();
+    }
 
     Set<Id> exportProductIds = CatalogDeltaScopeResolver.resolveExportProductIds(
       jobConfig,

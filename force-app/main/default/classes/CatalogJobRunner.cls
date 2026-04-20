@@ -14,6 +14,18 @@ public with sharing class CatalogJobRunner {
 
     @AuraEnabled
     public String label { get; set; }
+
+    @AuraEnabled
+    public Integer impactedProductCount { get; set; }
+
+    @AuraEnabled
+    public Integer changedRootProductCount { get; set; }
+
+    @AuraEnabled
+    public Integer exportProductCount { get; set; }
+
+    @AuraEnabled
+    public String scopeSummary { get; set; }
   }
 
   public class LaunchResult {
@@ -111,12 +123,16 @@ public with sharing class CatalogJobRunner {
     List<CatalogJobConfig__mdt> configs = listConfigs();
     Map<String, CatalogSyncStateService.Snapshot> snapshotsByDeveloperName =
       CatalogSyncStateService.getSnapshotsByDeveloperName(configs);
+    Map<String, CatalogProductSyncScheduler.ScheduleSnapshot> scheduleSnapshotsByDeveloperName =
+      CatalogProductSyncScheduler.getScheduleSnapshotsByDeveloperName(configs);
     List<Map<String, Object>> consoleConfigs = new List<Map<String, Object>>();
 
     for (CatalogJobConfig__mdt config : configs) {
       CatalogSyncStateService.Snapshot snapshot = snapshotsByDeveloperName.get(
         config.DeveloperName
       );
+      CatalogProductSyncScheduler.ScheduleSnapshot scheduleSnapshot =
+        scheduleSnapshotsByDeveloperName.get(config.DeveloperName);
       consoleConfigs.add(
         new Map<String, Object>{
           'DeveloperName' => config.DeveloperName,
@@ -153,6 +169,58 @@ public with sharing class CatalogJobRunner {
           'lastSuccessfulConfigDeveloperName' => snapshot == null
             ? null
             : snapshot.lastSuccessfulConfigDeveloperName,
+          'currentProductJobId' => snapshot == null
+            ? null
+            : snapshot.currentProductJobId,
+          'currentProductJobStatus' => snapshot == null
+            ? null
+            : snapshot.currentProductJobStatus,
+          'currentProductRunMode' => snapshot == null
+            ? null
+            : snapshot.currentProductRunMode,
+          'currentProductConfigDeveloperName' => snapshot == null
+            ? null
+            : snapshot.currentProductConfigDeveloperName,
+          'currentProductStartedAt' => snapshot == null
+            ? null
+            : snapshot.currentProductStartedAt,
+          'currentProductIsActive' => snapshot == null
+            ? false
+            : snapshot.currentProductIsActive,
+          'isScheduled' => scheduleSnapshot == null
+            ? false
+            : scheduleSnapshot.isScheduled,
+          'scheduleState' => scheduleSnapshot == null
+            ? null
+            : scheduleSnapshot.state,
+          'scheduleCadenceRecognized' => scheduleSnapshot == null
+            ? false
+            : scheduleSnapshot.cadenceRecognized,
+          'scheduleCadenceType' => scheduleSnapshot == null
+            ? null
+            : scheduleSnapshot.cadenceType,
+          'scheduleIntervalMinutes' => scheduleSnapshot == null
+            ? null
+            : scheduleSnapshot.intervalMinutes,
+          'scheduleIntervalHours' => scheduleSnapshot == null
+            ? null
+            : scheduleSnapshot.intervalHours,
+          'scheduleDayOfWeek' => scheduleSnapshot == null
+            ? null
+            : scheduleSnapshot.dayOfWeek,
+          'scheduleHourOfDay' => scheduleSnapshot == null
+            ? null
+            : scheduleSnapshot.hourOfDay,
+          'scheduleMinuteOfHour' => scheduleSnapshot == null
+            ? null
+            : scheduleSnapshot.minuteOfHour,
+          'scheduleNextFireTime' => scheduleSnapshot == null
+            ? null
+            : (scheduleSnapshot.nextFireTime == null
+                ? null
+                : scheduleSnapshot.nextFireTime.formatGmt(
+                    'yyyy-MM-dd\'T\'HH:mm:ss\'Z\''
+                  )),
           'resolvedTargetKey' => snapshot == null
             ? CatalogSyncStateService.buildResolvedTargetKey(config)
             : snapshot.resolvedTargetKey
@@ -227,6 +295,48 @@ public with sharing class CatalogJobRunner {
       );
     }
     return launches;
+  }
+
+  @AuraEnabled
+  public static String abortCurrentProductRun(String jobConfigDeveloperName) {
+    CatalogJobConfig__mdt config = getConfig(jobConfigDeveloperName);
+    CatalogSyncStateService.Snapshot snapshot =
+      CatalogSyncStateService.getSnapshotsByDeveloperName(
+        new List<CatalogJobConfig__mdt>{ config }
+      )
+      .get(config.DeveloperName);
+
+    if (
+      snapshot == null ||
+      snapshot.currentProductIsActive != true ||
+      String.isBlank(snapshot.currentProductJobId)
+    ) {
+      throw new CatalogJobConfigException(
+        'No active product sync is currently tracked for ' + config.Label + '.'
+      );
+    }
+
+    abortAsyncJob(snapshot.currentProductJobId);
+    return snapshot.currentProductJobId;
+  }
+
+  @AuraEnabled
+  public static String abortRunJob(String jobId) {
+    if (String.isBlank(jobId)) {
+      throw new CatalogJobConfigException('A job id is required.');
+    }
+
+    List<RunSnapshot> snapshots = getRunSnapshots(
+      new List<String>{ jobId.trim() }
+    );
+    if (snapshots.isEmpty()) {
+      throw new CatalogJobConfigException(
+        'No async Apex job was found for id ' + jobId.trim() + '.'
+      );
+    }
+
+    abortAsyncJob(jobId.trim());
+    return jobId.trim();
   }
 
   @AuraEnabled
@@ -308,6 +418,20 @@ public with sharing class CatalogJobRunner {
     return snapshots;
   }
 
+  @TestVisible
+  private static void abortAsyncJob(String jobId) {
+    List<RunSnapshot> snapshots = getRunSnapshots(new List<String>{ jobId });
+    if (snapshots.isEmpty()) {
+      return;
+    }
+
+    if (snapshots[0].isTerminal == true) {
+      return;
+    }
+
+    System.abortJob((Id) jobId);
+  }
+
   private static LaunchResult launchForConfig(
     CatalogJobConfig__mdt config,
     Boolean runProducts,
@@ -375,16 +499,47 @@ public with sharing class CatalogJobRunner {
 
   private static JobLaunchHandle launchProductJob(CatalogJobConfig__mdt config) {
     if (CatalogSyncMode.isDelta(config)) {
+      CatalogSyncStateService.DeltaReadiness readiness =
+        CatalogSyncStateService.requireDeltaReadiness(config);
+      Datetime baselineTimestamp = readiness.stateRecord.LastSuccessfulSyncAt__c;
+      Datetime runCutoff = System.now();
+      CatalogDeltaScopeResolver.ScopeMetrics metrics =
+        CatalogDeltaScopeResolver.describeScope(
+          config,
+          baselineTimestamp,
+          runCutoff
+        );
       DeltaProductCatalogExportBatch deltaBatch =
-        new DeltaProductCatalogExportBatch(config.DeveloperName);
+        new DeltaProductCatalogExportBatch(
+          config.DeveloperName,
+          baselineTimestamp,
+          runCutoff
+        );
       Id deltaJobId = Database.executeBatch(deltaBatch, deltaBatch.getBatchSize());
-      return createLaunchHandle(deltaJobId, 'products', 'Delta Product Sync');
+      CatalogSyncStateService.recordStartedProductSync(
+        config,
+        CatalogSyncMode.DELTA,
+        deltaJobId,
+        runCutoff
+      );
+      return createLaunchHandle(
+        deltaJobId,
+        'products',
+        'Delta Product Sync',
+        metrics
+      );
     }
 
     ProductCatalogExportBatch fullBatch = new ProductCatalogExportBatch(
       config.DeveloperName
     );
     Id fullJobId = Database.executeBatch(fullBatch, fullBatch.getBatchSize());
+    CatalogSyncStateService.recordStartedProductSync(
+      config,
+      CatalogSyncMode.FULL,
+      fullJobId,
+      System.now()
+    );
     return createLaunchHandle(fullJobId, 'products', 'Full Product Sync');
   }
 
@@ -424,10 +579,45 @@ public with sharing class CatalogJobRunner {
     String channel,
     String label
   ) {
+    return createLaunchHandle(jobId, channel, label, null);
+  }
+
+  @TestVisible
+  private static JobLaunchHandle createLaunchHandle(
+    Id jobId,
+    String channel,
+    String label,
+    CatalogDeltaScopeResolver.ScopeMetrics metrics
+  ) {
     JobLaunchHandle handle = new JobLaunchHandle();
     handle.jobId = String.valueOf(jobId);
     handle.channel = channel;
     handle.label = label;
+    if (metrics != null) {
+      handle.impactedProductCount = metrics.impactedProductCount;
+      handle.changedRootProductCount = metrics.rootProductCount;
+      handle.exportProductCount = metrics.exportProductCount;
+      handle.scopeSummary =
+        metrics.exportProductCount > 0
+          ? metrics.impactedProductCount +
+            ' impacted product' +
+            (metrics.impactedProductCount == 1 ? '' : 's') +
+            ' since last sync • ' +
+            metrics.rootProductCount +
+            ' changed root' +
+            (metrics.rootProductCount == 1 ? '' : 's') +
+            ' • ' +
+            metrics.exportProductCount +
+            ' product' +
+            (metrics.exportProductCount == 1 ? '' : 's') +
+            ' queued for export'
+          : metrics.impactedProductCount > 0
+            ? metrics.impactedProductCount +
+              ' impacted product' +
+              (metrics.impactedProductCount == 1 ? '' : 's') +
+              ' since last sync, but none matched this export scope'
+            : 'No changed products since last sync';
+    }
     return handle;
   }
 

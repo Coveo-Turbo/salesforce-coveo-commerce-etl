@@ -19,13 +19,15 @@ It includes:
 
 - A flexible **Catalog Export Batch** implementation
 - Support for **multiple Coveo catalog sources** (one per locale or market)
+- Trusted **Full** and **Delta** product sync modes with resolved-target baselines
 - Dynamic **Product2 filtering** (SOQL WHERE clause per catalog)
 - Dynamic **field enrichment** via Product2 fields configured in CMDT
 - Correct **Commerce payload format** (flat items, objecttype, ec\_\* fields)
 - **Category hierarchy resolution** using B2B Commerce’s ProductCategory model
 - Optional **Buyer Group availability exports** to a paired Coveo Availability source
 - Full **delete-older-than** cleanup via Stream API
-- A modern **LWC Admin Console** for triggering jobs
+- Native Salesforce **scheduling controls** for full and delta sync jobs
+- A modern **LWC setup workspace and run center** for drafting, scheduling, and monitoring jobs
 - SafeFieldUtil for fault-tolerant dynamic field access
 - Scratch-org scripts + seeded sample data
 
@@ -56,10 +58,6 @@ To verify, check in **Setup → Object Manager** that the following objects exis
 
 If these objects are missing, the org is **not Commerce-enabled**.
 
-
-
-
-
 ## 📥 Installation
 
 ### Current Version: 1.2.3
@@ -73,10 +71,10 @@ This library is distributed as an [Unlocked Package](https://developer.salesforc
 
 #### Install via Package Links
 
-* **Production / Developer Org:**
+- **Production / Developer Org:**
   [https://login.salesforce.com/packaging/installPackage.apexp?p0=04tak000000PdqzAAC](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tak000000PdqzAAC)
 
-* **Sandbox:**
+- **Sandbox:**
   [https://test.salesforce.com/packaging/installPackage.apexp?p0=04tak000000PdqzAAC](https://test.salesforce.com/packaging/installPackage.apexp?p0=04tak000000PdqzAAC)
 
 #### Install Using Salesforce CLI
@@ -100,12 +98,14 @@ sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
 ### Option 2: Deploy via Metadata Package
 
 1. **Download the latest release:**
+
    ```bash
    curl -L -o coveo-etl.zip "https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl/releases/download/v1.2.3/salesforce-coveo-commerce-etl-v1.2.3.zip"
    unzip coveo-etl.zip -d coveo-etl
    ```
 
 2. **Deploy to your Salesforce org:**
+
    ```bash
    sf project deploy start --metadata-dir coveo-etl --target-org <your-org-alias>
    ```
@@ -118,12 +118,14 @@ sf org assign permset --name CoveoETL_Admin --target-org <your-org-alias>
 ### Option 3: Deploy from Source
 
 1. **Clone this repository:**
+
    ```bash
    git clone https://github.com/Coveo-Turbo/salesforce-coveo-commerce-etl.git
    cd salesforce-coveo-commerce-etl
    ```
 
 2. **Deploy to your org:**
+
    ```bash
    sf project deploy start --target-org <your-org-alias>
    ```
@@ -258,10 +260,32 @@ We resolve B2B Commerce category chains:
 Supports:
 
 - `addOrUpdate` — full updates
-- `addOrMerge` — incremental updates
+- `addOrMerge` — incremental updates when supported by the downstream workflow
+- `deleteOlderThan` cleanup for trusted full baseline exports
 - `stream/deleteolderthan` — full replacement cleanup
 - File container upload (S3 PUT)
 - OrderingId extraction
+
+### 🪄 Full And Delta Product Syncs
+
+Each `CatalogJobConfig__mdt` record now supports a `SyncMode__c`:
+
+- `Full` establishes the trusted catalog baseline and keeps the full replacement behavior.
+- `Delta` re-exports only changed root products for the resolved export target.
+
+Delta jobs are protected by runtime sync state:
+
+- A successful full sync must exist before a delta job can run.
+- Delta jobs use the last successful sync watermark for the resolved target.
+- Delta jobs skip `deleteOlderThan` and only refresh changed product families.
+
+### ⏰ Native Scheduling
+
+The setup workspace can create or replace native Salesforce scheduled jobs for each catalog config:
+
+- Weekly full syncs to refresh the trusted baseline
+- Hourly delta syncs to keep the catalog current between baseline runs
+- Visible cadence, next run, last run, and schedule state without manual Apex
 
 ### 👥 Buyer Group Availability Export
 
@@ -279,11 +303,11 @@ This supports the hybrid Coveo pattern where:
 
 A modern Experience-enabled admin UI that:
 
-- Lists catalog configurations
-- Shows stats (# active, # inactive)
-- Provides “Run Product”, “Run Availability”, and “Run Both” per job
-- Displays dynamic fields, availability settings, and filters
-- Styled with SLDS + custom enhancements
+- Compares setup and run-center job inventories in full-width tables
+- Supports guided full and delta job drafting with live preflight review
+- Exposes last successful full and delta sync state directly in the UI
+- Lets admins schedule native Salesforce jobs without opening Apex
+- Tracks live batch progress and recent activity in the run center
 
 ---
 
@@ -398,7 +422,12 @@ Use the **Test Connection** button to verify your configuration.
 
 ### Step 2 – Configure Catalog Jobs
 
-The setup page lists all existing `CatalogJobConfig__mdt` records and provides quick access to create or edit them via Custom Metadata Setup.
+The setup page now provides a complete job workspace around `CatalogJobConfig__mdt`:
+
+1. Compare full and delta configs in a table-first inventory
+2. Build or revise a guided draft with `Sync Type`, baseline full config, catalog, filters, and Buyer Group access mode
+3. Review live preflight details, sync readiness, and last successful sync timestamps before saving
+4. Configure native Salesforce scheduling for the selected job without using Apex manually
 
 ### Step 3 – Advanced Builder Settings
 
@@ -409,6 +438,40 @@ Select which `ICatalogJsonBuilder` implementation is active. The default is `Cat
 3. Update the `CatalogJsonBuilderMapping__mdt.Active` record with your class name
 
 If a custom builder writes a custom `ec_product_id` and you also use Buyer Group availability export, implement the optional `ICatalogProductIdentityProvider` interface as well so `ec_available_items` stays aligned with the product catalog payload.
+
+## Setup Workspace Highlights
+
+### Catalog Job Inventory
+
+The `Catalog Jobs` panel is optimized for larger inventories and shows sync type, schedule readiness, experience scope, Buyer Group access mode, and last sync state in one place.
+
+![Catalog job inventory](docs/images/setup-catalog-jobs.png)
+
+### Guided Job Draft
+
+The guided draft now supports full and delta configuration directly in the setup page, including `Sync Type`, `Baseline Full Config Developer Name`, catalog scope, product filters, and embedded versus paired Buyer Group access.
+
+![Guided job draft](docs/images/setup-guided-job-draft.png)
+
+### Native Scheduling
+
+Each selected config exposes a scheduling panel for creating or replacing the native Salesforce scheduled job and for reviewing cadence, next run, last run, and the generated job name.
+
+![Scheduling panel](docs/images/setup-scheduling-panel.png)
+
+#### Deployment and upgrade note
+
+Salesforce blocks Apex deployments by default when the target class has scheduled, batch, queueable, or future jobs pending or in progress. In practice, that means updates to `CatalogProductSyncScheduler.cls` can fail if catalog schedules are still active. The safest rollout pattern is:
+
+- Remove or pause the catalog schedules from **Coveo ETL Setup** before deploying metadata or upgrading the package.
+- Deploy or upgrade the package.
+- Recreate the schedules from **Coveo ETL Setup** after the deployment completes.
+
+This project ships as an unlocked package and also supports source-based metadata deployment, so the same operational caution applies to both installation upgrades and direct metadata deploys when the updated version changes scheduler-related Apex.
+
+If your org enables **Deployment Settings → Allow deployments of components when corresponding Apex jobs are pending or in progress**, Salesforce can bypass this block. Use that setting carefully, because Salesforce notes that enabling it can sometimes cause Apex jobs to fail due to unsupported changes.
+
+Minute-based cadences such as every 15 minutes are implemented as multiple native Salesforce scheduled jobs behind the scenes. For example, a 15-minute delta schedule creates four native scheduled jobs, so all of them must be removed or allowed through Deployment Settings before a scheduler class update can succeed.
 
 ---
 
@@ -422,18 +485,26 @@ Go to:
 
 For each catalog, create something like:
 
-| Field                             | Example                      |
-| --------------------------------- | ---------------------------- |
-| Developer Name                    | `EN_US_Catalog`              |
-| CoveoOrgId\_\_c                   | `mycoveoorg123`              |
-| SourceId\_\_c                     | `mycoveoorg123-en-us-source` |
-| AvailabilitySourceId\_\_c         | `mycoveoorg123-en-us-avail`  |
-| WebStoreId\_\_c                   | `0ZE5g000000AbCDEAZ`         |
-| Locale\_\_c                       | `en-US`                      |
-| IsActive\_\_c                     | ✔                           |
-| EnableBuyerGroupAvailability\_\_c | ✔                           |
-| ProductFilter\_\_c                | `Family = 'Generators'`      |
-| AdditionalProductFields\_\_c      | `Brand__c, Color__c`         |
+| Field                                | Example                      |
+| ------------------------------------ | ---------------------------- |
+| Developer Name                       | `EN_US_Catalog`              |
+| CoveoOrgId\_\_c                      | `mycoveoorg123`              |
+| SourceId\_\_c                        | `mycoveoorg123-en-us-source` |
+| SyncMode\_\_c                        | `Full` or `Delta`            |
+| BaselineFullConfigDeveloperName\_\_c | `EN_US_Catalog`              |
+| AvailabilitySourceId\_\_c            | `mycoveoorg123-en-us-avail`  |
+| WebStoreId\_\_c                      | `0ZE5g000000AbCDEAZ`         |
+| Locale\_\_c                          | `en-US`                      |
+| IsActive\_\_c                        | ✔                           |
+| EnableBuyerGroupAvailability\_\_c    | ✔                           |
+| ProductFilter\_\_c                   | `Family = 'Generators'`      |
+| AdditionalProductFields\_\_c         | `Brand__c, Color__c`         |
+
+Recommended pattern:
+
+- Create one weekly `Full` config per resolved catalog target.
+- Create one hourly `Delta` config that points to the full config through `BaselineFullConfigDeveloperName__c`.
+- Run the first full sync successfully before expecting the paired delta job to become launchable.
 
 ---
 
@@ -467,7 +538,28 @@ CatalogJobRunner.runAllActiveAvailability();
 
 ## From LWC Console
 
-Open the “Catalog Job Console” app page → click **Run Product**, **Run Availability**, **Run Both**, or the corresponding run-all button.
+Open the **Catalog Job Console** app page and use the selected config workspace to launch:
+
+- `Run Products` for full product baselines
+- `Run Delta Products` for guarded delta refreshes
+- `Run Access` for Buyer Group access syncs
+- `Run All Products`, `Run All Access`, or `Run All Syncs` for bulk operations across active configs
+
+Delta launches remain blocked until the corresponding resolved target has a successful full baseline.
+
+## Run Center Highlights
+
+### Job Inventory
+
+The run center mirrors the setup page’s table-first approach so large job inventories stay scannable while still surfacing sync mode, experience, product scope, access mode, and last sync details.
+
+![Run center inventory](docs/images/run-center-job-inventory.png)
+
+### Live Runs And Activity
+
+The selected config workspace tracks live batch progress, shows delta readiness and baseline references, and records recent launch activity so you can confirm no-op deltas and active syncs without leaving Salesforce.
+
+![Run center live runs](docs/images/run-center-live-runs.png)
 
 ---
 
@@ -566,12 +658,17 @@ Located in `/force-app/main/default/lwc/catalogJobConsole`.
 
 Features:
 
-- Modern SLDS layout
-- Stats bar (total jobs, active jobs, inactive jobs)
-- Run All Products / Availability / Both
-- Row-level Run Product / Run Availability / Run Both
-- Display of filters, extra fields, locale, product source id, availability source id, and web store id
-- Error panel + loading state
+- Full-width inventory table for comparing many catalog configs at once
+- Distinct full versus delta sync summaries, readiness badges, and baseline references
+- Selected-config workspace with full, delta, and access launch actions
+- Live batch progress cards, no-op delta messaging, and recent activity timeline
+- Refresh controls and clearer sync-state summaries for end users
+
+To refresh the documentation screenshots against a scratch org:
+
+```bash
+TARGET_ORG=ccetl node scripts/capture-doc-screenshots.mjs
+```
 
 ---
 
@@ -700,8 +797,7 @@ public class MyCustomBuilder implements ICatalogJsonBuilder {
 Optional for custom `ec_product_id` support in Buyer Group availability:
 
 ```apex
-public class MyCustomBuilder
-  implements ICatalogJsonBuilder, ICatalogProductIdentityProvider {
+public class MyCustomBuilder implements ICatalogJsonBuilder, ICatalogProductIdentityProvider {
   public List<String> getRequiredProductFieldsForIdentity() {
     return new List<String>{ 'StockKeepingUnit' };
   }

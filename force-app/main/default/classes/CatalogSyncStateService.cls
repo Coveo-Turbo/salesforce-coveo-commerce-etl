@@ -3,6 +3,12 @@ public with sharing class CatalogSyncStateService {
   private static Map<String, CatalogJobConfig__mdt> testConfigsByDeveloperName;
   @TestVisible
   private static Map<String, Catalog_Sync_State__c> testStatesByTargetKey;
+  @TestVisible
+  private static Map<String, String> testAsyncJobStatusesById;
+  @TestVisible
+  private static Map<String, Datetime> testAsyncJobCreatedDatesById;
+  @TestVisible
+  private static Map<String, Datetime> testAsyncJobCompletedDatesById;
 
   public class Snapshot {
     public String resolvedTargetKey { get; set; }
@@ -12,6 +18,12 @@ public with sharing class CatalogSyncStateService {
     public String lastSuccessfulSyncAt { get; set; }
     public String lastRunMode { get; set; }
     public String lastSuccessfulConfigDeveloperName { get; set; }
+    public String currentProductJobId { get; set; }
+    public String currentProductJobStatus { get; set; }
+    public String currentProductRunMode { get; set; }
+    public String currentProductConfigDeveloperName { get; set; }
+    public String currentProductStartedAt { get; set; }
+    public Boolean currentProductIsActive { get; set; }
     public Boolean deltaReady { get; set; }
     public String deltaReadinessMessage { get; set; }
   }
@@ -22,6 +34,14 @@ public with sharing class CatalogSyncStateService {
     public String resolvedTargetKey { get; set; }
     public Boolean isReady { get; set; }
     public String message { get; set; }
+  }
+
+  private class TrackedAsyncJob {
+    public String jobId { get; set; }
+    public String status { get; set; }
+    public Datetime createdDate { get; set; }
+    public Datetime completedDate { get; set; }
+    public Boolean isTerminal { get; set; }
   }
 
   public static String buildResolvedTargetKey(CatalogJobConfig__mdt jobConfig) {
@@ -110,6 +130,15 @@ public with sharing class CatalogSyncStateService {
     Map<String, Catalog_Sync_State__c> statesByTargetKey = loadStatesByTargetKey(
       stateKeys
     );
+    Set<String> trackedProductJobIds = new Set<String>();
+    for (Catalog_Sync_State__c stateRecord : statesByTargetKey.values()) {
+      if (String.isNotBlank(stateRecord.CurrentProductJobId__c)) {
+        trackedProductJobIds.add(stateRecord.CurrentProductJobId__c);
+      }
+    }
+    Map<String, TrackedAsyncJob> trackedJobsById = loadTrackedJobsById(
+      trackedProductJobIds
+    );
 
     for (CatalogJobConfig__mdt config : configs) {
       if (String.isBlank(config.DeveloperName)) {
@@ -117,6 +146,7 @@ public with sharing class CatalogSyncStateService {
       }
 
       String targetKey = targetKeyByDeveloperName.get(config.DeveloperName);
+      Catalog_Sync_State__c stateRecord = statesByTargetKey.get(targetKey);
       CatalogJobConfig__mdt baselineConfig = String.isBlank(
           config.BaselineFullConfigDeveloperName__c
         )
@@ -131,7 +161,10 @@ public with sharing class CatalogSyncStateService {
         baselineConfig == null
           ? null
           : baselineKeyByDeveloperName.get(baselineConfig.DeveloperName),
-        statesByTargetKey.get(targetKey)
+        stateRecord,
+        trackedJobsById.get(
+          stateRecord == null ? null : stateRecord.CurrentProductJobId__c
+        )
       );
       snapshotsByDeveloperName.put(config.DeveloperName, snapshot);
     }
@@ -256,10 +289,47 @@ public with sharing class CatalogSyncStateService {
     upsert stateRecord ResolvedTargetKey__c;
   }
 
+  public static void recordStartedProductSync(
+    CatalogJobConfig__mdt config,
+    String runMode,
+    Id jobId,
+    Datetime startedAt
+  ) {
+    if (config == null || jobId == null) {
+      return;
+    }
+
+    String targetKey = buildResolvedTargetKey(config);
+    Catalog_Sync_State__c stateRecord = loadStateByTargetKey(targetKey);
+    if (stateRecord == null) {
+      stateRecord = new Catalog_Sync_State__c();
+      stateRecord.ResolvedTargetKey__c = targetKey;
+    }
+
+    if (CatalogSyncMode.isFull(config)) {
+      stateRecord.BaselineFullConfigDeveloperName__c = config.DeveloperName;
+    } else if (String.isNotBlank(config.BaselineFullConfigDeveloperName__c)) {
+      stateRecord.BaselineFullConfigDeveloperName__c =
+        config.BaselineFullConfigDeveloperName__c.trim();
+    }
+
+    stateRecord.CurrentProductJobId__c = String.valueOf(jobId);
+    stateRecord.CurrentProductRunMode__c = CatalogSyncMode.resolve(runMode);
+    stateRecord.CurrentProductConfigDeveloperName__c = config.DeveloperName;
+    stateRecord.CurrentProductStartedAt__c = startedAt == null
+      ? System.now()
+      : startedAt;
+
+    upsert stateRecord ResolvedTargetKey__c;
+  }
+
   @TestVisible
   private static void clearTestOverrides() {
     testConfigsByDeveloperName = null;
     testStatesByTargetKey = null;
+    testAsyncJobStatusesById = null;
+    testAsyncJobCreatedDatesById = null;
+    testAsyncJobCompletedDatesById = null;
   }
 
   private static Snapshot buildSnapshot(
@@ -267,7 +337,8 @@ public with sharing class CatalogSyncStateService {
     CatalogJobConfig__mdt baselineConfig,
     String targetKey,
     String baselineTargetKey,
-    Catalog_Sync_State__c stateRecord
+    Catalog_Sync_State__c stateRecord,
+    TrackedAsyncJob trackedJob
   ) {
     Snapshot snapshot = new Snapshot();
     snapshot.resolvedTargetKey = targetKey;
@@ -287,6 +358,21 @@ public with sharing class CatalogSyncStateService {
     snapshot.lastSuccessfulConfigDeveloperName = stateRecord == null
       ? null
       : stateRecord.LastSuccessfulConfigDeveloperName__c;
+    if (trackedJob != null && trackedJob.isTerminal != true) {
+      snapshot.currentProductJobId = trackedJob.jobId;
+      snapshot.currentProductJobStatus = trackedJob.status;
+      snapshot.currentProductRunMode = stateRecord.CurrentProductRunMode__c;
+      snapshot.currentProductConfigDeveloperName =
+        stateRecord.CurrentProductConfigDeveloperName__c;
+      snapshot.currentProductStartedAt = formatDatetime(
+        trackedJob.createdDate == null
+          ? stateRecord.CurrentProductStartedAt__c
+          : trackedJob.createdDate
+      );
+      snapshot.currentProductIsActive = true;
+    } else {
+      snapshot.currentProductIsActive = false;
+    }
 
     if (!CatalogSyncMode.isDelta(config)) {
       snapshot.deltaReady = true;
@@ -411,6 +497,10 @@ public with sharing class CatalogSyncStateService {
         Id,
         ResolvedTargetKey__c,
         BaselineFullConfigDeveloperName__c,
+        CurrentProductJobId__c,
+        CurrentProductRunMode__c,
+        CurrentProductConfigDeveloperName__c,
+        CurrentProductStartedAt__c,
         LastSuccessfulFullSyncAt__c,
         LastSuccessfulSyncAt__c,
         LastRunMode__c,
@@ -438,6 +528,10 @@ public with sharing class CatalogSyncStateService {
         Id,
         ResolvedTargetKey__c,
         BaselineFullConfigDeveloperName__c,
+        CurrentProductJobId__c,
+        CurrentProductRunMode__c,
+        CurrentProductConfigDeveloperName__c,
+        CurrentProductStartedAt__c,
         LastSuccessfulFullSyncAt__c,
         LastSuccessfulSyncAt__c,
         LastRunMode__c,
@@ -448,6 +542,75 @@ public with sharing class CatalogSyncStateService {
     ];
 
     return stateRecords.isEmpty() ? null : stateRecords[0];
+  }
+
+  private static Map<String, TrackedAsyncJob> loadTrackedJobsById(
+    Set<String> jobIds
+  ) {
+    Map<String, TrackedAsyncJob> jobsById = new Map<String, TrackedAsyncJob>();
+
+    if (jobIds == null || jobIds.isEmpty()) {
+      return jobsById;
+    }
+
+    if (Test.isRunningTest() && testAsyncJobStatusesById != null) {
+      for (String jobId : jobIds) {
+        if (!testAsyncJobStatusesById.containsKey(jobId)) {
+          continue;
+        }
+
+        TrackedAsyncJob trackedJob = new TrackedAsyncJob();
+        trackedJob.jobId = jobId;
+        trackedJob.status = testAsyncJobStatusesById.get(jobId);
+        trackedJob.createdDate = testAsyncJobCreatedDatesById == null
+          ? null
+          : testAsyncJobCreatedDatesById.get(jobId);
+        trackedJob.completedDate = testAsyncJobCompletedDatesById == null
+          ? null
+          : testAsyncJobCompletedDatesById.get(jobId);
+        trackedJob.isTerminal = isTerminalAsyncJobStatus(trackedJob.status);
+        jobsById.put(jobId, trackedJob);
+      }
+
+      return jobsById;
+    }
+
+    Set<Id> validJobIds = new Set<Id>();
+    for (String jobId : jobIds) {
+      if (String.isBlank(jobId)) {
+        continue;
+      }
+
+      try {
+        validJobIds.add((Id) jobId);
+      } catch (Exception e) {
+        // Ignore invalid ids so stale tracking records do not break snapshots.
+      }
+    }
+
+    if (validJobIds.isEmpty()) {
+      return jobsById;
+    }
+
+    for (AsyncApexJob job : [
+      SELECT Id, Status, CreatedDate, CompletedDate
+      FROM AsyncApexJob
+      WHERE Id IN :validJobIds
+    ]) {
+      TrackedAsyncJob trackedJob = new TrackedAsyncJob();
+      trackedJob.jobId = String.valueOf(job.Id);
+      trackedJob.status = job.Status;
+      trackedJob.createdDate = job.CreatedDate;
+      trackedJob.completedDate = job.CompletedDate;
+      trackedJob.isTerminal = isTerminalAsyncJobStatus(job.Status);
+      jobsById.put(trackedJob.jobId, trackedJob);
+    }
+
+    return jobsById;
+  }
+
+  private static Boolean isTerminalAsyncJobStatus(String status) {
+    return status == 'Completed' || status == 'Aborted' || status == 'Failed';
   }
 
   private static String canonicalizeCsv(String csvValue) {

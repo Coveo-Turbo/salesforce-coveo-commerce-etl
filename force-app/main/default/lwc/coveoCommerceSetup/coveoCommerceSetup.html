@@ -380,8 +380,13 @@
                   <div>
                     <p class="section-label">Current Catalog Jobs</p>
                     <h3 class="slds-text-heading_small">
-                      Inspect or reuse an existing configuration
+                      Scan and compare configured sync jobs
                     </h3>
+                    <p class="workspace-card__meta">
+                      A table view keeps larger job inventories readable and
+                      makes it easier to compare sync type, cadence, scope, and
+                      last sync activity at a glance.
+                    </p>
                   </div>
                   <div class="setup-stat-group">
                     <div class="setup-stat-pill">
@@ -393,6 +398,24 @@
                       <span class="setup-stat-pill__value"
                         >{activeConfigs}</span
                       >
+                    </div>
+                    <div class="setup-stat-pill">
+                      <span class="setup-stat-pill__label">Full</span>
+                      <span class="setup-stat-pill__value">
+                        {fullSyncConfigs}
+                      </span>
+                    </div>
+                    <div class="setup-stat-pill">
+                      <span class="setup-stat-pill__label">Delta</span>
+                      <span class="setup-stat-pill__value">
+                        {deltaSyncConfigs}
+                      </span>
+                    </div>
+                    <div class="setup-stat-pill">
+                      <span class="setup-stat-pill__label">Scheduled</span>
+                      <span class="setup-stat-pill__value">
+                        {scheduledConfigs}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -406,84 +429,129 @@
                 </template>
 
                 <template if:true={hasConfigs}>
-                  <div class="config-card-list" role="list">
-                    <template for:each={catalogConfigs} for:item="config">
-                      <article
-                        key={config.id}
-                        class={config.cardClass}
-                        role="listitem"
-                      >
-                        <div class="config-card__header">
-                          <div>
-                            <h4 class="config-card__title">{config.label}</h4>
-                            <p class="config-card__subtitle">
-                              {config.developerName}
-                            </p>
-                          </div>
-                          <div class="config-card__badges">
-                            <span class={config.activeStatusClass}>
-                              {config.activeStatusLabel}
-                            </span>
-                            <span class={config.availabilityStatusClass}>
-                              {config.availabilityStatusLabel}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div class="config-card__facts">
-                          <div class="config-card__fact">
-                            <p class="config-card__fact-label">Experience</p>
-                            <p class="config-card__fact-value">
-                              {config.experienceSummary}
-                            </p>
-                          </div>
-                          <div class="config-card__fact">
-                            <p class="config-card__fact-label">Destinations</p>
-                            <p class="config-card__fact-value">
-                              {config.destinationSummary}
-                            </p>
-                          </div>
-                          <div class="config-card__fact">
-                            <p class="config-card__fact-label">Builder</p>
-                            <p class="config-card__fact-value">
-                              {config.builderSummary}
-                            </p>
-                          </div>
-                          <div class="config-card__fact">
-                            <p class="config-card__fact-label">Sync</p>
-                            <p class="config-card__fact-value">
-                              {config.syncSummary}
-                            </p>
-                          </div>
-                          <div class="config-card__fact">
-                            <p class="config-card__fact-label">Scope</p>
-                            <p class="config-card__fact-value">
-                              {config.scopeSummary}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div class="config-card__footer">
-                          <p class="config-card__supporting">
-                            {config.additionalFieldSummary} • {config.lastSyncSummary}
-                          </p>
-                          <div class="config-card__actions">
-                            <lightning-button
-                              label="Inspect"
-                              variant="neutral"
-                              data-config-id={config.id}
-                              onclick={handleSelectConfig}
-                            ></lightning-button>
-                            <lightning-button
-                              label="Use as Draft"
-                              variant="brand-outline"
-                              data-config-id={config.id}
-                              onclick={handleLoadDraftClick}
-                            ></lightning-button>
-                          </div>
-                        </div>
-                      </article>
-                    </template>
+                  <div class="config-table-shell">
+                    <div class="config-table-scroll">
+                      <table class="config-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Job</th>
+                            <th scope="col">Sync</th>
+                            <th scope="col">Schedule</th>
+                            <th scope="col">Experience</th>
+                            <th scope="col">Product Source</th>
+                            <th scope="col">Buyer Group Access</th>
+                            <th scope="col">Last Sync</th>
+                            <th scope="col">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <template
+                            for:each={inventoryTableRows}
+                            for:item="config"
+                          >
+                            <tr
+                              key={config.id}
+                              class={config.inventoryRowClass}
+                            >
+                              <td>
+                                <button
+                                  type="button"
+                                  class="config-table__job-button"
+                                  data-config-id={config.id}
+                                  onclick={handleSelectConfig}
+                                >
+                                  <span class="config-table__job-title">
+                                    {config.label}
+                                  </span>
+                                  <span class="config-table__job-meta">
+                                    {config.developerName}
+                                  </span>
+                                </button>
+                                <div class="config-table__badge-stack">
+                                  <span class={config.activeStatusClass}>
+                                    {config.activeStatusLabel}
+                                  </span>
+                                  <span class={config.syncStatusClass}>
+                                    {config.syncStatusLabel}
+                                  </span>
+                                  <span class={config.scheduleStatusClass}>
+                                    {config.scheduleStatusLabel}
+                                  </span>
+                                </div>
+                              </td>
+                              <td>
+                                <p class="config-table__primary">
+                                  {config.inventoryRunSummary}
+                                </p>
+                                <p class="config-table__secondary">
+                                  {config.inventoryRunMeta}
+                                </p>
+                              </td>
+                              <td>
+                                <p class="config-table__primary">
+                                  {config.inventoryScheduleSummary}
+                                </p>
+                                <p class="config-table__secondary">
+                                  {config.inventoryScheduleMeta}
+                                </p>
+                              </td>
+                              <td>
+                                <p class="config-table__primary">
+                                  {config.inventoryExperienceSummary}
+                                </p>
+                                <p class="config-table__secondary">
+                                  {config.inventoryExperienceMeta}
+                                </p>
+                              </td>
+                              <td>
+                                <p class="config-table__primary">
+                                  {config.inventorySourceSummary}
+                                </p>
+                                <p class="config-table__secondary">
+                                  Org: {config.inventorySourceMeta}
+                                </p>
+                              </td>
+                              <td>
+                                <p class="config-table__primary">
+                                  {config.inventoryAccessSummary}
+                                </p>
+                                <p class="config-table__secondary">
+                                  {config.inventoryAccessMeta}
+                                </p>
+                              </td>
+                              <td>
+                                <p class="config-table__primary">
+                                  {config.inventoryLastSyncSummary}
+                                </p>
+                                <p class="config-table__secondary">
+                                  {config.inventoryLastSyncMeta}
+                                </p>
+                              </td>
+                              <td>
+                                <div class="config-table__actions">
+                                  <button
+                                    type="button"
+                                    class="table-action table-action--primary"
+                                    data-config-id={config.id}
+                                    onclick={handleSelectConfig}
+                                  >
+                                    Inspect
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="table-action"
+                                    data-config-id={config.id}
+                                    onclick={handleLoadDraftClick}
+                                  >
+                                    Use as Draft
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          </template>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </template>
 
@@ -873,124 +941,354 @@
                   ></lightning-button>
                 </div>
 
-                <div class="config-modal-layout">
-                  <section class="detail-section">
-                    <div class="detail-section__header">
-                      <p class="section-label">Summary</p>
+                <div class="selected-config-overview-grid">
+                  <template
+                    for:each={selectedConfigOverviewFields}
+                    for:item="field"
+                  >
+                    <article
+                      key={field.key}
+                      class="selected-config-overview-card"
+                    >
+                      <p class="selected-config-overview-card__label">
+                        {field.label}
+                      </p>
+                      <p class="selected-config-overview-card__value">
+                        {field.value}
+                      </p>
+                      <p class="selected-config-overview-card__helper">
+                        {field.helper}
+                      </p>
+                    </article>
+                  </template>
+                </div>
+
+                <lightning-accordion
+                  allow-multiple-sections-open
+                  active-section-name={detailAccordionOpenSections}
+                  onsectiontoggle={handleDetailSectionToggle}
+                  class="config-detail-accordion"
+                >
+                  <lightning-accordion-section name="summary" label="Summary">
+                    <section class="detail-section">
                       <p class="detail-section__meta">
                         Core identity, org target, and resolved builder
                         selection.
                       </p>
-                    </div>
-                    <div class="detail-grid">
-                      <template for:each={configSummaryFields} for:item="field">
-                        <div key={field.label} class="detail-field">
-                          <p class="detail-field__label">{field.label}</p>
-                          <p class="detail-field__value">{field.value}</p>
+                      <div class="detail-grid">
+                        <template
+                          for:each={configSummaryFields}
+                          for:item="field"
+                        >
+                          <div key={field.label} class="detail-field">
+                            <p class="detail-field__label">{field.label}</p>
+                            <p class="detail-field__value">{field.value}</p>
+                          </div>
+                        </template>
+                      </div>
+                    </section>
+                  </lightning-accordion-section>
+
+                  <lightning-accordion-section
+                    name="scheduling"
+                    label="Scheduling"
+                  >
+                    <section class="detail-section">
+                      <p class="detail-section__meta">
+                        Create or replace the native Salesforce scheduled job
+                        for this sync config without using Apex manually.
+                      </p>
+
+                      <div class="detail-grid">
+                        <div class="detail-field">
+                          <p class="detail-field__label">Sync Type</p>
+                          <p class="detail-field__value">
+                            {selectedConfigRow.syncMode}
+                          </p>
+                        </div>
+                        <div class="detail-field">
+                          <p class="detail-field__label">Current Cadence</p>
+                          <p class="detail-field__value">
+                            {selectedConfigScheduleCadence}
+                          </p>
+                        </div>
+                        <div class="detail-field">
+                          <p class="detail-field__label">Schedule State</p>
+                          <p class="detail-field__value">
+                            {selectedConfigScheduleState}
+                          </p>
+                        </div>
+                        <div class="detail-field">
+                          <p class="detail-field__label">Next Run</p>
+                          <p class="detail-field__value">
+                            {selectedConfigScheduleNextRun}
+                          </p>
+                        </div>
+                        <div class="detail-field">
+                          <p class="detail-field__label">Last Run</p>
+                          <p class="detail-field__value">
+                            {selectedConfigScheduleLastRun}
+                          </p>
+                        </div>
+                        <div class="detail-field">
+                          <p class="detail-field__label">Native Job</p>
+                          <p class="detail-field__value">
+                            {selectedConfigScheduledJobName}
+                          </p>
+                        </div>
+                        <div class="detail-field detail-field--full">
+                          <p class="detail-field__label">Cron Expression</p>
+                          <p class="detail-field__value">
+                            {selectedConfigScheduleCronExpression}
+                          </p>
+                        </div>
+                      </div>
+
+                      <template if:true={showDeltaScheduleNotice}>
+                        <div class="info-banner slds-m-top_medium">
+                          <lightning-icon
+                            icon-name="utility:warning"
+                            size="x-small"
+                          ></lightning-icon>
+                          Delta schedules can be created now, but the job will
+                          stay blocked until the baseline full sync succeeds
+                          once.
                         </div>
                       </template>
-                    </div>
-                  </section>
 
-                  <section class="detail-section">
-                    <div class="detail-section__header">
-                      <p class="section-label">Product Scope</p>
+                      <template if:true={showCustomScheduleNotice}>
+                        <div class="info-banner slds-m-top_medium">
+                          <lightning-icon
+                            icon-name="utility:info"
+                            size="x-small"
+                          ></lightning-icon>
+                          This job currently uses a custom cron expression.
+                          Saving from this panel will replace it with the
+                          cadence below.
+                        </div>
+                      </template>
+
+                      <div class="schedule-form-grid slds-m-top_medium">
+                        <lightning-combobox
+                          label="Cadence"
+                          value={selectedScheduleCadenceType}
+                          options={scheduleCadenceOptions}
+                          data-field="cadenceType"
+                          onchange={handleScheduleDraftChange}
+                        ></lightning-combobox>
+
+                        <template if:true={isScheduleDraftMinutes}>
+                          <lightning-input
+                            type="number"
+                            label="Every N Minutes"
+                            min="1"
+                            max="59"
+                            step="1"
+                            value={scheduleIntervalMinutesValue}
+                            data-field="intervalMinutes"
+                            onchange={handleScheduleDraftChange}
+                          ></lightning-input>
+                        </template>
+
+                        <template if:true={isScheduleDraftHourly}>
+                          <lightning-input
+                            type="number"
+                            label="Every N Hours"
+                            min="1"
+                            max="24"
+                            step="1"
+                            value={scheduleIntervalHoursValue}
+                            data-field="intervalHours"
+                            onchange={handleScheduleDraftChange}
+                          ></lightning-input>
+                        </template>
+
+                        <template if:true={isScheduleDraftWeekly}>
+                          <lightning-combobox
+                            label="Day of Week"
+                            value={scheduleDayOfWeekValue}
+                            options={scheduleDayOptions}
+                            data-field="dayOfWeek"
+                            onchange={handleScheduleDraftChange}
+                          ></lightning-combobox>
+                          <lightning-input
+                            type="number"
+                            label="Hour (0-23)"
+                            min="0"
+                            max="23"
+                            step="1"
+                            value={scheduleHourOfDayValue}
+                            data-field="hourOfDay"
+                            onchange={handleScheduleDraftChange}
+                          ></lightning-input>
+                        </template>
+
+                        <lightning-input
+                          type="number"
+                          label={scheduleMinuteLabel}
+                          min="0"
+                          max="59"
+                          step="1"
+                          value={scheduleMinuteOfHourValue}
+                          data-field="minuteOfHour"
+                          onchange={handleScheduleDraftChange}
+                        ></lightning-input>
+                      </div>
+
+                      <div class="workspace-card__actions">
+                        <lightning-button
+                          label="Reset"
+                          onclick={handleResetScheduleDraft}
+                          disabled={isScheduleResetDisabled}
+                        ></lightning-button>
+                        <lightning-button
+                          label="Remove Schedule"
+                          onclick={handleClearSchedule}
+                          disabled={isScheduleClearDisabled}
+                        ></lightning-button>
+                        <lightning-button
+                          label={scheduleSaveButtonLabel}
+                          variant="brand"
+                          onclick={handleSaveSchedule}
+                          disabled={isScheduleSaveDisabled}
+                        ></lightning-button>
+                      </div>
+
+                      <template if:true={hasRelatedScheduleConfigs}>
+                        <div class="slds-m-top_medium">
+                          <p class="detail-field__label slds-m-bottom_x-small">
+                            Related Sync Jobs
+                          </p>
+                          <div class="schedule-related-grid">
+                            <template
+                              for:each={relatedScheduleConfigs}
+                              for:item="config"
+                            >
+                              <button
+                                key={config.id}
+                                type="button"
+                                class="schedule-related-card"
+                                data-config-id={config.id}
+                                onclick={handleSelectConfig}
+                              >
+                                <span class="schedule-related-card__title">
+                                  {config.title}
+                                </span>
+                                <span class="schedule-related-card__meta">
+                                  {config.meta}
+                                </span>
+                              </button>
+                            </template>
+                          </div>
+                        </div>
+                      </template>
+                    </section>
+                  </lightning-accordion-section>
+
+                  <lightning-accordion-section
+                    name="scope"
+                    label="Product Scope"
+                  >
+                    <section class="detail-section">
                       <p class="detail-section__meta">
                         Catalog targeting, source destination, and filter
                         coverage.
                       </p>
-                    </div>
-                    <div class="detail-grid">
-                      <template
-                        for:each={configProductScopeFields}
-                        for:item="field"
-                      >
-                        <div key={field.label} class="detail-field">
-                          <p class="detail-field__label">{field.label}</p>
-                          <p class="detail-field__value">{field.value}</p>
-                        </div>
-                      </template>
-                    </div>
+                      <div class="detail-grid">
+                        <template
+                          for:each={configProductScopeFields}
+                          for:item="field"
+                        >
+                          <div key={field.label} class="detail-field">
+                            <p class="detail-field__label">{field.label}</p>
+                            <p class="detail-field__value">{field.value}</p>
+                          </div>
+                        </template>
+                      </div>
 
-                    <div class="slds-m-top_medium">
-                      <p class="detail-field__label slds-m-bottom_x-small">
-                        Additional Product Fields
-                      </p>
-                      <template if:true={hasConfigAdditionalFieldPills}>
-                        <div class="detail-pill-list">
-                          <template
-                            for:each={configAdditionalFieldPills}
-                            for:item="field"
-                          >
-                            <span key={field.key} class="detail-pill">
-                              {field.label}
-                            </span>
-                          </template>
-                        </div>
-                      </template>
-                      <template if:false={hasConfigAdditionalFieldPills}>
-                        <p class="detail-empty-value">
-                          No additional fields selected.
+                      <div class="slds-m-top_medium">
+                        <p class="detail-field__label slds-m-bottom_x-small">
+                          Additional Product Fields
                         </p>
-                      </template>
-                    </div>
-                  </section>
+                        <template if:true={hasConfigAdditionalFieldPills}>
+                          <div class="detail-pill-list">
+                            <template
+                              for:each={configAdditionalFieldPills}
+                              for:item="field"
+                            >
+                              <span key={field.key} class="detail-pill">
+                                {field.label}
+                              </span>
+                            </template>
+                          </div>
+                        </template>
+                        <template if:false={hasConfigAdditionalFieldPills}>
+                          <p class="detail-empty-value">
+                            No additional fields selected.
+                          </p>
+                        </template>
+                      </div>
+                    </section>
+                  </lightning-accordion-section>
 
-                  <section class="detail-section">
-                    <div class="detail-section__header">
-                      <p class="section-label">Buyer Group Access</p>
+                  <lightning-accordion-section
+                    name="buyerGroup"
+                    label="Buyer Group Access"
+                  >
+                    <section class="detail-section">
                       <p class="detail-section__meta">
                         Buyer Group mode, store targeting, and access
                         destination details.
                       </p>
-                    </div>
-                    <div class="detail-grid">
-                      <template
-                        for:each={configAvailabilityFields}
-                        for:item="field"
-                      >
-                        <div key={field.label} class="detail-field">
-                          <p class="detail-field__label">{field.label}</p>
-                          <p class="detail-field__value">{field.value}</p>
-                        </div>
-                      </template>
-                    </div>
-                  </section>
+                      <div class="detail-grid">
+                        <template
+                          for:each={configAvailabilityFields}
+                          for:item="field"
+                        >
+                          <div key={field.label} class="detail-field">
+                            <p class="detail-field__label">{field.label}</p>
+                            <p class="detail-field__value">{field.value}</p>
+                          </div>
+                        </template>
+                      </div>
+                    </section>
+                  </lightning-accordion-section>
 
-                  <section class="detail-section">
-                    <div class="detail-section__header">
-                      <p class="section-label">Advanced</p>
+                  <lightning-accordion-section name="advanced" label="Advanced">
+                    <section class="detail-section">
                       <p class="detail-section__meta">
                         Raw ids and advanced values that are still useful during
                         troubleshooting.
                       </p>
-                    </div>
-                    <div class="detail-grid">
-                      <template
-                        for:each={configAdvancedFields}
-                        for:item="field"
-                      >
-                        <div key={field.label} class="detail-field">
-                          <p class="detail-field__label">{field.label}</p>
-                          <p class="detail-field__value">{field.value}</p>
-                        </div>
-                      </template>
-                    </div>
-                  </section>
+                      <div class="detail-grid">
+                        <template
+                          for:each={configAdvancedFields}
+                          for:item="field"
+                        >
+                          <div key={field.label} class="detail-field">
+                            <p class="detail-field__label">{field.label}</p>
+                            <p class="detail-field__value">{field.value}</p>
+                          </div>
+                        </template>
+                      </div>
+                    </section>
+                  </lightning-accordion-section>
 
-                  <section class="detail-section detail-section--full">
-                    <div class="detail-section__header">
-                      <p class="section-label">Raw Metadata Snapshot</p>
+                  <lightning-accordion-section
+                    name="metadata"
+                    label="Raw Metadata Snapshot"
+                  >
+                    <section class="detail-section detail-section--full">
                       <p class="detail-section__meta">
                         Exact field values for quick copy/paste into Custom
                         Metadata Setup.
                       </p>
-                    </div>
-                    <div class="code-preview">
-                      <pre>{configMetadataSummary}</pre>
-                    </div>
-                  </section>
-                </div>
+                      <div class="code-preview">
+                        <pre>{configMetadataSummary}</pre>
+                      </div>
+                    </section>
+                  </lightning-accordion-section>
+                </lightning-accordion>
               </section>
             </template>
           </template>

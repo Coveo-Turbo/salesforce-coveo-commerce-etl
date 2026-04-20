@@ -85,6 +85,27 @@ private class CatalogDeltaScopeResolverTest {
   }
 
   @IsTest
+  static void testDescribeScope_returnsImpactedRootAndExportCounts() {
+    Product2 inCatalog = createProduct('METRIC-001', 'Hardware');
+    Product2 outsideCatalog = createProduct('METRIC-002', 'Hardware');
+    ProductCatalog catalog = createCatalog(inCatalog);
+
+    CatalogJobConfig__mdt config = createConfig('Default');
+    config.CatalogId__c = catalog.Id;
+
+    CatalogDeltaScopeResolver.ScopeMetrics metrics =
+      CatalogDeltaScopeResolver.describeScope(
+        config,
+        System.now().addMinutes(-5),
+        System.now().addMinutes(5)
+      );
+
+    System.assertEquals(2, metrics.impactedProductCount);
+    System.assertEquals(2, metrics.rootProductCount);
+    System.assertEquals(1, metrics.exportProductCount);
+  }
+
+  @IsTest
   static void testResolveRootProductIds_commerceUsesChangedProductAsRoot() {
     Product2 product = createProduct('COMMERCE-001', 'Hardware');
 

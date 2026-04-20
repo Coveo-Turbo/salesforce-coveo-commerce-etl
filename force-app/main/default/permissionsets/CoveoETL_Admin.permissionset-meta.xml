@@ -104,6 +104,26 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Catalog_Sync_State__c.CurrentProductConfigDeveloperName__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Catalog_Sync_State__c.CurrentProductJobId__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Catalog_Sync_State__c.CurrentProductRunMode__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Catalog_Sync_State__c.CurrentProductStartedAt__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Catalog_Sync_State__c.LastRunMode__c</field>
         <readable>true</readable>
     </fieldPermissions>
