@@ -23,6 +23,7 @@ public with sharing class CatalogJsonBuilderFactory {
     'variant' => 'CatalogJsonBuilderVariant',
     'groupingwithvariants' => 'CatalogJsonBuilderGroupingWithVariants'
   };
+  @TestVisible private static String cachedGlobalBuilderClassName;
 
   /**
    * Returns the globally configured builder instance.
@@ -31,20 +32,7 @@ public with sharing class CatalogJsonBuilderFactory {
    * @return ICatalogJsonBuilder instance
    */
   public static ICatalogJsonBuilder get() {
-    String className;
-    try {
-      CatalogJsonBuilderMapping__mdt m = [
-        SELECT ClassName__c
-        FROM CatalogJsonBuilderMapping__mdt
-        WHERE DeveloperName = 'Active'
-        LIMIT 1
-      ];
-      className = m.ClassName__c;
-    } catch (Exception e) {
-      className = 'CatalogJsonBuilderCommerce'; // fallback default
-    }
-
-    return createBuilder(className);
+    return createBuilder(resolveBuilderClassName(null));
   }
 
   /**
@@ -55,19 +43,38 @@ public with sharing class CatalogJsonBuilderFactory {
    * @return ICatalogJsonBuilder instance
    */
   public static ICatalogJsonBuilder getForBuilderType(String builderType) {
+    return createBuilder(resolveBuilderClassName(builderType));
+  }
+
+  public static String resolveBuilderClassName(String builderType) {
     if (String.isBlank(builderType)) {
-      return get(); // Fall back to global default
+      if (String.isNotBlank(cachedGlobalBuilderClassName)) {
+        return cachedGlobalBuilderClassName;
+      }
+
+      try {
+        CatalogJsonBuilderMapping__mdt mapping = [
+          SELECT ClassName__c
+          FROM CatalogJsonBuilderMapping__mdt
+          WHERE DeveloperName = 'Active'
+          LIMIT 1
+        ];
+        cachedGlobalBuilderClassName = String.isNotBlank(mapping.ClassName__c)
+          ? mapping.ClassName__c
+          : 'CatalogJsonBuilderCommerce';
+      } catch (Exception e) {
+        cachedGlobalBuilderClassName = 'CatalogJsonBuilderCommerce';
+      }
+
+      return cachedGlobalBuilderClassName;
     }
 
     String normalizedType = builderType.trim().toLowerCase();
-
-    // Check if it's a known builder type
     if (BUILDER_TYPE_MAP.containsKey(normalizedType)) {
-      return createBuilder(BUILDER_TYPE_MAP.get(normalizedType));
+      return BUILDER_TYPE_MAP.get(normalizedType);
     }
 
-    // Assume it's a full class name
-    return createBuilder(builderType.trim());
+    return builderType.trim();
   }
 
   /**

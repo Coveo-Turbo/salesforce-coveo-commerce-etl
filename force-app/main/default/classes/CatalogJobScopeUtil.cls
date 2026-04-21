@@ -4,33 +4,28 @@ public with sharing class CatalogJobScopeUtil {
     List<String> requiredFieldNames,
     List<String> extraFieldNames
   ) {
-    List<String> fields = buildFieldList(requiredFieldNames, extraFieldNames);
+    return buildProductQueryLocatorForIds(
+      jobConfig,
+      null,
+      requiredFieldNames,
+      extraFieldNames
+    );
+  }
 
-    String query =
-      'SELECT ' +
-      String.join(fields, ', ') +
-      ' FROM Product2 WHERE IsActive = true';
-
-    if (!String.isBlank(jobConfig.CatalogId__c)) {
-      Set<Id> productIdsInCatalog = getProductIdsForCatalog(
-        jobConfig.CatalogId__c
-      );
-      if (productIdsInCatalog.isEmpty()) {
-        return Database.getQueryLocator(
-          'SELECT Id FROM Product2 WHERE Id = null'
-        );
-      }
-      query += ' AND Id IN :productIdsInCatalog';
-    }
-
-    if (!String.isBlank(jobConfig.ProductFilter__c)) {
-      String sanitizedFilter = validateAndSanitizeFilter(
-        jobConfig.ProductFilter__c
-      );
-      query += ' AND (' + sanitizedFilter + ')';
-    }
-
-    return Database.getQueryLocator(query);
+  public static Database.QueryLocator buildProductQueryLocatorForIds(
+    CatalogJobConfig__mdt jobConfig,
+    Set<Id> productIds,
+    List<String> requiredFieldNames,
+    List<String> extraFieldNames
+  ) {
+    return Database.getQueryLocator(
+      buildScopedProductQuery(
+        jobConfig,
+        productIds,
+        requiredFieldNames,
+        extraFieldNames
+      )
+    );
   }
 
   public static List<Product2> queryProductsByIds(
@@ -38,35 +33,27 @@ public with sharing class CatalogJobScopeUtil {
     Set<Id> productIds,
     List<String> requiredFieldNames
   ) {
+    return queryProductsByIds(jobConfig, productIds, requiredFieldNames, null);
+  }
+
+  public static List<Product2> queryProductsByIds(
+    CatalogJobConfig__mdt jobConfig,
+    Set<Id> productIds,
+    List<String> requiredFieldNames,
+    List<String> extraFieldNames
+  ) {
     if (productIds == null || productIds.isEmpty()) {
       return new List<Product2>();
     }
 
-    List<String> fields = buildFieldList(requiredFieldNames, null);
-
-    String query =
-      'SELECT ' +
-      String.join(fields, ', ') +
-      ' FROM Product2 WHERE IsActive = true AND Id IN :productIds';
-
-    if (!String.isBlank(jobConfig.CatalogId__c)) {
-      Set<Id> productIdsInCatalog = getProductIdsForCatalog(
-        jobConfig.CatalogId__c
-      );
-      if (productIdsInCatalog.isEmpty()) {
-        return new List<Product2>();
-      }
-      query += ' AND Id IN :productIdsInCatalog';
-    }
-
-    if (!String.isBlank(jobConfig.ProductFilter__c)) {
-      String sanitizedFilter = validateAndSanitizeFilter(
-        jobConfig.ProductFilter__c
-      );
-      query += ' AND (' + sanitizedFilter + ')';
-    }
-
-    return Database.query(query);
+    return Database.query(
+      buildScopedProductQuery(
+        jobConfig,
+        productIds,
+        requiredFieldNames,
+        extraFieldNames
+      )
+    );
   }
 
   public static String getExportedItemId(Product2 product) {
@@ -92,6 +79,46 @@ public with sharing class CatalogJobScopeUtil {
     }
 
     return fields;
+  }
+
+  private static String buildScopedProductQuery(
+    CatalogJobConfig__mdt jobConfig,
+    Set<Id> productIds,
+    List<String> requiredFieldNames,
+    List<String> extraFieldNames
+  ) {
+    List<String> fields = buildFieldList(requiredFieldNames, extraFieldNames);
+    if (!fields.contains('Id')) {
+      fields.add('Id');
+    }
+
+    String query =
+      'SELECT ' +
+      String.join(fields, ', ') +
+      ' FROM Product2 WHERE IsActive = true';
+
+    if (productIds != null) {
+      if (productIds.isEmpty()) {
+        return 'SELECT Id FROM Product2 WHERE Id = null';
+      }
+      query += ' AND Id IN :productIds';
+    }
+
+    if (!String.isBlank(jobConfig.CatalogId__c)) {
+      query +=
+        ' AND Id IN (SELECT ProductId FROM ProductCategoryProduct WHERE ProductCategory.CatalogId = \'' +
+        String.escapeSingleQuotes(jobConfig.CatalogId__c) +
+        '\' AND ProductId != NULL)';
+    }
+
+    if (!String.isBlank(jobConfig.ProductFilter__c)) {
+      String sanitizedFilter = validateAndSanitizeFilter(
+        jobConfig.ProductFilter__c
+      );
+      query += ' AND (' + sanitizedFilter + ')';
+    }
+
+    return query;
   }
 
   private static void addFieldIfMissing(List<String> fields, String fieldName) {

@@ -1,5 +1,31 @@
 public with sharing class CatalogBuyerGroupEntitlementProvider
   implements ICatalogBuyerGroupAccessProvider {
+  @TestVisible
+  private static Boolean testHasCommerceAvailabilitySchema;
+
+  @TestVisible
+  private static Map<String, Set<Id>> testBuyerGroupIdsByWebStoreId;
+
+  @TestVisible
+  private static Map<Id, String> testBuyerGroupNamesById;
+
+  @TestVisible
+  private static Map<Id, Set<Id>> testVisiblePolicyIdsByBuyerGroupId;
+
+  @TestVisible
+  private static List<PolicyProductLink> testPolicyProductLinks;
+
+  @TestVisible
+  private class PolicyProductLink {
+    public Id policyId;
+    public Id productId;
+
+    public PolicyProductLink(Id policyId, Id productId) {
+      this.policyId = policyId;
+      this.productId = productId;
+    }
+  }
+
   public List<String> getRequiredProductFieldsForBuyerGroupAccess() {
     return new List<String>();
   }
@@ -69,16 +95,13 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
     }
 
     for (
-      SObject link : Database.query(
-        'SELECT PolicyId, ProductId FROM CommerceEntitlementProduct WHERE PolicyId IN (' +
-          buildIdInClause(policyIds) +
-          ') AND ProductId IN (' +
-          buildIdInClause(productIds) +
-          ') AND ProductId != NULL'
+      PolicyProductLink link : getPolicyProductLinks(
+        policyIds,
+        productIds
       )
     ) {
-      Id policyId = (Id) link.get('PolicyId');
-      Id productId = (Id) link.get('ProductId');
+      Id policyId = link.policyId;
+      Id productId = link.productId;
 
       if (!buyerGroupIdsByPolicy.containsKey(policyId)) {
         continue;
@@ -125,6 +148,10 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
   }
 
   private static Boolean hasCommerceAvailabilitySchema() {
+    if (Test.isRunningTest() && testHasCommerceAvailabilitySchema != null) {
+      return testHasCommerceAvailabilitySchema;
+    }
+
     Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
     return globalDescribe.containsKey('BuyerGroup') &&
       globalDescribe.containsKey('WebStoreBuyerGroup') &&
@@ -138,6 +165,13 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
 
     if (String.isBlank(webStoreId)) {
       return buyerGroupIds;
+    }
+
+    if (Test.isRunningTest() && testBuyerGroupIdsByWebStoreId != null) {
+      Set<Id> overrideBuyerGroupIds = testBuyerGroupIdsByWebStoreId.get(webStoreId);
+      return overrideBuyerGroupIds == null
+        ? buyerGroupIds
+        : new Set<Id>(overrideBuyerGroupIds);
     }
 
     for (
@@ -157,6 +191,18 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
     Map<Id, String> buyerGroupNameById = new Map<Id, String>();
 
     if (buyerGroupIds == null || buyerGroupIds.isEmpty()) {
+      return buyerGroupNameById;
+    }
+
+    if (Test.isRunningTest() && testBuyerGroupNamesById != null) {
+      for (Id buyerGroupId : buyerGroupIds) {
+        if (testBuyerGroupNamesById.containsKey(buyerGroupId)) {
+          buyerGroupNameById.put(
+            buyerGroupId,
+            testBuyerGroupNamesById.get(buyerGroupId)
+          );
+        }
+      }
       return buyerGroupNameById;
     }
 
@@ -182,6 +228,23 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
     Map<Id, Set<Id>> policyIdsByBuyerGroup = new Map<Id, Set<Id>>();
 
     if (buyerGroupIds == null || buyerGroupIds.isEmpty()) {
+      return policyIdsByBuyerGroup;
+    }
+
+    if (
+      Test.isRunningTest() && testVisiblePolicyIdsByBuyerGroupId != null
+    ) {
+      for (Id buyerGroupId : buyerGroupIds) {
+        Set<Id> overridePolicyIds = testVisiblePolicyIdsByBuyerGroupId.get(
+          buyerGroupId
+        );
+        if (overridePolicyIds != null && !overridePolicyIds.isEmpty()) {
+          policyIdsByBuyerGroup.put(
+            buyerGroupId,
+            new Set<Id>(overridePolicyIds)
+          );
+        }
+      }
       return policyIdsByBuyerGroup;
     }
 
@@ -224,6 +287,54 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
     }
 
     return policyIdsByBuyerGroup;
+  }
+
+  private static List<PolicyProductLink> getPolicyProductLinks(
+    Set<Id> policyIds,
+    Set<Id> productIds
+  ) {
+    List<PolicyProductLink> links = new List<PolicyProductLink>();
+
+    if (
+      policyIds == null ||
+      policyIds.isEmpty() ||
+      productIds == null ||
+      productIds.isEmpty()
+    ) {
+      return links;
+    }
+
+    if (Test.isRunningTest() && testPolicyProductLinks != null) {
+      for (PolicyProductLink link : testPolicyProductLinks) {
+        if (
+          link != null &&
+          policyIds.contains(link.policyId) &&
+          productIds.contains(link.productId)
+        ) {
+          links.add(link);
+        }
+      }
+      return links;
+    }
+
+    for (
+      SObject link : Database.query(
+        'SELECT PolicyId, ProductId FROM CommerceEntitlementProduct WHERE PolicyId IN (' +
+          buildIdInClause(policyIds) +
+          ') AND ProductId IN (' +
+          buildIdInClause(productIds) +
+          ') AND ProductId != NULL'
+      )
+    ) {
+      links.add(
+        new PolicyProductLink(
+          (Id) link.get('PolicyId'),
+          (Id) link.get('ProductId')
+        )
+      );
+    }
+
+    return links;
   }
 
   private static String buildIdInClause(Set<Id> recordIds) {

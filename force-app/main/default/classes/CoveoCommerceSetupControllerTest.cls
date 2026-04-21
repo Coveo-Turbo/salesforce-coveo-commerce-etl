@@ -236,7 +236,138 @@ private class CoveoCommerceSetupControllerTest {
         config.containsKey('buyerGroupAvailabilityEnabled'),
         'Config should have buyerGroupAvailabilityEnabled key'
       );
+      System.assert(
+        config.containsKey('syncMode'),
+        'Config should have syncMode key'
+      );
+      System.assert(
+        config.containsKey('baselineFullConfigDeveloperName'),
+        'Config should have baselineFullConfigDeveloperName key'
+      );
+      System.assert(
+        config.containsKey('deltaReady'),
+        'Config should have deltaReady key'
+      );
+      System.assert(
+        config.containsKey('lastSuccessfulFullSyncAt'),
+        'Config should have lastSuccessfulFullSyncAt key'
+      );
+      System.assert(
+        config.containsKey('lastSuccessfulSyncAt'),
+        'Config should have lastSuccessfulSyncAt key'
+      );
+      System.assert(
+        config.containsKey('isScheduled'),
+        'Config should have isScheduled key'
+      );
+      System.assert(
+        config.containsKey('scheduledJobName'),
+        'Config should have scheduledJobName key'
+      );
+      System.assert(
+        config.containsKey('scheduleState'),
+        'Config should have scheduleState key'
+      );
+      System.assert(
+        config.containsKey('scheduleCronExpression'),
+        'Config should have scheduleCronExpression key'
+      );
+      System.assert(
+        config.containsKey('scheduleCadenceType'),
+        'Config should have scheduleCadenceType key'
+      );
+      System.assert(
+        config.containsKey('scheduleIntervalMinutes'),
+        'Config should have scheduleIntervalMinutes key'
+      );
     }
+  }
+
+  @IsTest
+  static void testSaveCatalogJobSchedule_createsMinuteScheduleForDeltaConfig() {
+    CatalogProductSyncScheduler.skipBatchExecutionInTests = true;
+    CatalogProductSyncScheduler.testJobConfigOverride = new CatalogJobConfig__mdt(
+      DeveloperName = 'DELTA_CONFIG',
+      MasterLabel = 'Delta Config',
+      SyncMode__c = CatalogSyncMode.DELTA
+    );
+
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.saveCatalogJobSchedule(
+      'DELTA_CONFIG',
+      'Minutes',
+      15,
+      null,
+      null,
+      null,
+      0
+    );
+    Test.stopTest();
+
+    System.assertEquals(true, result.get('isScheduled'));
+    System.assertEquals('Minutes', result.get('scheduleCadenceType'));
+    System.assertEquals(15, result.get('scheduleIntervalMinutes'));
+    System.assertEquals(0, result.get('scheduleMinuteOfHour'));
+
+    CatalogProductSyncScheduler.clearScheduledSync('DELTA_CONFIG');
+  }
+
+  @IsTest
+  static void testSaveCatalogJobSchedule_createsHourlyScheduleForDeltaConfig() {
+    CatalogProductSyncScheduler.skipBatchExecutionInTests = true;
+    CatalogProductSyncScheduler.testJobConfigOverride = new CatalogJobConfig__mdt(
+      DeveloperName = 'DELTA_CONFIG',
+      MasterLabel = 'Delta Config',
+      SyncMode__c = CatalogSyncMode.DELTA
+    );
+
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.saveCatalogJobSchedule(
+      'DELTA_CONFIG',
+      'Hourly',
+      null,
+      2,
+      null,
+      null,
+      15
+    );
+    Test.stopTest();
+
+    System.assertEquals(true, result.get('isScheduled'));
+    System.assertEquals('Hourly', result.get('scheduleCadenceType'));
+    System.assertEquals(2, result.get('scheduleIntervalHours'));
+    System.assertEquals(15, result.get('scheduleMinuteOfHour'));
+
+    CatalogProductSyncScheduler.clearScheduledSync('DELTA_CONFIG');
+  }
+
+  @IsTest
+  static void testClearCatalogJobSchedule_returnsUnscheduleSnapshot() {
+    CatalogProductSyncScheduler.skipBatchExecutionInTests = true;
+    CatalogProductSyncScheduler.testJobConfigOverride = new CatalogJobConfig__mdt(
+      DeveloperName = 'FULL_CONFIG',
+      MasterLabel = 'Full Config',
+      SyncMode__c = CatalogSyncMode.FULL
+    );
+
+    CoveoCommerceSetupController.saveCatalogJobSchedule(
+      'FULL_CONFIG',
+      'Weekly',
+      null,
+      null,
+      'SUN',
+      4,
+      30
+    );
+
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.clearCatalogJobSchedule(
+      'FULL_CONFIG'
+    );
+    Test.stopTest();
+
+    System.assertEquals(false, result.get('isScheduled'));
+    System.assertEquals(null, result.get('scheduleCronExpression'));
   }
 
   // ============================================================
@@ -332,6 +463,8 @@ private class CoveoCommerceSetupControllerTest {
       'my-coveo-org',
       'catalog-products-us',
       null,
+      CatalogSyncMode.FULL,
+      null,
       null,
       null,
       'en-US',
@@ -375,6 +508,8 @@ private class CoveoCommerceSetupControllerTest {
       'my-coveo-org',
       'catalog-products-us',
       null,
+      CatalogSyncMode.FULL,
+      null,
       null,
       null,
       'en-US',
@@ -411,6 +546,8 @@ private class CoveoCommerceSetupControllerTest {
       'SCOPED_CATALOG_STORE',
       'my-coveo-org',
       'catalog-products-us',
+      null,
+      CatalogSyncMode.FULL,
       null,
       String.valueOf(previewData.get('catalogId')),
       null,
@@ -468,6 +605,8 @@ private class CoveoCommerceSetupControllerTest {
       'my-coveo-org',
       'catalog-products-us',
       null,
+      CatalogSyncMode.FULL,
+      null,
       String.valueOf(previewData.get('catalogId')),
       null,
       'en-US',
@@ -503,6 +642,8 @@ private class CoveoCommerceSetupControllerTest {
       'my-coveo-org',
       'catalog-products-us',
       'catalog-availability-us',
+      CatalogSyncMode.FULL,
+      null,
       null,
       '0ZE000000000001AAA',
       'en-US',
@@ -542,6 +683,8 @@ private class CoveoCommerceSetupControllerTest {
       '',
       '',
       '',
+      null,
+      CatalogSyncMode.FULL,
       null,
       null,
       null,
@@ -591,11 +734,11 @@ private class CoveoCommerceSetupControllerTest {
 
     System.assert(
       combinedValidations.contains('Job label is required') &&
-      combinedValidations.contains('Developer Name is required') &&
-      combinedValidations.contains('Coveo Org Id is required') &&
-      combinedValidations.contains('Product Source Id is required') &&
-      combinedValidations.contains('Locale is required') &&
-      combinedValidations.contains('Buyer Group Availability Mode must be'),
+        combinedValidations.contains('Developer Name is required') &&
+        combinedValidations.contains('Coveo Org Id is required') &&
+        combinedValidations.contains('Product Source Id is required') &&
+        combinedValidations.contains('Locale is required') &&
+        combinedValidations.contains('Buyer Group Availability Mode must be'),
       'Preview should return the full validation summary for missing core fields and unsupported modes'
     );
 
@@ -611,9 +754,61 @@ private class CoveoCommerceSetupControllerTest {
 
     System.assert(
       combinedWarnings.contains('No catalog is selected') &&
-      combinedWarnings.contains('global default builder') &&
-      combinedWarnings.contains('zero active products'),
+        combinedWarnings.contains('global default builder') &&
+        combinedWarnings.contains('zero active products'),
       'Preview should surface default non-blocking warnings for blank catalog, builder, and empty scope'
+    );
+  }
+
+  @IsTest
+  static void testPreviewCatalogJobDraft_requiresBaselineForDeltaSync() {
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.previewCatalogJobDraft(
+      'Hourly Delta Sync',
+      'HOURLY_DELTA_SYNC',
+      'my-coveo-org',
+      'catalog-products-us',
+      null,
+      CatalogSyncMode.DELTA,
+      null,
+      null,
+      null,
+      'en-US',
+      'Commerce',
+      CatalogBuyerGroupAvailabilityMode.DISABLED,
+      null,
+      new List<String>()
+    );
+    Test.stopTest();
+
+    System.assertEquals(
+      CatalogSyncMode.DELTA,
+      result.get('syncMode'),
+      'Preview should normalize the draft sync mode'
+    );
+    System.assertEquals(
+      false,
+      result.get('isReady'),
+      'Delta previews should block readiness until a baseline full config is provided'
+    );
+
+    List<Object> validationMessages = (List<Object>) result.get(
+      'validationMessages'
+    );
+    Boolean foundBaselineMessage = false;
+    for (Object message : validationMessages) {
+      if (
+        String.valueOf(message)
+          .contains('Baseline Full Config Developer Name is required')
+      ) {
+        foundBaselineMessage = true;
+      }
+    }
+
+    System.assertEquals(
+      true,
+      foundBaselineMessage,
+      'Delta previews should explain that a baseline full config is required'
     );
   }
 

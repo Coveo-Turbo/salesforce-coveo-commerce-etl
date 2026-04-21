@@ -77,7 +77,8 @@ private class ProductCatalogExportBatchTest {
       BuilderType__c = builderType,
       AdditionalProductFields__c = 'Description, Family, Description',
       BatchSize__c = 25,
-      EnablePayloadLogging__c = enablePayloadLogging
+      EnablePayloadLogging__c = enablePayloadLogging,
+      SyncMode__c = CatalogSyncMode.FULL
     );
   }
 
@@ -131,6 +132,22 @@ private class ProductCatalogExportBatchTest {
       Test.getStandardPricebookId()
     );
     System.assertEquals(50, fallbackBatch.getBatchSize());
+  }
+
+  @IsTest
+  static void testConstructor_rejectsDeltaSyncMode() {
+    CatalogJobConfig__mdt deltaConfig = createConfig('Default', false);
+    deltaConfig.SyncMode__c = CatalogSyncMode.DELTA;
+
+    Boolean exceptionThrown = false;
+    try {
+      new ProductCatalogExportBatch(deltaConfig, Test.getStandardPricebookId());
+    } catch (CatalogJobConfigException e) {
+      exceptionThrown = true;
+      System.assert(e.getMessage().contains('requires SyncMode__c = Full'));
+    }
+
+    System.assertEquals(true, exceptionThrown);
   }
 
   @IsTest
@@ -441,6 +458,56 @@ private class ProductCatalogExportBatchTest {
       recordedRequests[0].getEndpoint().contains('/deleteolderthan/84')
     );
     System.assertEquals('POST', recordedRequests[0].getMethod());
+  }
+
+  @IsTest
+  static void testFinish_recordsSuccessfulFullSyncState() {
+    recordedRequests.clear();
+    CatalogJobConfig__mdt config = createConfig('Default', false);
+    ProductCatalogExportBatch batch = new ProductCatalogExportBatch(
+      config,
+      Test.getStandardPricebookId()
+    );
+    Datetime cutoff = Datetime.newInstanceGmt(2026, 4, 1, 9, 30, 0);
+    batch.firstOrderingId = 91L;
+    batch.runCutoff = cutoff;
+
+    Test.setMock(
+      HttpCalloutMock.class,
+      new RecordingHttpMock(
+        new Map<String, MockResponse>{
+          '/deleteolderthan/' => new MockResponse(
+            200,
+            '200 OK',
+            '{"deletedCount":2}'
+          )
+        }
+      )
+    );
+
+    Test.startTest();
+    batch.finish(null);
+    Test.stopTest();
+
+    Catalog_Sync_State__c stateRecord = [
+      SELECT
+        BaselineFullConfigDeveloperName__c,
+        LastSuccessfulFullSyncAt__c,
+        LastSuccessfulSyncAt__c,
+        LastRunMode__c,
+        LastSuccessfulConfigDeveloperName__c
+      FROM Catalog_Sync_State__c
+      WHERE ResolvedTargetKey__c = :CatalogSyncStateService.buildResolvedTargetKey(
+        config
+      )
+      LIMIT 1
+    ];
+
+    System.assertEquals('UnitTestConfig', stateRecord.BaselineFullConfigDeveloperName__c);
+    System.assertEquals(cutoff, stateRecord.LastSuccessfulFullSyncAt__c);
+    System.assertEquals(cutoff, stateRecord.LastSuccessfulSyncAt__c);
+    System.assertEquals(CatalogSyncMode.FULL, stateRecord.LastRunMode__c);
+    System.assertEquals('UnitTestConfig', stateRecord.LastSuccessfulConfigDeveloperName__c);
   }
 
   @IsTest

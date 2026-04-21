@@ -6,11 +6,18 @@
           <p class="cc-kicker">Run Center</p>
           <h2 class="cc-heading">Launch and monitor catalog syncs</h2>
           <p class="cc-subtitle">
-            Start product and Buyer Group access exports, then follow live
-            batch progress without leaving Salesforce.
+            Start product and Buyer Group access exports, then follow live batch
+            progress without leaving Salesforce.
           </p>
         </div>
         <div class="cc-hero__actions">
+          <lightning-button
+            label="Refresh Status"
+            variant="neutral"
+            onclick={handleRefreshStatus}
+            icon-name="utility:refresh"
+            icon-position="right"
+          ></lightning-button>
           <lightning-button
             label="Run All Products"
             variant="brand"
@@ -52,6 +59,14 @@
             <p class="cc-stat-card__value">{activeJobs}</p>
           </article>
           <article class="cc-stat-card">
+            <p class="cc-stat-card__label">Full Sync Jobs</p>
+            <p class="cc-stat-card__value">{fullSyncJobs}</p>
+          </article>
+          <article class="cc-stat-card">
+            <p class="cc-stat-card__label">Delta Sync Jobs</p>
+            <p class="cc-stat-card__value">{deltaSyncJobs}</p>
+          </article>
+          <article class="cc-stat-card">
             <p class="cc-stat-card__label">Access Ready</p>
             <p class="cc-stat-card__value">{availabilityReadyJobs}</p>
           </article>
@@ -67,87 +82,122 @@
               <div>
                 <p class="cc-section-label">Catalog Jobs</p>
                 <h3 class="cc-panel__title">Choose a sync configuration</h3>
+                <p class="cc-panel__meta">
+                  Compare configs in one place, then focus a row to launch from
+                  the run workspace below.
+                </p>
               </div>
-              <p class="cc-panel__meta">
-                Focus a config to launch from the run workspace.
-              </p>
             </div>
 
-            <div class="cc-config-list">
-              <template for:each={configs} for:item="config">
-                <article key={config.id} class={config.cardClass}>
-                  <div class="cc-config-card__header">
-                    <div>
-                      <h4 class="cc-config-card__title">{config.label}</h4>
-                      <p class="cc-config-card__subtitle">
-                        {config.developerName}
-                      </p>
-                    </div>
-                    <div class="cc-badge-group">
-                      <span class={config.activeStatusClass}>
-                        {config.activeStatusLabel}
-                      </span>
-                      <span class={config.availabilityStatusClass}>
-                        {config.availabilityStatusLabel}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div class="cc-config-card__facts">
-                    <div>
-                      <p class="cc-config-card__label">Experience</p>
-                      <p class="cc-config-card__value">
-                        {config.catalogLabel} • {config.localeLabel}
-                      </p>
-                    </div>
-                    <div>
-                      <p class="cc-config-card__label">Builder</p>
-                      <p class="cc-config-card__value">
-                        {config.builderSummary}
-                      </p>
-                    </div>
-                    <div>
-                      <p class="cc-config-card__label">Destinations</p>
-                      <p
-                        class="cc-config-card__value"
-                        title={config.productSourceLabel}
-                      >
-                        Products: {config.productSourceLabel}
-                      </p>
-                      <p
-                        class="cc-config-card__value"
-                        title={config.accessDestinationLabel}
-                      >
-                        Access: {config.accessDestinationLabel}
-                      </p>
-                    </div>
-                    <div>
-                      <p class="cc-config-card__label">Scope</p>
-                      <p
-                        class="cc-config-card__value"
-                        title={config.scopeSummary}
-                      >
-                        {config.scopeSummary}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div class="cc-config-card__footer">
-                    <p
-                      class="cc-config-card__supporting"
-                      title={config.extraFieldsTitle}
-                    >
-                      {config.extraFieldsSummary}
-                    </p>
-                    <lightning-button
-                      label="Focus"
-                      variant="neutral"
-                      data-config-id={config.id}
-                      onclick={handleSelectConfig}
-                    ></lightning-button>
-                  </div>
-                </article>
-              </template>
+            <div class="cc-config-table-shell">
+              <div class="cc-config-table-scroll">
+                <table class="cc-config-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Job</th>
+                      <th scope="col">Sync</th>
+                      <th scope="col">Experience</th>
+                      <th scope="col">Product Scope</th>
+                      <th scope="col">Buyer Group Access</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Last Sync</th>
+                      <th scope="col">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template for:each={inventoryTableRows} for:item="config">
+                      <tr key={config.id} class={config.inventoryRowClass}>
+                        <td>
+                          <button
+                            type="button"
+                            class="cc-config-table__job-button"
+                            data-config-id={config.id}
+                            onclick={handleSelectConfig}
+                          >
+                            <span class="cc-config-table__job-title">
+                              {config.label}
+                            </span>
+                            <span class="cc-config-table__job-meta">
+                              {config.developerName}
+                            </span>
+                          </button>
+                          <div class="cc-config-table__badge-stack">
+                            <span class={config.activeStatusClass}>
+                              {config.activeStatusLabel}
+                            </span>
+                            <span class={config.productSyncStatusClass}>
+                              {config.productSyncStatusLabel}
+                            </span>
+                            <span class={config.availabilityStatusClass}>
+                              {config.availabilityStatusLabel}
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          <p class="cc-config-table__primary">
+                            {config.inventorySyncSummary}
+                          </p>
+                          <p class="cc-config-table__secondary">
+                            {config.inventorySyncMeta}
+                          </p>
+                        </td>
+                        <td>
+                          <p class="cc-config-table__primary">
+                            {config.inventoryExperienceSummary}
+                          </p>
+                          <p class="cc-config-table__secondary">
+                            {config.inventoryExperienceMeta}
+                          </p>
+                        </td>
+                        <td>
+                          <p class="cc-config-table__primary">
+                            {config.inventorySourceSummary}
+                          </p>
+                          <p class="cc-config-table__secondary">
+                            {config.inventorySourceMeta}
+                          </p>
+                        </td>
+                        <td>
+                          <p class="cc-config-table__primary">
+                            {config.inventoryAccessSummary}
+                          </p>
+                          <p class="cc-config-table__secondary">
+                            {config.inventoryAccessMeta}
+                          </p>
+                        </td>
+                        <td>
+                          <p class="cc-config-table__primary">
+                            {config.inventoryStatusSummary}
+                          </p>
+                          <p class="cc-config-table__secondary">
+                            {config.inventoryStatusMeta}
+                          </p>
+                        </td>
+                        <td>
+                          <p class="cc-config-table__primary">
+                            {config.inventoryLastSyncSummary}
+                          </p>
+                          <p class="cc-config-table__secondary">
+                            {config.inventoryLastSyncMeta}
+                          </p>
+                        </td>
+                        <td>
+                          <div class="cc-config-table__actions">
+                            <button
+                              type="button"
+                              class="cc-table-action cc-table-action--primary"
+                              data-config-id={config.id}
+                              onclick={handleSelectConfig}
+                            >
+                              Focus
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </section>
 
@@ -163,6 +213,9 @@
                   <span class={selectedConfigStatusClass}>
                     {selectedConfig.activeStatusLabel}
                   </span>
+                  <span class={selectedConfigProductSyncClass}>
+                    {selectedConfig.productSyncStatusLabel}
+                  </span>
                   <span class={selectedConfigAvailabilityClass}>
                     {selectedConfig.availabilityStatusLabel}
                   </span>
@@ -174,9 +227,10 @@
               <div class="cc-launchpad">
                 <div class="cc-launchpad__actions">
                   <lightning-button
-                    label="Run Products"
+                    label={selectedProductRunLabel}
                     variant="brand"
                     onclick={handleRunSelectedProducts}
+                    disabled={selectedConfig.productDisabled}
                   ></lightning-button>
                   <lightning-button
                     label="Run Access"
@@ -189,14 +243,31 @@
                       label="Run Both"
                       variant="brand-outline"
                       onclick={handleRunSelectedBoth}
-                      disabled={selectedConfig.availabilityDisabled}
+                      disabled={selectedConfig.bothDisabled}
                     ></lightning-button>
                   </template>
+                  <lightning-button
+                    label="Abort Product Run"
+                    variant="destructive-text"
+                    onclick={handleAbortSelectedProductRun}
+                    disabled={abortSelectedProductRunDisabled}
+                  ></lightning-button>
                 </div>
-                <template if:true={availabilityDisabledMessage}>
-                  <p class="cc-launchpad__note">
-                    {availabilityDisabledMessage}
-                  </p>
+                <div class="cc-launchpad__status">
+                  <span class={selectedConfigQuickStatusClass}>
+                    {selectedConfig.quickStatusLabel}
+                  </span>
+                  <div>
+                    <p class="cc-launchpad__status-summary">
+                      {selectedProductStatusSummary}
+                    </p>
+                    <p class="cc-launchpad__status-meta">
+                      {selectedProductStatusMeta}
+                    </p>
+                  </div>
+                </div>
+                <template if:true={launchpadNote}>
+                  <p class="cc-launchpad__note">{launchpadNote}</p>
                 </template>
               </div>
 
@@ -261,9 +332,22 @@
                                   </p>
                                 </template>
                               </div>
-                              <span class={stage.statusClass}>
-                                {stage.statusLabel}
-                              </span>
+                              <div class="cc-stage-card__actions">
+                                <span class={stage.statusClass}>
+                                  {stage.statusLabel}
+                                </span>
+                                <template if:true={stage.canAbort}>
+                                  <button
+                                    type="button"
+                                    class="cc-stage-card__abort"
+                                    data-job-id={stage.jobId}
+                                    data-job-label={stage.label}
+                                    onclick={handleAbortStage}
+                                  >
+                                    Abort
+                                  </button>
+                                </template>
+                              </div>
                             </div>
                             <lightning-progress-bar
                               value={stage.progressPercent}

@@ -9,6 +9,9 @@ public with sharing class CoveoCommerceSetupController {
   private static final String API_KEY_PARAMETER_NAME = 'API_KEY';
   private static final Integer MAX_ERROR_MESSAGE_LENGTH = 200;
   private static final Integer OPTION_QUERY_LIMIT = 200;
+  private static final String SCHEDULE_CADENCE_MINUTES = 'Minutes';
+  private static final String SCHEDULE_CADENCE_HOURLY = 'Hourly';
+  private static final String SCHEDULE_CADENCE_WEEKLY = 'Weekly';
   private static final Set<String> EXCLUDED_PRODUCT_FIELD_API_NAMES = new Set<String>{
     'CreatedById',
     'CreatedDate',
@@ -100,8 +103,7 @@ public with sharing class CoveoCommerceSetupController {
   @AuraEnabled(cacheable=true)
   public static List<Map<String, Object>> getCatalogJobConfigs() {
     List<Map<String, Object>> configs = new List<Map<String, Object>>();
-
-    for (CatalogJobConfig__mdt cfg : [
+    List<CatalogJobConfig__mdt> configRecords = [
       SELECT
         Id,
         DeveloperName,
@@ -117,10 +119,26 @@ public with sharing class CoveoCommerceSetupController {
         AdditionalProductFields__c,
         BuilderType__c,
         CatalogId__c,
-        EnableBuyerGroupAvailability__c
+        EnableBuyerGroupAvailability__c,
+        SyncMode__c,
+        BaselineFullConfigDeveloperName__c
       FROM CatalogJobConfig__mdt
       ORDER BY MasterLabel
-    ]) {
+    ];
+    Map<String, CatalogSyncStateService.Snapshot> snapshotsByDeveloperName = CatalogSyncStateService.getSnapshotsByDeveloperName(
+      configRecords
+    );
+    Map<String, CatalogProductSyncScheduler.ScheduleSnapshot> scheduleSnapshotsByDeveloperName = CatalogProductSyncScheduler.getScheduleSnapshotsByDeveloperName(
+      configRecords
+    );
+
+    for (CatalogJobConfig__mdt cfg : configRecords) {
+      CatalogSyncStateService.Snapshot snapshot = snapshotsByDeveloperName.get(
+        cfg.DeveloperName
+      );
+      CatalogProductSyncScheduler.ScheduleSnapshot scheduleSnapshot = scheduleSnapshotsByDeveloperName.get(
+        cfg.DeveloperName
+      );
       Map<String, Object> configMap = new Map<String, Object>();
       configMap.put('id', cfg.Id);
       configMap.put('developerName', cfg.DeveloperName);
@@ -148,10 +166,169 @@ public with sharing class CoveoCommerceSetupController {
           : '(Global Default)'
       );
       configMap.put('catalogId', cfg.CatalogId__c);
+      configMap.put('syncMode', CatalogSyncMode.resolve(cfg));
+      configMap.put(
+        'baselineFullConfigDeveloperName',
+        cfg.BaselineFullConfigDeveloperName__c
+      );
+      configMap.put(
+        'deltaReady',
+        snapshot == null ? true : snapshot.deltaReady
+      );
+      configMap.put(
+        'deltaReadinessMessage',
+        snapshot == null ? null : snapshot.deltaReadinessMessage
+      );
+      configMap.put(
+        'lastSuccessfulFullSyncAt',
+        snapshot == null ? null : snapshot.lastSuccessfulFullSyncAt
+      );
+      configMap.put(
+        'lastSuccessfulSyncAt',
+        snapshot == null ? null : snapshot.lastSuccessfulSyncAt
+      );
+      configMap.put(
+        'lastRunMode',
+        snapshot == null ? null : snapshot.lastRunMode
+      );
+      configMap.put(
+        'lastSuccessfulConfigDeveloperName',
+        snapshot == null ? null : snapshot.lastSuccessfulConfigDeveloperName
+      );
+      configMap.put(
+        'isScheduled',
+        scheduleSnapshot == null ? false : scheduleSnapshot.isScheduled
+      );
+      configMap.put(
+        'scheduledJobName',
+        scheduleSnapshot == null ? null : scheduleSnapshot.jobName
+      );
+      configMap.put(
+        'scheduleState',
+        scheduleSnapshot == null ? null : scheduleSnapshot.state
+      );
+      configMap.put(
+        'scheduleCronExpression',
+        scheduleSnapshot == null ? null : scheduleSnapshot.cronExpression
+      );
+      configMap.put(
+        'scheduleNextFireTime',
+        scheduleSnapshot == null ? null : scheduleSnapshot.nextFireTime
+      );
+      configMap.put(
+        'schedulePreviousFireTime',
+        scheduleSnapshot == null ? null : scheduleSnapshot.previousFireTime
+      );
+      configMap.put(
+        'scheduleTimesTriggered',
+        scheduleSnapshot == null ? null : scheduleSnapshot.timesTriggered
+      );
+      configMap.put(
+        'scheduleCadenceRecognized',
+        scheduleSnapshot == null ? false : scheduleSnapshot.cadenceRecognized
+      );
+      configMap.put(
+        'scheduleCadenceType',
+        scheduleSnapshot == null ? null : scheduleSnapshot.cadenceType
+      );
+      configMap.put(
+        'scheduleIntervalMinutes',
+        scheduleSnapshot == null ? null : scheduleSnapshot.intervalMinutes
+      );
+      configMap.put(
+        'scheduleIntervalHours',
+        scheduleSnapshot == null ? null : scheduleSnapshot.intervalHours
+      );
+      configMap.put(
+        'scheduleDayOfWeek',
+        scheduleSnapshot == null ? null : scheduleSnapshot.dayOfWeek
+      );
+      configMap.put(
+        'scheduleHourOfDay',
+        scheduleSnapshot == null ? null : scheduleSnapshot.hourOfDay
+      );
+      configMap.put(
+        'scheduleMinuteOfHour',
+        scheduleSnapshot == null ? null : scheduleSnapshot.minuteOfHour
+      );
       configs.add(configMap);
     }
 
     return configs;
+  }
+
+  /**
+   * Creates or replaces the native Salesforce scheduled job for a catalog sync config.
+   */
+  @AuraEnabled
+  public static Map<String, Object> saveCatalogJobSchedule(
+    String jobConfigDeveloperName,
+    String cadenceType,
+    Integer intervalMinutes,
+    Integer intervalHours,
+    String dayOfWeek,
+    Integer hourOfDay,
+    Integer minuteOfHour
+  ) {
+    if (String.isBlank(jobConfigDeveloperName)) {
+      throw new CatalogJobConfigException(
+        'A Catalog Job Config developer name is required.'
+      );
+    }
+
+    String normalizedCadenceType = String.isBlank(cadenceType)
+      ? null
+      : cadenceType.trim();
+    String cronExpression;
+
+    if (normalizedCadenceType == SCHEDULE_CADENCE_MINUTES) {
+      cronExpression = CatalogProductSyncScheduler.buildMinuteCronExpression(
+        intervalMinutes,
+        minuteOfHour
+      );
+    } else if (normalizedCadenceType == SCHEDULE_CADENCE_HOURLY) {
+      cronExpression = CatalogProductSyncScheduler.buildHourlyCronExpression(
+        intervalHours,
+        minuteOfHour
+      );
+    } else if (normalizedCadenceType == SCHEDULE_CADENCE_WEEKLY) {
+      cronExpression = CatalogProductSyncScheduler.buildWeeklyCronExpression(
+        dayOfWeek,
+        hourOfDay,
+        minuteOfHour
+      );
+    } else {
+      throw new CatalogJobConfigException(
+        'Supported schedule cadences are Minutes, Hourly, and Weekly.'
+      );
+    }
+
+    CatalogProductSyncScheduler.upsertConfiguredSyncSchedule(
+      jobConfigDeveloperName.trim(),
+      cronExpression
+    );
+
+    return buildScheduleResult(jobConfigDeveloperName.trim());
+  }
+
+  /**
+   * Removes the native Salesforce scheduled job for a catalog sync config.
+   */
+  @AuraEnabled
+  public static Map<String, Object> clearCatalogJobSchedule(
+    String jobConfigDeveloperName
+  ) {
+    if (String.isBlank(jobConfigDeveloperName)) {
+      throw new CatalogJobConfigException(
+        'A Catalog Job Config developer name is required.'
+      );
+    }
+
+    CatalogProductSyncScheduler.clearScheduledSync(
+      jobConfigDeveloperName.trim()
+    );
+
+    return buildScheduleResult(jobConfigDeveloperName.trim());
   }
 
   /**
@@ -194,6 +371,8 @@ public with sharing class CoveoCommerceSetupController {
     String coveoOrgId,
     String sourceId,
     String availabilitySourceId,
+    String syncMode,
+    String baselineFullConfigDeveloperName,
     String catalogId,
     String webStoreId,
     String locale,
@@ -208,18 +387,28 @@ public with sharing class CoveoCommerceSetupController {
     Integer selectedFieldCount = additionalProductFields == null
       ? 0
       : additionalProductFields.size();
+    Boolean syncModeSupported = CatalogSyncMode.isSupportedValue(syncMode);
+    String resolvedSyncMode = CatalogSyncMode.resolve(syncMode);
+    String normalizedBaselineFullConfigDeveloperName = String.isBlank(
+        baselineFullConfigDeveloperName
+      )
+      ? null
+      : baselineFullConfigDeveloperName.trim();
     Boolean modeSupported = CatalogBuyerGroupAvailabilityMode.isSupportedValue(
       buyerGroupAvailabilityMode
     );
     String resolvedMode = CatalogBuyerGroupAvailabilityMode.resolveDraftMode(
       buyerGroupAvailabilityMode
     );
-    Boolean availabilityEnabled =
-      CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(resolvedMode);
-    Boolean usesPairedSource =
-      CatalogBuyerGroupAvailabilityMode.usesPairedSource(resolvedMode);
-    Boolean usesEmbedded =
-      CatalogBuyerGroupAvailabilityMode.usesEmbedded(resolvedMode);
+    Boolean availabilityEnabled = CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(
+      resolvedMode
+    );
+    Boolean usesPairedSource = CatalogBuyerGroupAvailabilityMode.usesPairedSource(
+      resolvedMode
+    );
+    Boolean usesEmbedded = CatalogBuyerGroupAvailabilityMode.usesEmbedded(
+      resolvedMode
+    );
 
     if (String.isBlank(label)) {
       validationMessages.add('Job label is required.');
@@ -235,12 +424,23 @@ public with sharing class CoveoCommerceSetupController {
     if (String.isBlank(sourceId)) {
       validationMessages.add('Product Source Id is required.');
     }
+    if (!syncModeSupported) {
+      validationMessages.add('Sync Type must be Full or Delta.');
+    }
     if (String.isBlank(locale)) {
       validationMessages.add('Locale is required.');
     }
     if (!modeSupported) {
       validationMessages.add(
         'Buyer Group Availability Mode must be Disabled, PairedSource, Embedded, or DualWrite.'
+      );
+    }
+    if (
+      resolvedSyncMode == CatalogSyncMode.DELTA &&
+      String.isBlank(normalizedBaselineFullConfigDeveloperName)
+    ) {
+      validationMessages.add(
+        'Baseline Full Config Developer Name is required for Delta syncs.'
       );
     }
     if (usesPairedSource && String.isBlank(availabilitySourceId)) {
@@ -326,7 +526,11 @@ public with sharing class CoveoCommerceSetupController {
       }
     }
 
-    if (usesEmbedded && String.isNotBlank(sourceId) && String.isNotBlank(webStoreId)) {
+    if (
+      usesEmbedded &&
+      String.isNotBlank(sourceId) &&
+      String.isNotBlank(webStoreId)
+    ) {
       List<String> conflictingConfigs = findEmbeddedSourceConflicts(
         developerName,
         sourceId,
@@ -335,8 +539,8 @@ public with sharing class CoveoCommerceSetupController {
       if (!conflictingConfigs.isEmpty()) {
         warningMessages.add(
           'Embedded access shares the product source with active configs that use a different Web Store: ' +
-          String.join(conflictingConfigs, ', ') +
-          '.'
+            String.join(conflictingConfigs, ', ') +
+            '.'
         );
       }
     }
@@ -344,6 +548,11 @@ public with sharing class CoveoCommerceSetupController {
     result.put('estimatedProductCount', estimatedProductCount);
     result.put('buyerGroupCount', buyerGroupCount);
     result.put('selectedFieldCount', selectedFieldCount);
+    result.put('syncMode', resolvedSyncMode);
+    result.put(
+      'baselineFullConfigDeveloperName',
+      normalizedBaselineFullConfigDeveloperName
+    );
     result.put('buyerGroupAvailabilityMode', resolvedMode);
     result.put('validationMessages', validationMessages);
     result.put('warningMessages', warningMessages);
@@ -745,5 +954,43 @@ public with sharing class CoveoCommerceSetupController {
     }
 
     return result;
+  }
+
+  private static Map<String, Object> buildScheduleResult(
+    String jobConfigDeveloperName
+  ) {
+    CatalogProductSyncScheduler.ScheduleSnapshot snapshot = CatalogProductSyncScheduler.getConfiguredScheduleSnapshot(
+      jobConfigDeveloperName
+    );
+
+    return new Map<String, Object>{
+      'developerName' => jobConfigDeveloperName,
+      'isScheduled' => snapshot == null ? false : snapshot.isScheduled,
+      'scheduledJobName' => snapshot == null ? null : snapshot.jobName,
+      'scheduleState' => snapshot == null ? null : snapshot.state,
+      'scheduleCronExpression' => snapshot == null
+        ? null
+        : snapshot.cronExpression,
+      'scheduleNextFireTime' => snapshot == null ? null : snapshot.nextFireTime,
+      'schedulePreviousFireTime' => snapshot == null
+        ? null
+        : snapshot.previousFireTime,
+      'scheduleTimesTriggered' => snapshot == null
+        ? null
+        : snapshot.timesTriggered,
+      'scheduleCadenceRecognized' => snapshot == null
+        ? false
+        : snapshot.cadenceRecognized,
+      'scheduleCadenceType' => snapshot == null ? null : snapshot.cadenceType,
+      'scheduleIntervalMinutes' => snapshot == null
+        ? null
+        : snapshot.intervalMinutes,
+      'scheduleIntervalHours' => snapshot == null
+        ? null
+        : snapshot.intervalHours,
+      'scheduleDayOfWeek' => snapshot == null ? null : snapshot.dayOfWeek,
+      'scheduleHourOfDay' => snapshot == null ? null : snapshot.hourOfDay,
+      'scheduleMinuteOfHour' => snapshot == null ? null : snapshot.minuteOfHour
+    };
   }
 }

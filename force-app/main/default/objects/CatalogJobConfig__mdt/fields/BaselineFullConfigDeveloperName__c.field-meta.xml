@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>BaselineFullConfigDeveloperName__c</fullName>
+    <description>For delta sync configs, identifies the full-sync CatalogJobConfig__mdt record that establishes the trusted export baseline.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>Required for Delta sync mode. Enter the DeveloperName of the matching Full sync configuration.</inlineHelpText>
+    <label>Baseline Full Config Developer Name</label>
+    <length>80</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

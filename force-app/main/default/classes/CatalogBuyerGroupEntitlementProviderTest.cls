@@ -1,5 +1,13 @@
 @IsTest
 private class CatalogBuyerGroupEntitlementProviderTest {
+  private static void clearTestOverrides() {
+    CatalogBuyerGroupEntitlementProvider.testHasCommerceAvailabilitySchema = null;
+    CatalogBuyerGroupEntitlementProvider.testBuyerGroupIdsByWebStoreId = null;
+    CatalogBuyerGroupEntitlementProvider.testBuyerGroupNamesById = null;
+    CatalogBuyerGroupEntitlementProvider.testVisiblePolicyIdsByBuyerGroupId = null;
+    CatalogBuyerGroupEntitlementProvider.testPolicyProductLinks = null;
+  }
+
   private static Boolean hasCommerceAvailabilitySchema() {
     Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
     return globalDescribe.containsKey('WebStore') &&
@@ -282,6 +290,128 @@ private class CatalogBuyerGroupEntitlementProviderTest {
       false,
       snapshotsByProductId.containsKey(ignoredProduct.Id),
       'Products without resolved ec_product_id values should be skipped even when policies exist'
+    );
+  }
+
+  @IsTest
+  static void testResolveBuyerGroupAccess_supportsSyntheticCommerceSchemaOverrides() {
+    clearTestOverrides();
+
+    Product2 alphaProduct = createProduct('SKU-SYNTH-ALPHA-001');
+    Product2 betaProduct = createProduct('SKU-SYNTH-BETA-001');
+    Product2 ignoredProduct = createProduct('SKU-SYNTH-IGNORED-001');
+
+    Account alphaBuyerGroup = new Account(Name = 'Synthetic Alpha Buyers');
+    Account betaBuyerGroup = new Account(Name = 'Synthetic Beta Buyers');
+    insert new List<Account>{ alphaBuyerGroup, betaBuyerGroup };
+
+    Pricebook2 alphaPolicy = new Pricebook2(Name = 'Synthetic Alpha Policy');
+    Pricebook2 betaPolicy = new Pricebook2(Name = 'Synthetic Beta Policy');
+    insert new List<Pricebook2>{ alphaPolicy, betaPolicy };
+
+    String webStoreId = '0ZE000000000001AAA';
+    CatalogBuyerGroupEntitlementProvider.testHasCommerceAvailabilitySchema = true;
+    CatalogBuyerGroupEntitlementProvider.testBuyerGroupIdsByWebStoreId =
+      new Map<String, Set<Id>>{
+        webStoreId => new Set<Id>{ alphaBuyerGroup.Id, betaBuyerGroup.Id }
+      };
+    CatalogBuyerGroupEntitlementProvider.testBuyerGroupNamesById =
+      new Map<Id, String>{
+        alphaBuyerGroup.Id => 'Synthetic Alpha Buyers',
+        betaBuyerGroup.Id => 'Synthetic Beta Buyers'
+      };
+    CatalogBuyerGroupEntitlementProvider.testVisiblePolicyIdsByBuyerGroupId =
+      new Map<Id, Set<Id>>{
+        alphaBuyerGroup.Id => new Set<Id>{ alphaPolicy.Id, betaPolicy.Id },
+        betaBuyerGroup.Id => new Set<Id>{ betaPolicy.Id }
+      };
+    CatalogBuyerGroupEntitlementProvider.testPolicyProductLinks =
+      new List<CatalogBuyerGroupEntitlementProvider.PolicyProductLink>{
+        new CatalogBuyerGroupEntitlementProvider.PolicyProductLink(
+          alphaPolicy.Id,
+          alphaProduct.Id
+        ),
+        new CatalogBuyerGroupEntitlementProvider.PolicyProductLink(
+          betaPolicy.Id,
+          alphaProduct.Id
+        ),
+        new CatalogBuyerGroupEntitlementProvider.PolicyProductLink(
+          betaPolicy.Id,
+          betaProduct.Id
+        ),
+        new CatalogBuyerGroupEntitlementProvider.PolicyProductLink(
+          alphaPolicy.Id,
+          ignoredProduct.Id
+        )
+      };
+
+    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId =
+      new CatalogBuyerGroupEntitlementProvider().resolveBuyerGroupAccess(
+        new CatalogJobConfig__mdt(WebStoreId__c = webStoreId),
+        new List<Product2>{ alphaProduct, betaProduct, ignoredProduct },
+        new Map<Id, String>{
+          alphaProduct.Id => 'EC-SYNTH-ALPHA-001',
+          betaProduct.Id => 'EC-SYNTH-BETA-001'
+        }
+      );
+
+    clearTestOverrides();
+
+    System.assertEquals(
+      2,
+      snapshotsByProductId.size(),
+      'Synthetic commerce overrides should exercise the entitlement aggregation path'
+    );
+
+    CatalogBuyerGroupAccessSnapshot alphaSnapshot = snapshotsByProductId.get(
+      alphaProduct.Id
+    );
+    System.assertEquals('EC-SYNTH-ALPHA-001', alphaSnapshot.ecProductId);
+    System.assertEquals(
+      JSON.serialize(
+        new List<String>{
+          String.valueOf(alphaBuyerGroup.Id),
+          String.valueOf(betaBuyerGroup.Id)
+        }
+      ),
+      JSON.serialize(alphaSnapshot.getSortedBuyerGroupIds())
+    );
+    System.assertEquals(
+      JSON.serialize(
+        new List<String>{
+          'Synthetic Alpha Buyers',
+          'Synthetic Beta Buyers'
+        }
+      ),
+      JSON.serialize(alphaSnapshot.getSortedBuyerGroupNames())
+    );
+
+    CatalogBuyerGroupAccessSnapshot betaSnapshot = snapshotsByProductId.get(
+      betaProduct.Id
+    );
+    System.assertEquals('EC-SYNTH-BETA-001', betaSnapshot.ecProductId);
+    System.assertEquals(
+      JSON.serialize(
+        new List<String>{
+          String.valueOf(alphaBuyerGroup.Id),
+          String.valueOf(betaBuyerGroup.Id)
+        }
+      ),
+      JSON.serialize(betaSnapshot.getSortedBuyerGroupIds())
+    );
+    System.assertEquals(
+      JSON.serialize(
+        new List<String>{
+          'Synthetic Alpha Buyers',
+          'Synthetic Beta Buyers'
+        }
+      ),
+      JSON.serialize(betaSnapshot.getSortedBuyerGroupNames())
+    );
+    System.assertEquals(
+      false,
+      snapshotsByProductId.containsKey(ignoredProduct.Id),
+      'Products without resolved ec_product_id values should still be ignored'
     );
   }
 }
