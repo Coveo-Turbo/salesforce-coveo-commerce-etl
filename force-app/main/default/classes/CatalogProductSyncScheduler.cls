@@ -29,6 +29,12 @@ global with sharing class CatalogProductSyncScheduler implements Schedulable {
   private static String lastExecutedConfigDeveloperName;
   @TestVisible
   private static String lastExecutedSyncMode;
+  @TestVisible
+  private static String lastSkippedConfigDeveloperName;
+  @TestVisible
+  private static String lastSkippedSyncMode;
+  @TestVisible
+  private static String lastSkippedReason;
 
   private String jobConfigDeveloperName;
   private String expectedSyncMode;
@@ -90,6 +96,15 @@ global with sharing class CatalogProductSyncScheduler implements Schedulable {
     }
 
     if (scheduledMode == CatalogSyncMode.DELTA) {
+      CatalogSyncStateService.DeltaReadiness readiness =
+        CatalogSyncStateService.evaluateDeltaReadiness(config);
+      if (readiness.isReady != true) {
+        lastSkippedConfigDeveloperName = jobConfigDeveloperName;
+        lastSkippedSyncMode = scheduledMode;
+        lastSkippedReason = readiness.message;
+        return;
+      }
+
       DeltaProductCatalogExportBatch deltaBatch = new DeltaProductCatalogExportBatch(
         jobConfigDeveloperName
       );

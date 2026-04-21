@@ -222,25 +222,23 @@ public with sharing class CatalogSyncStateService {
     }
 
     String baselineTargetKey = buildResolvedTargetKey(readiness.baselineConfig);
-    if (baselineTargetKey != readiness.resolvedTargetKey) {
-      readiness.message =
-        'Baseline full config "' +
-        readiness.baselineConfig.DeveloperName +
-        '" does not resolve to the same export target as delta config "' +
-        config.DeveloperName +
-        '".';
-      return readiness;
-    }
-
     readiness.stateRecord = loadStateByTargetKey(readiness.resolvedTargetKey);
-    if (
-      readiness.stateRecord == null ||
-      readiness.stateRecord.LastSuccessfulFullSyncAt__c == null
-    ) {
-      readiness.message =
-        'Run the baseline full sync once before running delta sync "' +
-        config.DeveloperName +
-        '".';
+    TrackedAsyncJob trackedJob = loadTrackedJobsById(
+      new Set<String>{
+        readiness.stateRecord == null ? null : readiness.stateRecord.CurrentProductJobId__c
+      }
+    )
+    .get(readiness.stateRecord == null ? null : readiness.stateRecord.CurrentProductJobId__c);
+    String readinessFailure = evaluateDeltaReadinessFailure(
+      config,
+      readiness.baselineConfig,
+      readiness.resolvedTargetKey,
+      baselineTargetKey,
+      readiness.stateRecord,
+      trackedJob
+    );
+    if (String.isNotBlank(readinessFailure)) {
+      readiness.message = readinessFailure;
       return readiness;
     }
 
@@ -380,46 +378,82 @@ public with sharing class CatalogSyncStateService {
       return snapshot;
     }
 
-    if (String.isBlank(snapshot.baselineFullConfigDeveloperName)) {
-      snapshot.deltaReady = false;
-      snapshot.deltaReadinessMessage =
-        'Set BaselineFullConfigDeveloperName__c before running delta sync.';
-      return snapshot;
+    String readinessFailure = evaluateDeltaReadinessFailure(
+      config,
+      baselineConfig,
+      targetKey,
+      baselineTargetKey,
+      stateRecord,
+      trackedJob
+    );
+    snapshot.deltaReady = String.isBlank(readinessFailure);
+    snapshot.deltaReadinessMessage = snapshot.deltaReady
+      ? 'Ready for delta sync.'
+      : readinessFailure;
+    return snapshot;
+  }
+
+  private static String evaluateDeltaReadinessFailure(
+    CatalogJobConfig__mdt config,
+    CatalogJobConfig__mdt baselineConfig,
+    String targetKey,
+    String baselineTargetKey,
+    Catalog_Sync_State__c stateRecord,
+    TrackedAsyncJob trackedJob
+  ) {
+    if (String.isBlank(config.BaselineFullConfigDeveloperName__c)) {
+      return 'BaselineFullConfigDeveloperName__c is required for Delta sync mode.';
     }
 
     if (baselineConfig == null) {
-      snapshot.deltaReady = false;
-      snapshot.deltaReadinessMessage =
+      return
         'Baseline full config "' +
-        snapshot.baselineFullConfigDeveloperName +
+        config.BaselineFullConfigDeveloperName__c.trim() +
         '" was not found.';
-      return snapshot;
     }
 
     if (!CatalogSyncMode.isFull(baselineConfig)) {
-      snapshot.deltaReady = false;
-      snapshot.deltaReadinessMessage =
-        'Baseline full config must use SyncMode__c = Full.';
-      return snapshot;
+      return
+        'Baseline full config "' +
+        baselineConfig.DeveloperName +
+        '" must use SyncMode__c = Full.';
     }
 
     if (baselineTargetKey != targetKey) {
-      snapshot.deltaReady = false;
-      snapshot.deltaReadinessMessage =
-        'Baseline full config does not resolve to the same export target.';
-      return snapshot;
+      return
+        'Baseline full config "' +
+        baselineConfig.DeveloperName +
+        '" does not resolve to the same export target as delta config "' +
+        config.DeveloperName +
+        '".';
     }
 
     if (stateRecord == null || stateRecord.LastSuccessfulFullSyncAt__c == null) {
-      snapshot.deltaReady = false;
-      snapshot.deltaReadinessMessage =
-        'Run the baseline full sync once before running delta sync.';
-      return snapshot;
+      return
+        'Run the baseline full sync once before running delta sync "' +
+        config.DeveloperName +
+        '".';
     }
 
-    snapshot.deltaReady = true;
-    snapshot.deltaReadinessMessage = 'Ready for delta sync.';
-    return snapshot;
+    if (
+      trackedJob != null &&
+      trackedJob.isTerminal != true &&
+      stateRecord.CurrentProductRunMode__c == CatalogSyncMode.FULL
+    ) {
+      String activeFullConfigDeveloperName = String.isBlank(
+          stateRecord.CurrentProductConfigDeveloperName__c
+        )
+        ? baselineConfig.DeveloperName
+        : stateRecord.CurrentProductConfigDeveloperName__c;
+      return
+        'Baseline full sync "' +
+        activeFullConfigDeveloperName +
+        '" is currently running. Wait for it to complete before running delta sync "' +
+        config.DeveloperName +
+        '".';
+    }
+
+    return null;
   }
 
   private static Map<String, CatalogJobConfig__mdt> loadConfigsByDeveloperName(

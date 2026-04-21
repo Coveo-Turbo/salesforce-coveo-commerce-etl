@@ -6,6 +6,10 @@ private class CatalogProductSyncSchedulerTest {
     CatalogProductSyncScheduler.skipBatchExecutionInTests = false;
     CatalogProductSyncScheduler.lastExecutedConfigDeveloperName = null;
     CatalogProductSyncScheduler.lastExecutedSyncMode = null;
+    CatalogProductSyncScheduler.lastSkippedConfigDeveloperName = null;
+    CatalogProductSyncScheduler.lastSkippedSyncMode = null;
+    CatalogProductSyncScheduler.lastSkippedReason = null;
+    CatalogSyncStateService.clearTestOverrides();
   }
 
   @IsTest
@@ -133,6 +137,73 @@ private class CatalogProductSyncSchedulerTest {
     System.assertEquals(
       CatalogSyncMode.DELTA,
       CatalogProductSyncScheduler.lastExecutedSyncMode
+    );
+  }
+
+  @IsTest
+  static void testExecute_skipsDeltaWhenBaselineFullIsStillRunning() {
+    CatalogProductSyncScheduler.testJobConfigOverride = new CatalogJobConfig__mdt(
+      DeveloperName = 'DELTA_CONFIG',
+      MasterLabel = 'Delta Config',
+      SyncMode__c = CatalogSyncMode.DELTA,
+      BaselineFullConfigDeveloperName__c = 'FULL_CONFIG',
+      CoveoOrgId__c = 'org-123',
+      SourceId__c = 'source-456',
+      Locale__c = 'en-US',
+      BuilderType__c = 'Default'
+    );
+    CatalogJobConfig__mdt fullConfig = new CatalogJobConfig__mdt(
+      DeveloperName = 'FULL_CONFIG',
+      MasterLabel = 'Full Config',
+      SyncMode__c = CatalogSyncMode.FULL,
+      CoveoOrgId__c = 'org-123',
+      SourceId__c = 'source-456',
+      Locale__c = 'en-US',
+      BuilderType__c = 'Default'
+    );
+    String trackedJobId = '707000000000001AAA';
+    Datetime fullCutoff = Datetime.newInstanceGmt(2026, 4, 1, 10, 0, 0);
+
+    CatalogSyncStateService.testConfigsByDeveloperName =
+      new Map<String, CatalogJobConfig__mdt>{ 'FULL_CONFIG' => fullConfig };
+    CatalogSyncStateService.testStatesByTargetKey =
+      new Map<String, Catalog_Sync_State__c>{
+        CatalogSyncStateService.buildResolvedTargetKey(
+          CatalogProductSyncScheduler.testJobConfigOverride
+        ) => new Catalog_Sync_State__c(
+          ResolvedTargetKey__c = CatalogSyncStateService.buildResolvedTargetKey(
+            CatalogProductSyncScheduler.testJobConfigOverride
+          ),
+          BaselineFullConfigDeveloperName__c = 'FULL_CONFIG',
+          CurrentProductJobId__c = trackedJobId,
+          CurrentProductRunMode__c = CatalogSyncMode.FULL,
+          CurrentProductConfigDeveloperName__c = 'FULL_CONFIG',
+          CurrentProductStartedAt__c = Datetime.newInstanceGmt(2026, 4, 2, 9, 0, 0),
+          LastSuccessfulFullSyncAt__c = fullCutoff,
+          LastSuccessfulSyncAt__c = fullCutoff,
+          LastRunMode__c = CatalogSyncMode.FULL,
+          LastSuccessfulConfigDeveloperName__c = 'FULL_CONFIG'
+        )
+      };
+    CatalogSyncStateService.testAsyncJobStatusesById =
+      new Map<String, String>{ trackedJobId => 'Processing' };
+
+    Test.startTest();
+    new CatalogProductSyncScheduler('DELTA_CONFIG', CatalogSyncMode.DELTA)
+      .execute(null);
+    Test.stopTest();
+
+    System.assertEquals(
+      'DELTA_CONFIG',
+      CatalogProductSyncScheduler.lastSkippedConfigDeveloperName
+    );
+    System.assertEquals(
+      CatalogSyncMode.DELTA,
+      CatalogProductSyncScheduler.lastSkippedSyncMode
+    );
+    System.assert(
+      CatalogProductSyncScheduler.lastSkippedReason.contains('currently running'),
+      'Expected the scheduled delta run to skip while the full baseline is active.'
     );
   }
 
