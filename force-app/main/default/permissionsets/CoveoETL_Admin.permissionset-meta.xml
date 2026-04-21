@@ -142,11 +142,6 @@
         <field>Catalog_Sync_State__c.LastSuccessfulSyncAt__c</field>
         <readable>true</readable>
     </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Catalog_Sync_State__c.ResolvedTargetKey__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Coveo ETL Admin</label>
     <tabSettings>
