@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,9 +16,26 @@ fs.mkdirSync(outputDir, { recursive: true });
 
 const viewport = { width: 1600, height: 2200 };
 
+function validateTargetOrg(value) {
+  if (!/^[A-Za-z0-9._-]+$/.test(value)) {
+    throw new Error(
+      `Invalid TARGET_ORG value "${value}". Allowed characters: letters, numbers, dot, underscore, hyphen.`
+    );
+  }
+}
+
+function validateLightningPath(value) {
+  if (!/^\/[A-Za-z0-9/_?&=.-]*$/.test(value)) {
+    throw new Error(`Invalid lightning path "${value}".`);
+  }
+}
+
 function getFrontdoorUrl(lightningPath) {
-  const output = execSync(
-    `sf org open -o ${targetOrg} -r --path '${lightningPath}'`,
+  validateTargetOrg(targetOrg);
+  validateLightningPath(lightningPath);
+  const output = execFileSync(
+    "sf",
+    ["org", "open", "-o", targetOrg, "-r", "--path", lightningPath],
     { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
   );
   return output
