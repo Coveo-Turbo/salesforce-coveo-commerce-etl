@@ -417,11 +417,12 @@ public with sharing class CatalogDeltaScopeResolver {
     Integer guard = 0;
     while (!frontier.isEmpty() && guard++ < MAX_HIERARCHY_DEPTH) {
       Set<Id> childIds = new Set<Id>();
-      for (Product2 childProduct : [
-        SELECT Id
-        FROM Product2
-        WHERE Parent_Product__c IN :frontier
-      ]) {
+      for (
+        Product2 childProduct : queryProductsByLookupField(
+          frontier,
+          'Parent_Product__c'
+        )
+      ) {
         if (expandedProductIds.add(childProduct.Id)) {
           childIds.add(childProduct.Id);
         }
@@ -444,15 +445,34 @@ public with sharing class CatalogDeltaScopeResolver {
       return groupedProductIds;
     }
 
-    for (Product2 groupedProduct : [
-      SELECT Id
-      FROM Product2
-      WHERE Product_Group__c IN :groupProductIds
-    ]) {
+    for (
+      Product2 groupedProduct : queryProductsByLookupField(
+        groupProductIds,
+        'Product_Group__c'
+      )
+    ) {
       groupedProductIds.add(groupedProduct.Id);
     }
 
     return groupedProductIds;
+  }
+
+  private static List<Product2> queryProductsByLookupField(
+    Set<Id> referencedProductIds,
+    String lookupFieldName
+  ) {
+    if (
+      referencedProductIds == null ||
+      referencedProductIds.isEmpty() ||
+      String.isBlank(lookupFieldName) ||
+      !PRODUCT_FIELDS.containsKey(lookupFieldName)
+    ) {
+      return new List<Product2>();
+    }
+
+    return Database.query(
+      'SELECT Id FROM Product2 WHERE ' + lookupFieldName + ' IN :referencedProductIds'
+    );
   }
 
   private static void addProductFieldIfPresent(
