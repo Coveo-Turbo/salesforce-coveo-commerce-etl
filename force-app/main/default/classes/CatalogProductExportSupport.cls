@@ -76,7 +76,7 @@ public with sharing class CatalogProductExportSupport {
     }
 
     for (PricebookEntry pricebookEntry : [
-      SELECT Id, Product2Id, Pricebook2Id, UnitPrice
+      SELECT Id, Product2Id, Pricebook2Id, UnitPrice, ProductSellingModelId
       FROM PricebookEntry
       WHERE Product2Id IN :scope AND IsActive = TRUE AND UnitPrice != NULL
     ]) {
@@ -90,7 +90,7 @@ public with sharing class CatalogProductExportSupport {
 
       String priceKey = (pricebookEntry.Pricebook2Id == stdPricebookId)
         ? ''
-        : String.valueOf(pricebookEntry.Pricebook2Id);
+        : (pricebookEntry.ProductSellingModelId == null) ? String.valueOf(pricebookEntry.Pricebook2Id) : String.valueOf(pricebookEntry.Pricebook2Id) + ':' + String.valueOf(pricebookEntry.ProductSellingModelId);
       pricesByProduct.get(pricebookEntry.Product2Id).put(
         priceKey,
         pricebookEntry.UnitPrice
