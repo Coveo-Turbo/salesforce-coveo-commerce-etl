@@ -88,9 +88,11 @@ public with sharing class CatalogProductExportSupport {
         pricesByProduct.put(pricebookEntry.Product2Id, new Map<String, Decimal>());
       }
 
-      String priceKey = (pricebookEntry.Pricebook2Id == stdPricebookId)
-        ? ''
-        : (pricebookEntry.ProductSellingModelId == null) ? String.valueOf(pricebookEntry.Pricebook2Id) : String.valueOf(pricebookEntry.Pricebook2Id) + ':' + String.valueOf(pricebookEntry.ProductSellingModelId);
+      String priceKey = (pricebookEntry.ProductSellingModelId != null)
+        ? String.valueOf(pricebookEntry.Pricebook2Id) + ':' + String.valueOf(pricebookEntry.ProductSellingModelId)
+        : (pricebookEntry.Pricebook2Id == stdPricebookId)
+          ? ''
+          : String.valueOf(pricebookEntry.Pricebook2Id);
       pricesByProduct.get(pricebookEntry.Product2Id).put(
         priceKey,
         pricebookEntry.UnitPrice
