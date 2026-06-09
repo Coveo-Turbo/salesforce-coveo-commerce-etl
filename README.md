@@ -15,6 +15,8 @@
 
 This project provides an **unlocked Salesforce package** for direct installation, plus a **metadata deployment package** for source-based deployments. It extracts product data from Salesforce and pushes it to **Coveo Commerce Catalog sources** using the **Stream API** (`addOrUpdate` / `addOrMerge`).
 
+![salesforce-coveo-commerce-etl overview](docs/images/salesforce-coveo-commerce-etl-overview.png)
+
 It includes:
 
 - A flexible **Catalog Export Batch** implementation
