@@ -1,4 +1,5 @@
 import { LightningElement, wire } from "lwc";
+import { NavigationMixin } from "lightning/navigation";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import { refreshApex } from "@salesforce/apex";
 
@@ -17,8 +18,10 @@ const POLL_INTERVAL_MS = 4000;
 const CONFIG_REFRESH_INTERVAL_MS = 15000;
 const RUN_STORAGE_KEY = "catalogJobConsoleRuns:v1";
 const ACTIVITY_STORAGE_KEY = "catalogJobConsoleActivity:v1";
-const MAX_RUNS = 8;
+const MAX_RUNS = 24;
+const MAX_VISIBLE_COMPLETED_RUNS_PER_CONFIG = 3;
 const MAX_ACTIVITY_ITEMS = 18;
+const ASYNC_APEX_JOBS_SETUP_URL = "/lightning/setup/AsyncApexJobs/home";
 const BUYER_GROUP_MODE_DISABLED = "Disabled";
 const BUYER_GROUP_MODE_PAIRED = "PairedSource";
 const BUYER_GROUP_MODE_EMBEDDED = "Embedded";
@@ -85,10 +88,13 @@ function formatBuyerGroupAvailabilityMode(mode) {
   }
 }
 
-export default class CatalogJobConsole extends LightningElement {
+export default class CatalogJobConsole extends NavigationMixin(
+  LightningElement
+) {
   configs;
   error;
   selectedConfigId;
+  workspaceFocus = "status";
   runSessions = [];
   activityFeed = [];
   pollTimerId;
@@ -122,6 +128,7 @@ export default class CatalogJobConsole extends LightningElement {
         this.decorateConfig(config, nextSelectedId)
       );
       this.selectedConfigId = this.configs.length ? nextSelectedId : null;
+      this.reconcileTrackedProductRuns();
       this.error = undefined;
     } else if (error) {
       this.error = error;
@@ -232,6 +239,62 @@ export default class CatalogJobConsole extends LightningElement {
     return this.runSessions.length > 0;
   }
 
+  get selectedConfigMatchedRunSessions() {
+    if (!this.selectedConfig) {
+      return [];
+    }
+
+    return this.runSessions
+      .filter((runSession) => this.runMatchesSelectedConfig(runSession))
+      .sort(
+        (left, right) =>
+          this.getRunSessionSortTime(right) - this.getRunSessionSortTime(left)
+      );
+  }
+
+  get selectedConfigRunSessions() {
+    const matchingRuns = this.selectedConfigMatchedRunSessions;
+    const activeRuns = matchingRuns.filter(
+      (runSession) => !runSession.isTerminal
+    );
+    const terminalRuns = matchingRuns.filter(
+      (runSession) => runSession.isTerminal
+    );
+
+    return [
+      ...activeRuns,
+      ...terminalRuns.slice(0, MAX_VISIBLE_COMPLETED_RUNS_PER_CONFIG)
+    ];
+  }
+
+  get hasSelectedConfigRunSessions() {
+    return this.selectedConfigRunSessions.length > 0;
+  }
+
+  get selectedConfigLatestRun() {
+    return this.selectedConfigMatchedRunSessions[0] || null;
+  }
+
+  get selectedConfigLiveRunCount() {
+    return this.selectedConfigMatchedRunSessions.filter(
+      (session) => !session.isTerminal
+    ).length;
+  }
+
+  get selectedConfigTerminalRunCount() {
+    return this.selectedConfigMatchedRunSessions.filter(
+      (session) => session.isTerminal
+    ).length;
+  }
+
+  get selectedConfigHiddenTerminalRunCount() {
+    return Math.max(
+      0,
+      this.selectedConfigTerminalRunCount -
+        MAX_VISIBLE_COMPLETED_RUNS_PER_CONFIG
+    );
+  }
+
   get visibleRunSessions() {
     return this.runSessions.slice(0, MAX_RUNS);
   }
@@ -280,7 +343,7 @@ export default class CatalogJobConsole extends LightningElement {
         value: this.selectedConfig.deltaStatusDetail
       },
       {
-        label: "Baseline Full",
+        label: "Baseline Full Config",
         value: this.selectedConfig.baselineFullConfigLabel
       },
       {
@@ -320,11 +383,11 @@ export default class CatalogJobConsole extends LightningElement {
         value: this.selectedConfig.extraFieldsSummary
       },
       {
-        label: "Last Full Sync",
+        label: "Last Successful Full Baseline",
         value: this.selectedConfig.lastSuccessfulFullSyncLabel
       },
       {
-        label: "Last Successful Sync",
+        label: "Latest Successful Sync",
         value: this.selectedConfig.lastSuccessfulSyncLabel
       },
       {
@@ -338,16 +401,144 @@ export default class CatalogJobConsole extends LightningElement {
     ];
   }
 
+  get selectedBaselineClarityRows() {
+    if (!this.selectedConfig) {
+      return [];
+    }
+
+    return [
+      {
+        label: "Latest successful sync",
+        value: this.selectedConfig.lastSuccessfulSyncLabel
+      },
+      {
+        label: "Last successful full baseline",
+        value: this.selectedConfig.lastSuccessfulFullSyncLabel
+      },
+      {
+        label: "Baseline full config",
+        value: this.selectedConfig.baselineFullConfigLabel
+      }
+    ];
+  }
+
+  get selectedConfigMetricCards() {
+    if (!this.selectedConfig) {
+      return [];
+    }
+
+    const latestRun = this.selectedConfigLatestRun;
+    const liveRunCount = this.selectedConfigLiveRunCount;
+
+    return [
+      {
+        label: "Latest Successful Sync",
+        value: this.formatMetricMoment(
+          this.selectedConfig.lastSuccessfulSyncAt,
+          "Never"
+        ),
+        meta: this.selectedConfig.lastSuccessfulSyncLabel
+      },
+      {
+        label: "Last Full Baseline",
+        value: this.formatMetricDate(
+          this.selectedConfig.lastSuccessfulFullSyncAt,
+          "Never"
+        ),
+        meta: this.selectedConfig.lastSuccessfulFullSyncLabel
+      },
+      {
+        label: "Tracked Product Job",
+        value:
+          liveRunCount > 0
+            ? `${liveRunCount} live`
+            : latestRun
+              ? "Recent only"
+              : "No runs",
+        meta: this.getTrackedProductJobMeta(latestRun)
+      }
+    ];
+  }
+
+  get workspaceNavItems() {
+    return [
+      {
+        value: "status",
+        label: "Status",
+        className: this.getWorkspaceNavClass("status")
+      },
+      {
+        value: "liveRuns",
+        label: "Live Runs",
+        className: this.getWorkspaceNavClass("liveRuns")
+      },
+      {
+        value: "activity",
+        label: "Activity",
+        className: this.getWorkspaceNavClass("activity")
+      },
+      {
+        value: "details",
+        label: "Details",
+        className: this.getWorkspaceNavClass("details")
+      }
+    ];
+  }
+
+  get isWorkspaceStatusTab() {
+    return this.workspaceFocus === "status";
+  }
+
+  get isWorkspaceLiveRunsTab() {
+    return this.workspaceFocus === "liveRuns";
+  }
+
+  get isWorkspaceActivityTab() {
+    return this.workspaceFocus === "activity";
+  }
+
+  get isWorkspaceDetailsTab() {
+    return this.workspaceFocus === "details";
+  }
+
+  get selectedConfigRunMonitorSubtitle() {
+    if (!this.selectedConfig) {
+      return "Choose a configuration to start monitoring targeted runs.";
+    }
+
+    if (!this.hasSelectedConfigRunSessions) {
+      return "No tracked runs for this configuration yet. Launch one here, or wait for an active Salesforce product job to appear.";
+    }
+
+    if (this.selectedConfigLiveRunCount > 0) {
+      const hiddenCount = this.selectedConfigHiddenTerminalRunCount;
+      return hiddenCount > 0
+        ? `Showing all active runs plus ${MAX_VISIBLE_COMPLETED_RUNS_PER_CONFIG} recent completed runs. ${hiddenCount} older completed run${
+            hiddenCount === 1 ? " is" : "s are"
+          } hidden to keep this view focused.`
+        : "Showing all active runs for the selected configuration. Auto-refreshing every 4 seconds while they are in progress.";
+    }
+
+    if (this.selectedConfigHiddenTerminalRunCount > 0) {
+      const hiddenCount = this.selectedConfigHiddenTerminalRunCount;
+      return `Showing ${MAX_VISIBLE_COMPLETED_RUNS_PER_CONFIG} recent completed runs for this configuration. ${hiddenCount} older completed run${
+        hiddenCount === 1 ? " is" : "s are"
+      } hidden to keep this view focused.`;
+    }
+
+    return "Showing recent tracked runs for the selected configuration.";
+  }
+
   get runMonitorSubtitle() {
     if (!this.hasRunSessions) {
-      return "Launch a sync to start tracking live batch progress here.";
+      return "Launch a sync here, or wait for an active Salesforce product job to appear.";
     }
 
     if (this.hasIncompleteRuns) {
       return "Auto-refreshing every 4 seconds while active runs are in progress.";
     }
 
-    return "Recent run history from this console session.";
+    return "Recent run history from this console session, plus active product jobs detected in Salesforce.";
   }
 
   get selectedRunHeading() {
@@ -394,6 +585,133 @@ export default class CatalogJobConsole extends LightningElement {
     return this.selectedConfig?.quickStatusMeta || "Manual launch only";
   }
 
+  get selectedProductStatusFootnote() {
+    if (!this.selectedConfig) {
+      return "";
+    }
+
+    return this.selectedConfig.lastSuccessfulSyncLabel === "Never"
+      ? "No successful product sync has been recorded yet."
+      : `Latest successful sync: ${this.selectedConfig.lastSuccessfulSyncLabel}`;
+  }
+
+  get selectedRunDownloadStatusLabel() {
+    return this.selectedConfigLatestRun ? "Ready" : "Waiting";
+  }
+
+  get selectedRunDownloadStatusClass() {
+    return this.selectedConfigLatestRun
+      ? "cc-badge cc-badge--success"
+      : "cc-badge cc-badge--neutral";
+  }
+
+  get selectedRunSummaryDownloadDisabled() {
+    return !this.selectedConfigLatestRun;
+  }
+
+  get selectedRunDownloadSummary() {
+    const latestRun = this.selectedConfigLatestRun;
+    if (!latestRun) {
+      return "No tracked run summary is available yet for this configuration.";
+    }
+
+    return `${latestRun.overallStatusLabel} • Started ${latestRun.launchedAtLabel}`;
+  }
+
+  get selectedRunDownloadMeta() {
+    if (!this.selectedConfigLatestRun) {
+      return "Launch a sync from this workspace, or wait for an active Salesforce product job to seed the latest run summary here.";
+    }
+
+    return "Download a JSON snapshot for the latest tracked run, including job stages, status, progress, and timing.";
+  }
+
+  get selectedRunPrimaryStage() {
+    const latestRun = this.selectedConfigLatestRun;
+    if (!latestRun) {
+      return null;
+    }
+
+    const stages = latestRun.stages || latestRun.jobs || [];
+    return (
+      stages.find((stage) => stage.channel === "products" && stage.jobId) ||
+      stages.find((stage) => stage.jobId) ||
+      null
+    );
+  }
+
+  get selectedRunAsyncJobId() {
+    return this.selectedRunPrimaryStage?.jobId || "";
+  }
+
+  get selectedRunAsyncJobDisabled() {
+    return !this.selectedRunAsyncJobId;
+  }
+
+  get selectedRunAsyncJobSummary() {
+    const stage = this.selectedRunPrimaryStage;
+    if (!stage) {
+      return "No tracked Async Apex job is available yet for this configuration.";
+    }
+
+    return `${stage.label} • Job ${stage.jobId}`;
+  }
+
+  get selectedRunAsyncJobMeta() {
+    if (!this.selectedRunPrimaryStage) {
+      return "Launch a sync here, or wait for an active Salesforce product job to seed the latest job reference.";
+    }
+
+    return "Open Salesforce Setup with Apex Jobs so the latest tracked platform job is easy to inspect when deeper troubleshooting is needed.";
+  }
+
+  get selectedRunAsyncJobSupporting() {
+    return this.selectedRunAsyncJobId
+      ? "The latest tracked job ID stays visible here so it is quick to cross-check inside Salesforce Setup."
+      : "The latest tracked job ID will appear here as soon as this configuration has an active or recent run.";
+  }
+
+  get selectedWorkspaceDetailRows() {
+    if (!this.selectedConfig) {
+      return [];
+    }
+
+    return [
+      {
+        label: "Baseline Full Config",
+        value: this.selectedConfig.baselineFullConfigLabel
+      },
+      {
+        label: "Product Source",
+        value: this.selectedConfig.productSourceLabel
+      },
+      {
+        label: "Availability Source",
+        value: this.selectedConfig.availabilitySourceLabel
+      },
+      {
+        label: "Access Mode",
+        value: this.selectedConfig.buyerGroupAvailabilityModeLabel
+      },
+      {
+        label: "Web Store",
+        value: this.selectedConfig.webStoreLabel
+      },
+      {
+        label: "Scope",
+        value: this.selectedConfig.scopeSummary
+      },
+      {
+        label: "Schedule",
+        value: this.selectedConfig.scheduleSummary
+      },
+      {
+        label: "Extra Fields",
+        value: this.selectedConfig.extraFieldsSummary
+      }
+    ];
+  }
+
   get canAbortSelectedProductRun() {
     return this.selectedConfig?.canAbortCurrentProductRun === true;
   }
@@ -424,9 +742,19 @@ export default class CatalogJobConsole extends LightningElement {
     }
 
     this.selectedConfigId = configId;
+    this.workspaceFocus = "status";
     this.configs = this.configs.map((config) =>
       this.decorateConfig(config, this.selectedConfigId)
     );
+  }
+
+  handleSelectWorkspaceFocus(event) {
+    const focus = event.currentTarget?.dataset?.focus;
+    if (!focus) {
+      return;
+    }
+
+    this.workspaceFocus = focus;
   }
 
   async handleRunSelectedProducts() {
@@ -538,6 +866,81 @@ export default class CatalogJobConsole extends LightningElement {
     );
   }
 
+  handleDownloadRunSummary(event) {
+    const runKey = event.currentTarget?.dataset?.runKey;
+    if (!runKey) {
+      return;
+    }
+
+    this.downloadRunSummaryByKey(runKey);
+  }
+
+  handleDownloadSelectedRunSummary() {
+    const runKey = this.selectedConfigLatestRun?.runKey;
+    if (!runKey) {
+      this.showToast(
+        "Run unavailable",
+        "There is no tracked run summary available yet for this configuration.",
+        "info"
+      );
+      return;
+    }
+
+    this.downloadRunSummaryByKey(runKey);
+  }
+
+  handleOpenSelectedAsyncApexJob() {
+    if (!this.selectedRunAsyncJobId) {
+      this.showToast(
+        "Job unavailable",
+        "There is no tracked Async Apex job available yet for this configuration.",
+        "info"
+      );
+      return;
+    }
+
+    this.navigateToSetupPage(ASYNC_APEX_JOBS_SETUP_URL);
+  }
+
+  downloadRunSummaryByKey(runKey) {
+    const runSession = this.runSessions.find((run) => run.runKey === runKey);
+    if (!runSession) {
+      this.showToast(
+        "Run unavailable",
+        "The selected run is no longer available in this console session.",
+        "warning"
+      );
+      return;
+    }
+
+    const decoratedRun = runSession.stages
+      ? runSession
+      : this.decorateRunSession(runSession);
+    const payload = this.buildRunSummaryExport(decoratedRun);
+
+    try {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json"
+      });
+      const downloadUrl = URL.createObjectURL(blob);
+      const downloadLink = document.createElement("a");
+      downloadLink.href = downloadUrl;
+      downloadLink.download = this.buildRunSummaryFilename(decoratedRun);
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+    } catch (error) {
+      this.showToast(
+        "Download failed",
+        "Unable to build the run summary.",
+        "error"
+      );
+      // eslint-disable-next-line no-console
+      console.error("Download run summary error", error);
+    }
+  }
+
   async launchRuns(requestFn, successMessage) {
     try {
       const response = await requestFn();
@@ -587,6 +990,7 @@ export default class CatalogJobConsole extends LightningElement {
       .slice(0, MAX_RUNS)
       .map((session) => this.decorateRunSession(session));
 
+    this.workspaceFocus = "liveRuns";
     this.persistRunState();
   }
 
@@ -596,6 +1000,7 @@ export default class CatalogJobConsole extends LightningElement {
       developerName: launch.developerName,
       label: launch.label,
       mode: launch.mode,
+      source: "sessionLaunch",
       availabilityEnabled: launch.availabilityEnabled,
       buyerGroupAvailabilityMode: launch.buyerGroupAvailabilityMode,
       launchedAt: launch.launchedAt,
@@ -616,6 +1021,118 @@ export default class CatalogJobConsole extends LightningElement {
         createdDate: launch.launchedAt,
         completedDate: null
       }))
+    };
+  }
+
+  reconcileTrackedProductRuns() {
+    if (!Array.isArray(this.configs) || !this.configs.length) {
+      return;
+    }
+
+    const configByDeveloperName = new Map(
+      this.configs.map((config) => [config.developerName, config])
+    );
+    const trackedConfigsByJobId = new Map();
+
+    this.configs.forEach((config) => {
+      if (
+        config.currentProductIsActive !== true ||
+        !config.currentProductJobId
+      ) {
+        return;
+      }
+
+      const ownerConfig =
+        configByDeveloperName.get(config.currentProductConfigDeveloperName) ||
+        config;
+
+      trackedConfigsByJobId.set(config.currentProductJobId, ownerConfig);
+    });
+
+    if (!trackedConfigsByJobId.size) {
+      return;
+    }
+
+    const knownJobIds = new Set();
+    this.runSessions.forEach((runSession) => {
+      (runSession.jobs || []).forEach((job) => {
+        if (job.jobId) {
+          knownJobIds.add(job.jobId);
+        }
+      });
+    });
+
+    const nextRuns = [];
+    trackedConfigsByJobId.forEach((config, jobId) => {
+      if (knownJobIds.has(jobId)) {
+        return;
+      }
+
+      knownJobIds.add(jobId);
+      nextRuns.push(this.createTrackedProductRunSession(config));
+    });
+
+    if (!nextRuns.length) {
+      return;
+    }
+
+    nextRuns.forEach((runSession) => {
+      const trackedJobId = runSession.jobs?.[0]?.jobId;
+      this.addActivity(
+        `${runSession.label}: tracking active Salesforce product job${
+          trackedJobId ? ` ${trackedJobId}` : ""
+        }`
+      );
+    });
+
+    this.runSessions = [...nextRuns, ...this.runSessions]
+      .slice(0, MAX_RUNS)
+      .map((session) => this.decorateRunSession(session));
+
+    this.persistRunState();
+    this.startPollingIfNeeded();
+  }
+
+  createTrackedProductRunSession(config) {
+    const runMode =
+      config.currentProductRunMode === SYNC_MODE_DELTA
+        ? SYNC_MODE_DELTA
+        : SYNC_MODE_FULL;
+    const launchedAt =
+      config.currentProductStartedAt || new Date().toISOString();
+
+    return {
+      runKey: `tracked-${config.currentProductJobId}`,
+      developerName:
+        config.currentProductConfigDeveloperName || config.developerName,
+      label: config.label,
+      mode: "products",
+      source: "trackedProductJob",
+      availabilityEnabled: config.buyerGroupAccessEnabled === true,
+      buyerGroupAvailabilityMode: config.buyerGroupAvailabilityMode,
+      launchedAt,
+      jobs: [
+        {
+          jobId: config.currentProductJobId,
+          channel: "products",
+          label:
+            runMode === SYNC_MODE_DELTA
+              ? "Delta Product Sync"
+              : "Full Product Sync",
+          impactedProductCount: undefined,
+          changedRootProductCount: undefined,
+          exportProductCount: undefined,
+          scopeSummary: "",
+          status: config.currentProductJobStatus || "Queued",
+          jobItemsProcessed: 0,
+          totalJobItems: 0,
+          numberOfErrors: 0,
+          extendedStatus: "",
+          isTerminal: false,
+          createdDate: launchedAt,
+          completedDate: null
+        }
+      ]
     };
   }
 
@@ -805,6 +1322,35 @@ export default class CatalogJobConsole extends LightningElement {
     }
   }
 
+  navigateToSetupPage(url) {
+    if (!url) {
+      return;
+    }
+
+    const pageReference = {
+      type: "standard__webPage",
+      attributes: {
+        url
+      }
+    };
+
+    this[NavigationMixin.GenerateUrl](pageReference)
+      .then((generatedUrl) => {
+        const openedWindow = window.open(
+          generatedUrl || url,
+          "_blank",
+          "noopener"
+        );
+
+        if (!openedWindow) {
+          this[NavigationMixin.Navigate](pageReference);
+        }
+      })
+      .catch(() => {
+        this[NavigationMixin.Navigate](pageReference);
+      });
+  }
+
   decorateConfig(config, selectedConfigId) {
     const filterText = this.normalizeText(
       config.ProductFilter__c,
@@ -974,7 +1520,7 @@ export default class CatalogJobConsole extends LightningElement {
         config.lastSuccessfulSyncAt,
         "Never"
       ),
-      inventoryLastSyncMeta: `Full baseline: ${this.formatOptionalTimestamp(
+      inventoryLastSyncMeta: `Last successful full baseline: ${this.formatOptionalTimestamp(
         config.lastSuccessfulFullSyncAt,
         "Never"
       )}`
@@ -1039,17 +1585,28 @@ export default class CatalogJobConsole extends LightningElement {
     const progressPercent = this.getJobProgressPercent(job);
     const scopeSummary = this.describeJobScope(job);
     const batchesLabel = this.describeJobBatches(job, status);
+    const primaryDetail = scopeSummary || job.extendedStatus || batchesLabel;
+    const secondaryDetail =
+      scopeSummary && batchesLabel && batchesLabel !== scopeSummary
+        ? batchesLabel
+        : "";
 
     return {
       ...job,
       status,
       progressPercent,
-      statusLabel: this.describeStageChange(job.channel, status),
+      statusLabel: this.describeStageStatusBadge(status),
       statusClass: this.getStageStatusClass(status),
       batchesLabel,
       extendedStatus: scopeSummary || job.extendedStatus || "",
+      primaryDetail,
+      secondaryDetail,
       timingLabel: this.describeStageDuration(job),
-      canAbort: !!job.jobId && status !== "Completed" && status !== "Failed" && status !== "Aborted"
+      canAbort:
+        !!job.jobId &&
+        status !== "Completed" &&
+        status !== "Failed" &&
+        status !== "Aborted"
     };
   }
 
@@ -1282,6 +1839,16 @@ export default class CatalogJobConsole extends LightningElement {
     }
   }
 
+  describeStageStatusBadge(status) {
+    switch (status) {
+      case "Holding":
+      case "Preparing":
+        return "Queued";
+      default:
+        return this.normalizeText(status, "Queued");
+    }
+  }
+
   describeQuickStatus(config, { syncMode, scheduleSummary }) {
     const currentStatus = config.currentProductJobStatus;
     const currentJobId = config.currentProductJobId;
@@ -1311,7 +1878,9 @@ export default class CatalogJobConsole extends LightningElement {
     }
 
     if (config.isScheduled === true) {
-      const scheduleStateLabel = this.describeScheduleState(config.scheduleState);
+      const scheduleStateLabel = this.describeScheduleState(
+        config.scheduleState
+      );
       return {
         summary: scheduleStateLabel,
         meta: scheduleSummary,
@@ -1494,6 +2063,38 @@ export default class CatalogJobConsole extends LightningElement {
       : "cc-config-card";
   }
 
+  getTrackedProductJobMeta(latestRun) {
+    if (this.selectedConfig?.currentProductIsActive === true) {
+      return this.selectedConfig.currentProductJobId
+        ? `Job ${this.selectedConfig.currentProductJobId}`
+        : "Active product job detected";
+    }
+
+    if (latestRun) {
+      return `Latest tracked run started ${latestRun.launchedAtLabel}`;
+    }
+
+    return "Waiting for launch";
+  }
+
+  getWorkspaceNavClass(focus) {
+    return focus === this.workspaceFocus
+      ? "cc-workspace-nav__button cc-workspace-nav__button--active"
+      : "cc-workspace-nav__button";
+  }
+
+  getRunSessionSortTime(runSession) {
+    return this.toTimestamp(runSession?.launchedAt) ?? 0;
+  }
+
+  runMatchesSelectedConfig(runSession) {
+    if (!this.selectedConfig || !runSession) {
+      return false;
+    }
+
+    return runSession.developerName === this.selectedConfig.developerName;
+  }
+
   splitCsv(value) {
     return (value || "")
       .split(",")
@@ -1503,6 +2104,125 @@ export default class CatalogJobConsole extends LightningElement {
 
   normalizeText(value, fallback) {
     return value && String(value).trim() ? value : fallback;
+  }
+
+  formatMetricMoment(isoValue, fallback) {
+    if (!isoValue) {
+      return fallback;
+    }
+
+    const date = new Date(isoValue);
+    if (Number.isNaN(date.getTime())) {
+      return fallback;
+    }
+
+    const now = new Date();
+    const sameDay = date.toDateString() === now.toDateString();
+
+    return new Intl.DateTimeFormat(undefined, {
+      ...(sameDay
+        ? {
+            hour: "numeric",
+            minute: "2-digit"
+          }
+        : {
+            month: "short",
+            day: "numeric"
+          })
+    }).format(date);
+  }
+
+  formatMetricDate(isoValue, fallback) {
+    if (!isoValue) {
+      return fallback;
+    }
+
+    const date = new Date(isoValue);
+    if (Number.isNaN(date.getTime())) {
+      return fallback;
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric"
+    }).format(date);
+  }
+
+  buildRunSummaryExport(runSession) {
+    return {
+      exportedAt: new Date().toISOString(),
+      runKey: runSession.runKey,
+      label: runSession.label,
+      developerName: runSession.developerName,
+      mode: runSession.mode,
+      source: runSession.source || "sessionLaunch",
+      availabilityEnabled: runSession.availabilityEnabled === true,
+      buyerGroupAvailabilityMode: runSession.buyerGroupAvailabilityMode || "",
+      launchedAt: runSession.launchedAt || null,
+      launchedAtLabel:
+        runSession.launchedAtLabel ||
+        this.formatTimestamp(runSession.launchedAt),
+      overallStatusLabel: runSession.overallStatusLabel || "",
+      progressPercent: runSession.progressPercent ?? null,
+      isTerminal: runSession.isTerminal === true,
+      jobs: (runSession.stages || runSession.jobs || []).map((job) => ({
+        jobId: job.jobId || "",
+        channel: job.channel || "",
+        label: job.label || "",
+        status: job.status || "",
+        statusLabel: job.statusLabel || "",
+        progressPercent: job.progressPercent ?? null,
+        jobItemsProcessed: job.jobItemsProcessed ?? null,
+        totalJobItems: job.totalJobItems ?? null,
+        numberOfErrors: job.numberOfErrors ?? null,
+        batchesLabel: job.batchesLabel || "",
+        extendedStatus: job.extendedStatus || "",
+        timingLabel: job.timingLabel || "",
+        impactedProductCount: job.impactedProductCount ?? null,
+        changedRootProductCount: job.changedRootProductCount ?? null,
+        exportProductCount: job.exportProductCount ?? null,
+        scopeSummary: job.scopeSummary || "",
+        createdDate: job.createdDate || null,
+        completedDate: job.completedDate || null
+      }))
+    };
+  }
+
+  buildRunSummaryFilename(runSession) {
+    const fileStem = this.sanitizeFileSegment(
+      runSession.developerName || runSession.label || "catalog-run"
+    );
+    const timestamp = this.buildFileTimestamp(
+      runSession.launchedAt || new Date().toISOString()
+    );
+    return `${fileStem}-${timestamp}.json`;
+  }
+
+  sanitizeFileSegment(value) {
+    return (
+      String(value || "catalog-run")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "catalog-run"
+    );
+  }
+
+  buildFileTimestamp(isoValue) {
+    const date = isoValue ? new Date(isoValue) : new Date();
+    if (Number.isNaN(date.getTime())) {
+      return "run-summary";
+    }
+
+    return [
+      date.getFullYear(),
+      this.padNumber(date.getMonth() + 1),
+      this.padNumber(date.getDate()),
+      "-",
+      this.padNumber(date.getHours()),
+      this.padNumber(date.getMinutes()),
+      this.padNumber(date.getSeconds())
+    ].join("");
   }
 
   toTimestamp(isoValue) {

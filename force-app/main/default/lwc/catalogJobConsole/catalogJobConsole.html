@@ -100,7 +100,7 @@
                       <th scope="col">Product Scope</th>
                       <th scope="col">Buyer Group Access</th>
                       <th scope="col">Status</th>
-                      <th scope="col">Last Sync</th>
+                      <th scope="col">Latest Sync</th>
                       <th scope="col">Actions</th>
                     </tr>
                   </thead>
@@ -202,11 +202,15 @@
           </section>
 
           <section class="cc-panel cc-panel--workspace">
-            <div class="cc-panel__header">
-              <div>
+            <div class="cc-panel__header cc-panel__header--workspace">
+              <div class="cc-workspace-heading">
                 <p class="cc-section-label">Selected Config</p>
-                <h3 class="cc-panel__title">{selectedRunHeading}</h3>
-                <p class="cc-panel__meta">{selectedRunSubtitle}</p>
+                <h3 class="cc-workspace-heading__title">
+                  {selectedRunHeading}
+                </h3>
+                <p class="cc-workspace-heading__subtitle">
+                  {selectedRunSubtitle}
+                </p>
               </div>
               <template if:true={hasSelectedConfig}>
                 <div class="cc-badge-group">
@@ -224,186 +228,433 @@
             </div>
 
             <template if:true={hasSelectedConfig}>
-              <div class="cc-launchpad">
-                <div class="cc-launchpad__actions">
-                  <lightning-button
-                    label={selectedProductRunLabel}
-                    variant="brand"
-                    onclick={handleRunSelectedProducts}
-                    disabled={selectedConfig.productDisabled}
-                  ></lightning-button>
-                  <lightning-button
-                    label="Run Access"
-                    variant="neutral"
-                    onclick={handleRunSelectedAvailability}
-                    disabled={selectedConfig.availabilityDisabled}
-                  ></lightning-button>
-                  <template if:true={showRunSelectedBoth}>
+              <div class="cc-workspace-shell">
+                <div class="cc-launchpad cc-launchpad--workspace">
+                  <div class="cc-launchpad__actions">
                     <lightning-button
-                      label="Run Both"
-                      variant="brand-outline"
-                      onclick={handleRunSelectedBoth}
-                      disabled={selectedConfig.bothDisabled}
+                      label={selectedProductRunLabel}
+                      variant="brand"
+                      onclick={handleRunSelectedProducts}
+                      disabled={selectedConfig.productDisabled}
                     ></lightning-button>
-                  </template>
-                  <lightning-button
-                    label="Abort Product Run"
-                    variant="destructive-text"
-                    onclick={handleAbortSelectedProductRun}
-                    disabled={abortSelectedProductRunDisabled}
-                  ></lightning-button>
-                </div>
-                <div class="cc-launchpad__status">
-                  <span class={selectedConfigQuickStatusClass}>
-                    {selectedConfig.quickStatusLabel}
-                  </span>
-                  <div>
-                    <p class="cc-launchpad__status-summary">
-                      {selectedProductStatusSummary}
-                    </p>
-                    <p class="cc-launchpad__status-meta">
-                      {selectedProductStatusMeta}
-                    </p>
+                    <lightning-button
+                      label="Run Access"
+                      variant="neutral"
+                      onclick={handleRunSelectedAvailability}
+                      disabled={selectedConfig.availabilityDisabled}
+                    ></lightning-button>
+                    <template if:true={showRunSelectedBoth}>
+                      <lightning-button
+                        label="Run Both"
+                        variant="brand-outline"
+                        onclick={handleRunSelectedBoth}
+                        disabled={selectedConfig.bothDisabled}
+                      ></lightning-button>
+                    </template>
+                    <lightning-button
+                      label="Abort Product Run"
+                      variant="destructive-text"
+                      onclick={handleAbortSelectedProductRun}
+                      disabled={abortSelectedProductRunDisabled}
+                    ></lightning-button>
                   </div>
+                  <div class="cc-launchpad__status">
+                    <span class={selectedConfigQuickStatusClass}>
+                      {selectedConfig.quickStatusLabel}
+                    </span>
+                    <div>
+                      <p class="cc-launchpad__status-summary">
+                        {selectedProductStatusSummary}
+                      </p>
+                      <p class="cc-launchpad__status-meta">
+                        {selectedProductStatusMeta}
+                      </p>
+                    </div>
+                  </div>
+                  <template if:true={launchpadNote}>
+                    <p class="cc-launchpad__note">{launchpadNote}</p>
+                  </template>
                 </div>
-                <template if:true={launchpadNote}>
-                  <p class="cc-launchpad__note">{launchpadNote}</p>
-                </template>
-              </div>
 
-              <div class="cc-detail-grid">
-                <template for:each={selectedConfigFactRows} for:item="fact">
-                  <article key={fact.label} class="cc-detail-card">
-                    <p class="cc-detail-card__label">{fact.label}</p>
-                    <p class="cc-detail-card__value">{fact.value}</p>
-                  </article>
+                <div class="cc-workspace-nav">
+                  <template for:each={workspaceNavItems} for:item="item">
+                    <button
+                      key={item.value}
+                      type="button"
+                      class={item.className}
+                      data-focus={item.value}
+                      onclick={handleSelectWorkspaceFocus}
+                    >
+                      {item.label}
+                    </button>
+                  </template>
+                </div>
+
+                <template if:true={isWorkspaceStatusTab}>
+                  <div class="cc-workspace-tab-panel">
+                    <div class="cc-workspace-status-band">
+                      <div class="cc-workspace-summary-grid">
+                        <article class="cc-summary-card">
+                          <p class="cc-summary-card__eyebrow">Status</p>
+                          <h4 class="cc-summary-card__title">
+                            Current product status
+                          </h4>
+                          <p class="cc-summary-card__summary">
+                            {selectedProductStatusSummary}
+                          </p>
+                          <p class="cc-summary-card__line">
+                            {selectedProductStatusMeta}
+                          </p>
+                          <p class="cc-summary-card__meta">
+                            {selectedProductStatusFootnote}
+                          </p>
+                        </article>
+
+                        <article class="cc-summary-card">
+                          <p class="cc-summary-card__eyebrow">Baseline</p>
+                          <h4 class="cc-summary-card__title">
+                            Baseline clarity
+                          </h4>
+                          <template
+                            for:each={selectedBaselineClarityRows}
+                            for:item="row"
+                          >
+                            <p key={row.label} class="cc-summary-card__line">
+                              <span class="cc-summary-card__line-label">
+                                {row.label}:
+                              </span>
+                              {row.value}
+                            </p>
+                          </template>
+                        </article>
+                      </div>
+
+                      <div class="cc-metric-grid">
+                        <template
+                          for:each={selectedConfigMetricCards}
+                          for:item="metric"
+                        >
+                          <article key={metric.label} class="cc-metric-card">
+                            <p class="cc-metric-card__label">{metric.label}</p>
+                            <p class="cc-metric-card__value">{metric.value}</p>
+                            <p class="cc-metric-card__meta">{metric.meta}</p>
+                          </article>
+                        </template>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <template if:true={isWorkspaceLiveRunsTab}>
+                  <div class="cc-workspace-tab-panel">
+                    <div class="cc-workspace-grid">
+                      <div class="cc-workspace-grid__primary">
+                        <section class="cc-workspace-section">
+                          <div class="cc-monitor__header">
+                            <div>
+                              <p class="cc-section-label">Live Runs</p>
+                              <h4 class="cc-monitor__title">Batch progress</h4>
+                            </div>
+                            <p class="cc-monitor__meta">
+                              {selectedConfigRunMonitorSubtitle}
+                            </p>
+                          </div>
+
+                          <template if:true={hasSelectedConfigRunSessions}>
+                            <div class="cc-run-list">
+                              <template
+                                for:each={selectedConfigRunSessions}
+                                for:item="run"
+                              >
+                                <article key={run.runKey} class={run.cardClass}>
+                                  <div class="cc-run-card__header">
+                                    <div>
+                                      <h5 class="cc-run-card__title">
+                                        {run.label}
+                                      </h5>
+                                      <p class="cc-run-card__meta">
+                                        {run.developerName} • Started
+                                        {run.launchedAtLabel}
+                                      </p>
+                                      <p class="cc-run-card__timing">
+                                        {run.timingLabel}
+                                      </p>
+                                    </div>
+                                    <div class="cc-run-card__header-actions">
+                                      <button
+                                        type="button"
+                                        class="cc-run-card__download"
+                                        data-run-key={run.runKey}
+                                        onclick={handleDownloadRunSummary}
+                                      >
+                                        Download Summary
+                                      </button>
+                                      <span class={run.overallStatusClass}>
+                                        {run.overallStatusLabel}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <lightning-progress-bar
+                                    value={run.progressPercent}
+                                    size="medium"
+                                  ></lightning-progress-bar>
+                                  <p class="cc-run-card__progress">
+                                    {run.progressPercent}% complete
+                                  </p>
+
+                                  <div class="cc-stage-list">
+                                    <template
+                                      for:each={run.stages}
+                                      for:item="stage"
+                                    >
+                                      <div
+                                        key={stage.jobId}
+                                        class="cc-stage-card"
+                                      >
+                                        <div class="cc-stage-card__header">
+                                          <div>
+                                            <p class="cc-stage-card__title">
+                                              {stage.label}
+                                            </p>
+                                            <p class="cc-stage-card__summary">
+                                              {stage.primaryDetail}
+                                            </p>
+                                            <template
+                                              if:true={stage.secondaryDetail}
+                                            >
+                                              <p class="cc-stage-card__meta">
+                                                {stage.secondaryDetail}
+                                              </p>
+                                            </template>
+                                          </div>
+                                          <div class="cc-stage-card__actions">
+                                            <span class={stage.statusClass}>
+                                              {stage.statusLabel}
+                                            </span>
+                                            <template if:true={stage.canAbort}>
+                                              <button
+                                                type="button"
+                                                class="cc-stage-card__abort"
+                                                data-job-id={stage.jobId}
+                                                data-job-label={stage.label}
+                                                onclick={handleAbortStage}
+                                              >
+                                                Abort
+                                              </button>
+                                            </template>
+                                          </div>
+                                        </div>
+                                        <template if:true={stage.timingLabel}>
+                                          <p class="cc-stage-card__timing">
+                                            {stage.timingLabel}
+                                          </p>
+                                        </template>
+                                      </div>
+                                    </template>
+                                  </div>
+                                </article>
+                              </template>
+                            </div>
+                          </template>
+                          <template if:false={hasSelectedConfigRunSessions}>
+                            <div class="cc-empty-state">
+                              Launch a sync from this configuration to populate
+                              the run monitor, or wait for the active Salesforce
+                              product job to appear here.
+                            </div>
+                          </template>
+                        </section>
+                      </div>
+
+                      <div class="cc-workspace-grid__secondary">
+                        <section class="cc-workspace-section">
+                          <div class="cc-monitor__header">
+                            <div>
+                              <p class="cc-section-label">Downloads</p>
+                              <h4 class="cc-monitor__title">Run outputs</h4>
+                            </div>
+                            <span class={selectedRunDownloadStatusClass}>
+                              {selectedRunDownloadStatusLabel}
+                            </span>
+                          </div>
+
+                          <div class="cc-download-card">
+                            <p class="cc-download-card__title">
+                              Latest run summary
+                            </p>
+                            <p class="cc-download-card__summary">
+                              {selectedRunDownloadSummary}
+                            </p>
+                            <p class="cc-download-card__meta">
+                              {selectedRunDownloadMeta}
+                            </p>
+                            <div class="cc-download-card__actions">
+                              <button
+                                type="button"
+                                class="cc-table-action cc-table-action--primary cc-table-action--full"
+                                onclick={handleDownloadSelectedRunSummary}
+                                disabled={selectedRunSummaryDownloadDisabled}
+                              >
+                                Download Latest Run Summary
+                              </button>
+                            </div>
+                            <p class="cc-download-card__supporting">
+                              Per-run summary downloads are also available
+                              directly on each tracked run card.
+                            </p>
+                          </div>
+
+                          <div class="cc-download-card">
+                            <p class="cc-download-card__title">
+                              Open Async Apex job
+                            </p>
+                            <p class="cc-download-card__summary">
+                              {selectedRunAsyncJobSummary}
+                            </p>
+                            <p class="cc-download-card__meta">
+                              {selectedRunAsyncJobMeta}
+                            </p>
+                            <div class="cc-download-card__actions">
+                              <button
+                                type="button"
+                                class="cc-table-action cc-table-action--full"
+                                onclick={handleOpenSelectedAsyncApexJob}
+                                disabled={selectedRunAsyncJobDisabled}
+                              >
+                                Open Apex Jobs in Setup
+                              </button>
+                            </div>
+                            <p class="cc-download-card__supporting">
+                              {selectedRunAsyncJobSupporting}
+                            </p>
+                          </div>
+                        </section>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <template if:true={isWorkspaceActivityTab}>
+                  <div class="cc-workspace-tab-panel">
+                    <section class="cc-workspace-section">
+                      <div class="cc-monitor__header">
+                        <div>
+                          <p class="cc-section-label">Recent Activity</p>
+                          <h4 class="cc-monitor__title">Console timeline</h4>
+                        </div>
+                        <p class="cc-monitor__meta">
+                          Session-level activity across launches, detected
+                          active jobs, and status changes.
+                        </p>
+                      </div>
+
+                      <template if:true={hasActivityFeed}>
+                        <ul class="cc-activity-list">
+                          <template
+                            for:each={visibleActivityFeed}
+                            for:item="entry"
+                          >
+                            <li key={entry.key} class="cc-activity-item">
+                              <span class="cc-activity-item__time">
+                                {entry.timestampLabel}
+                              </span>
+                              <span class="cc-activity-item__message">
+                                {entry.message}
+                              </span>
+                            </li>
+                          </template>
+                        </ul>
+                      </template>
+                      <template if:false={hasActivityFeed}>
+                        <div class="cc-empty-state">
+                          Launch a run to start building the timeline.
+                        </div>
+                      </template>
+                    </section>
+                  </div>
+                </template>
+
+                <template if:true={isWorkspaceDetailsTab}>
+                  <div class="cc-workspace-tab-panel">
+                    <div class="cc-workspace-grid cc-workspace-grid--details">
+                      <div class="cc-workspace-grid__primary">
+                        <section class="cc-workspace-section">
+                          <div class="cc-monitor__header">
+                            <div>
+                              <p class="cc-section-label">Selected Details</p>
+                              <h4 class="cc-monitor__title">
+                                Configuration snapshot
+                              </h4>
+                            </div>
+                            <p class="cc-monitor__meta">
+                              Key launch, baseline, and source details for this
+                              selected configuration.
+                            </p>
+                          </div>
+
+                          <div class="cc-details-list">
+                            <template
+                              for:each={selectedWorkspaceDetailRows}
+                              for:item="detail"
+                            >
+                              <div key={detail.label} class="cc-details-row">
+                                <p class="cc-details-row__label">
+                                  {detail.label}
+                                </p>
+                                <p class="cc-details-row__value">
+                                  {detail.value}
+                                </p>
+                              </div>
+                            </template>
+                          </div>
+                        </section>
+                      </div>
+
+                      <div class="cc-workspace-grid__secondary">
+                        <section class="cc-workspace-section">
+                          <div class="cc-monitor__header">
+                            <div>
+                              <p class="cc-section-label">Additional Context</p>
+                              <h4 class="cc-monitor__title">
+                                Full config facts
+                              </h4>
+                            </div>
+                            <p class="cc-monitor__meta">
+                              Expanded sync, schedule, and metadata context for
+                              troubleshooting.
+                            </p>
+                          </div>
+
+                          <div class="cc-detail-grid cc-detail-grid--workspace">
+                            <template
+                              for:each={selectedConfigFactRows}
+                              for:item="fact"
+                            >
+                              <article key={fact.label} class="cc-detail-card">
+                                <p class="cc-detail-card__label">
+                                  {fact.label}
+                                </p>
+                                <p class="cc-detail-card__value">
+                                  {fact.value}
+                                </p>
+                              </article>
+                            </template>
+                          </div>
+                        </section>
+                      </div>
+                    </div>
+                  </div>
                 </template>
               </div>
             </template>
 
-            <div class="cc-monitor">
-              <div class="cc-monitor__header">
-                <div>
-                  <p class="cc-section-label">Live Runs</p>
-                  <h4 class="cc-monitor__title">Batch progress</h4>
-                </div>
-                <p class="cc-monitor__meta">{runMonitorSubtitle}</p>
+            <template if:false={hasSelectedConfig}>
+              <div class="cc-empty-state">
+                Choose a configuration from the inventory above to open the
+                selected-config workspace.
               </div>
-
-              <template if:true={hasRunSessions}>
-                <div class="cc-run-list">
-                  <template for:each={visibleRunSessions} for:item="run">
-                    <article key={run.runKey} class={run.cardClass}>
-                      <div class="cc-run-card__header">
-                        <div>
-                          <h5 class="cc-run-card__title">{run.label}</h5>
-                          <p class="cc-run-card__meta">
-                            {run.developerName} • Started {run.launchedAtLabel}
-                          </p>
-                          <p class="cc-run-card__timing">{run.timingLabel}</p>
-                        </div>
-                        <span class={run.overallStatusClass}>
-                          {run.overallStatusLabel}
-                        </span>
-                      </div>
-
-                      <lightning-progress-bar
-                        value={run.progressPercent}
-                        size="medium"
-                      ></lightning-progress-bar>
-                      <p class="cc-run-card__progress">
-                        {run.progressPercent}% complete
-                      </p>
-
-                      <div class="cc-stage-list">
-                        <template for:each={run.stages} for:item="stage">
-                          <div key={stage.jobId} class="cc-stage-card">
-                            <div class="cc-stage-card__header">
-                              <div>
-                                <p class="cc-stage-card__title">
-                                  {stage.label}
-                                </p>
-                                <p class="cc-stage-card__meta">
-                                  {stage.batchesLabel}
-                                </p>
-                                <template if:true={stage.timingLabel}>
-                                  <p class="cc-stage-card__timing">
-                                    {stage.timingLabel}
-                                  </p>
-                                </template>
-                              </div>
-                              <div class="cc-stage-card__actions">
-                                <span class={stage.statusClass}>
-                                  {stage.statusLabel}
-                                </span>
-                                <template if:true={stage.canAbort}>
-                                  <button
-                                    type="button"
-                                    class="cc-stage-card__abort"
-                                    data-job-id={stage.jobId}
-                                    data-job-label={stage.label}
-                                    onclick={handleAbortStage}
-                                  >
-                                    Abort
-                                  </button>
-                                </template>
-                              </div>
-                            </div>
-                            <lightning-progress-bar
-                              value={stage.progressPercent}
-                              size="x-small"
-                            ></lightning-progress-bar>
-                            <template if:true={stage.extendedStatus}>
-                              <p class="cc-stage-card__extended">
-                                {stage.extendedStatus}
-                              </p>
-                            </template>
-                          </div>
-                        </template>
-                      </div>
-                    </article>
-                  </template>
-                </div>
-              </template>
-              <template if:false={hasRunSessions}>
-                <div class="cc-empty-state">
-                  Launch a sync from the selected configuration to populate the
-                  run monitor.
-                </div>
-              </template>
-            </div>
-
-            <div class="cc-monitor cc-monitor--activity">
-              <div class="cc-monitor__header">
-                <div>
-                  <p class="cc-section-label">Recent Activity</p>
-                  <h4 class="cc-monitor__title">Console timeline</h4>
-                </div>
-                <p class="cc-monitor__meta">
-                  Session-level activity from launches and status changes.
-                </p>
-              </div>
-
-              <template if:true={hasActivityFeed}>
-                <ul class="cc-activity-list">
-                  <template for:each={visibleActivityFeed} for:item="entry">
-                    <li key={entry.key} class="cc-activity-item">
-                      <span class="cc-activity-item__time">
-                        {entry.timestampLabel}
-                      </span>
-                      <span class="cc-activity-item__message">
-                        {entry.message}
-                      </span>
-                    </li>
-                  </template>
-                </ul>
-              </template>
-              <template if:false={hasActivityFeed}>
-                <div class="cc-empty-state">
-                  Launch a run to start building the timeline.
-                </div>
-              </template>
-            </div>
+            </template>
           </section>
         </div>
       </template>
