@@ -896,9 +896,9 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       },
       {
         key: "lastSync",
-        label: "Last Successful Sync",
+        label: "Latest Successful Sync",
         value: lastSyncValue,
-        helper: `Last full baseline: ${lastFullSyncValue}`
+        helper: `Last successful full baseline: ${lastFullSyncValue}`
       },
       {
         key: "accessMode",
@@ -1272,11 +1272,11 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   }
 
   handleOpenNamedCredentials() {
-    window.open(this.namedCredentialSetupUrl, "_blank");
+    this.navigateToSetupPage(this.namedCredentialSetupUrl);
   }
 
   handleOpenCustomMetadata() {
-    window.open(this.customMetadataSetupUrl, "_blank");
+    this.navigateToSetupPage(this.customMetadataSetupUrl);
   }
 
   handleCustomBuilderInputChange(event) {
@@ -1319,6 +1319,35 @@ export default class CoveoCommerceSetup extends NavigationMixin(
         apiName: "Catalog_Job_Console"
       }
     });
+  }
+
+  navigateToSetupPage(url) {
+    if (!url) {
+      return;
+    }
+
+    const pageReference = {
+      type: "standard__webPage",
+      attributes: {
+        url
+      }
+    };
+
+    this[NavigationMixin.GenerateUrl](pageReference)
+      .then((generatedUrl) => {
+        const openedWindow = window.open(
+          generatedUrl || url,
+          "_blank",
+          "noopener"
+        );
+
+        if (!openedWindow) {
+          this[NavigationMixin.Navigate](pageReference);
+        }
+      })
+      .catch(() => {
+        this[NavigationMixin.Navigate](pageReference);
+      });
   }
 
   handleWorkspaceSelect(event) {
@@ -1911,8 +1940,8 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       lastSuccessfulFullSyncAt: config.lastSuccessfulFullSyncAt || "",
       lastSuccessfulSyncAt: config.lastSuccessfulSyncAt || "",
       lastSyncSummary: [
-        `Last full: ${this.formatOptionalTimestamp(config.lastSuccessfulFullSyncAt, "Never")}`,
-        `Last sync: ${this.formatOptionalTimestamp(config.lastSuccessfulSyncAt, "Never")}`
+        `Last full baseline: ${this.formatOptionalTimestamp(config.lastSuccessfulFullSyncAt, "Never")}`,
+        `Latest successful sync: ${this.formatOptionalTimestamp(config.lastSuccessfulSyncAt, "Never")}`
       ].join(" • "),
       isScheduled,
       scheduledJobName: config.scheduledJobName || "",
@@ -1988,7 +2017,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
         config.lastSuccessfulSyncAt,
         "Never"
       ),
-      inventoryLastSyncMeta: `Full baseline: ${this.formatOptionalTimestamp(
+      inventoryLastSyncMeta: `Last successful full baseline: ${this.formatOptionalTimestamp(
         config.lastSuccessfulFullSyncAt,
         "Never"
       )}`,
