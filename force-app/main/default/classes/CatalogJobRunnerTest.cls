@@ -1,7 +1,8 @@
 @IsTest
 private class CatalogJobRunnerTest {
   private class NoOpQueueable implements Queueable {
-    public void execute(QueueableContext context) {}
+    public void execute(QueueableContext context) {
+    }
   }
 
   private static CatalogJobConfig__mdt findConfigByResolvedMode(String mode) {
@@ -23,8 +24,8 @@ private class CatalogJobRunnerTest {
 
     return Database.countQuery(
         'SELECT COUNT() FROM WebStoreBuyerGroup WHERE WebStoreId = \'' +
-        String.escapeSingleQuotes(webStoreId) +
-        '\' AND BuyerGroupId != NULL'
+          String.escapeSingleQuotes(webStoreId) +
+          '\' AND BuyerGroupId != NULL'
       ) > 0;
   }
 
@@ -132,9 +133,11 @@ private class CatalogJobRunnerTest {
       System.assert(
         exceptionMessage.contains('List has no rows') ||
           exceptionMessage.contains('No CatalogJobConfig__mdt record found') ||
-          exceptionMessage.contains('Run the baseline full sync once before running delta sync'),
+          exceptionMessage.contains(
+            'Run the baseline full sync once before running delta sync'
+          ),
         'Known-config launches can fail in tests when org prerequisites are unavailable. ' +
-          exceptionMessage
+        exceptionMessage
       );
     }
   }
@@ -202,9 +205,9 @@ private class CatalogJobRunnerTest {
     } else {
       System.assert(
         exceptionMessage.contains('List has no rows') ||
-          exceptionMessage.contains('No CatalogJobConfig__mdt record found'),
+        exceptionMessage.contains('No CatalogJobConfig__mdt record found'),
         'Embedded runSingleAvailability should only fail for missing packaged prerequisites. ' +
-          exceptionMessage
+        exceptionMessage
       );
     }
   }
@@ -289,10 +292,12 @@ private class CatalogJobRunnerTest {
       } else {
         System.assert(
           exceptionMessage.contains('List has no rows') ||
-            exceptionMessage.contains('No CatalogJobConfig__mdt record found') ||
+            exceptionMessage.contains(
+              'No CatalogJobConfig__mdt record found'
+            ) ||
             exceptionMessage.contains('No BuyerGroup records found'),
           'Known combined launches should only fail for missing packaged prerequisites. ' +
-            exceptionMessage
+          exceptionMessage
         );
       }
     }
@@ -371,7 +376,7 @@ private class CatalogJobRunnerTest {
         exceptionMessage.contains('No CatalogJobConfig__mdt record found') ||
         exceptionMessage.contains('No BuyerGroup records found'),
       'runAllActiveBoth should only fail for missing packaged prerequisites. ' +
-        exceptionMessage
+      exceptionMessage
     );
   }
 
@@ -484,8 +489,7 @@ private class CatalogJobRunnerTest {
       String additionalFields = config.AdditionalProductFields__c;
       Decimal batchSize = config.BatchSize__c;
       String syncMode = config.SyncMode__c;
-      String baselineFullConfigDeveloperName =
-        config.BaselineFullConfigDeveloperName__c;
+      String baselineFullConfigDeveloperName = config.BaselineFullConfigDeveloperName__c;
       String builderType = config.BuilderType__c;
       String catalogId = config.CatalogId__c;
 
@@ -546,20 +550,18 @@ private class CatalogJobRunnerTest {
     CatalogJobRunner.LaunchResult launch = new CatalogJobRunner.LaunchResult();
     launch.jobs = new List<CatalogJobRunner.JobLaunchHandle>();
 
-    CatalogJobRunner.JobLaunchHandle productHandle =
+    CatalogJobRunner.JobLaunchHandle productHandle = CatalogJobRunner.createLaunchHandle(
+      Test.getStandardPricebookId(),
+      'products',
+      'Product Sync'
+    );
+    List<CatalogJobRunner.JobLaunchHandle> accessHandles = new List<CatalogJobRunner.JobLaunchHandle>{
       CatalogJobRunner.createLaunchHandle(
-        Test.getStandardPricebookId(),
-        'products',
-        'Product Sync'
-      );
-    List<CatalogJobRunner.JobLaunchHandle> accessHandles =
-      new List<CatalogJobRunner.JobLaunchHandle>{
-        CatalogJobRunner.createLaunchHandle(
-          UserInfo.getUserId(),
-          'access',
-          'Embedded Access Sync'
-        )
-      };
+        UserInfo.getUserId(),
+        'access',
+        'Embedded Access Sync'
+      )
+    };
 
     CatalogJobRunner.appendLaunchHandles(
       launch,
@@ -606,8 +608,7 @@ private class CatalogJobRunnerTest {
 
   @IsTest
   static void testCreateLaunchHandle_assignsDeltaScopeSummary() {
-    CatalogDeltaScopeResolver.ScopeMetrics metrics =
-      new CatalogDeltaScopeResolver.ScopeMetrics();
+    CatalogDeltaScopeResolver.ScopeMetrics metrics = new CatalogDeltaScopeResolver.ScopeMetrics();
     metrics.impactedProductCount = 3;
     metrics.rootProductCount = 2;
     metrics.exportProductCount = 5;
@@ -650,7 +651,8 @@ private class CatalogJobRunnerTest {
     } catch (CatalogJobConfigException e) {
       exceptionThrown = true;
       System.assert(
-        e.getMessage().contains('Buyer Group access is disabled for Disabled Config.'),
+        e.getMessage()
+          .contains('Buyer Group access is disabled for Disabled Config.'),
         'The error should mention the disabled config label'
       );
     }
@@ -670,7 +672,10 @@ private class CatalogJobRunnerTest {
       SyncMode__c = CatalogSyncMode.DELTA
     );
 
-    System.assertEquals(false, CatalogJobRunner.isProductSyncReady(deltaConfig));
+    System.assertEquals(
+      false,
+      CatalogJobRunner.isProductSyncReady(deltaConfig)
+    );
   }
 
   @IsTest
@@ -690,6 +695,7 @@ private class CatalogJobRunnerTest {
       System.assert(config.containsKey('currentProductConfigDeveloperName'));
       System.assert(config.containsKey('currentProductStartedAt'));
       System.assert(config.containsKey('currentProductIsActive'));
+      System.assert(config.containsKey('recentProductRuns'));
       System.assert(config.containsKey('isScheduled'));
       System.assert(config.containsKey('scheduleState'));
       System.assert(config.containsKey('resolvedTargetKey'));
@@ -720,8 +726,9 @@ private class CatalogJobRunnerTest {
     CatalogSyncStateService.testAsyncJobStatusesById = new Map<String, String>{
       String.valueOf(jobId) => 'Processing'
     };
-    CatalogSyncStateService.testAsyncJobCreatedDatesById =
-      new Map<String, Datetime>{ String.valueOf(jobId) => System.now() };
+    CatalogSyncStateService.testAsyncJobCreatedDatesById = new Map<String, Datetime>{
+      String.valueOf(jobId) => System.now()
+    };
     String abortedJobId = CatalogJobRunner.abortCurrentProductRun(
       config.DeveloperName
     );
@@ -793,8 +800,7 @@ private class CatalogJobRunnerTest {
     launch.label = 'Label';
     launch.mode = 'products';
     launch.availabilityEnabled = true;
-    launch.buyerGroupAvailabilityMode =
-      CatalogBuyerGroupAvailabilityMode.PAIRED_SOURCE;
+    launch.buyerGroupAvailabilityMode = CatalogBuyerGroupAvailabilityMode.PAIRED_SOURCE;
     launch.launchedAt = '2026-04-01T00:00:00Z';
     launch.jobs = new List<CatalogJobRunner.JobLaunchHandle>{ handle };
 

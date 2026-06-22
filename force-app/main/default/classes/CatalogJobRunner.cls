@@ -1,9 +1,7 @@
 public with sharing class CatalogJobRunner {
   private static final String PRODUCT_BATCH_CLASS = 'ProductCatalogExportBatch';
-  private static final String AVAILABILITY_BATCH_CLASS =
-    'BuyerGroupAvailabilityExportBatch';
-  private static final String ACCESS_BATCH_CLASS =
-    'EmbeddedBuyerGroupAccessExportBatch';
+  private static final String AVAILABILITY_BATCH_CLASS = 'BuyerGroupAvailabilityExportBatch';
+  private static final String ACCESS_BATCH_CLASS = 'EmbeddedBuyerGroupAccessExportBatch';
 
   public class JobLaunchHandle {
     @AuraEnabled
@@ -121,18 +119,21 @@ public with sharing class CatalogJobRunner {
   @AuraEnabled(cacheable=true)
   public static List<Map<String, Object>> getConsoleConfigs() {
     List<CatalogJobConfig__mdt> configs = listConfigs();
-    Map<String, CatalogSyncStateService.Snapshot> snapshotsByDeveloperName =
-      CatalogSyncStateService.getSnapshotsByDeveloperName(configs);
-    Map<String, CatalogProductSyncScheduler.ScheduleSnapshot> scheduleSnapshotsByDeveloperName =
-      CatalogProductSyncScheduler.getScheduleSnapshotsByDeveloperName(configs);
+    Map<String, CatalogSyncStateService.Snapshot> snapshotsByDeveloperName = CatalogSyncStateService.getSnapshotsByDeveloperName(
+      configs
+    );
+    Map<String, CatalogProductSyncScheduler.ScheduleSnapshot> scheduleSnapshotsByDeveloperName = CatalogProductSyncScheduler.getScheduleSnapshotsByDeveloperName(
+      configs
+    );
     List<Map<String, Object>> consoleConfigs = new List<Map<String, Object>>();
 
     for (CatalogJobConfig__mdt config : configs) {
       CatalogSyncStateService.Snapshot snapshot = snapshotsByDeveloperName.get(
         config.DeveloperName
       );
-      CatalogProductSyncScheduler.ScheduleSnapshot scheduleSnapshot =
-        scheduleSnapshotsByDeveloperName.get(config.DeveloperName);
+      CatalogProductSyncScheduler.ScheduleSnapshot scheduleSnapshot = scheduleSnapshotsByDeveloperName.get(
+        config.DeveloperName
+      );
       consoleConfigs.add(
         new Map<String, Object>{
           'DeveloperName' => config.DeveloperName,
@@ -148,13 +149,10 @@ public with sharing class CatalogJobRunner {
           'BuilderType__c' => config.BuilderType__c,
           'CatalogId__c' => config.CatalogId__c,
           'BatchSize__c' => config.BatchSize__c,
-          'EnableBuyerGroupAvailability__c' =>
-            config.EnableBuyerGroupAvailability__c,
-          'BuyerGroupAvailabilityMode__c' =>
-            config.BuyerGroupAvailabilityMode__c,
+          'EnableBuyerGroupAvailability__c' => config.EnableBuyerGroupAvailability__c,
+          'BuyerGroupAvailabilityMode__c' => config.BuyerGroupAvailabilityMode__c,
           'SyncMode__c' => CatalogSyncMode.resolve(config),
-          'BaselineFullConfigDeveloperName__c' =>
-            config.BaselineFullConfigDeveloperName__c,
+          'BaselineFullConfigDeveloperName__c' => config.BaselineFullConfigDeveloperName__c,
           'deltaReady' => snapshot == null ? true : snapshot.deltaReady,
           'deltaReadinessMessage' => snapshot == null
             ? null
@@ -187,6 +185,9 @@ public with sharing class CatalogJobRunner {
           'currentProductIsActive' => snapshot == null
             ? false
             : snapshot.currentProductIsActive,
+          'recentProductRuns' => snapshot == null
+            ? new List<Object>()
+            : snapshot.recentProductRuns,
           'isScheduled' => scheduleSnapshot == null
             ? false
             : scheduleSnapshot.isScheduled,
@@ -239,7 +240,9 @@ public with sharing class CatalogJobRunner {
   }
 
   @AuraEnabled
-  public static LaunchResult runSingleAvailability(String jobConfigDeveloperName) {
+  public static LaunchResult runSingleAvailability(
+    String jobConfigDeveloperName
+  ) {
     CatalogJobConfig__mdt config = getConfig(jobConfigDeveloperName);
     validateBuyerGroupAccessEnabled(config);
     return launchForConfig(config, false, true, 'availability');
@@ -300,8 +303,7 @@ public with sharing class CatalogJobRunner {
   @AuraEnabled
   public static String abortCurrentProductRun(String jobConfigDeveloperName) {
     CatalogJobConfig__mdt config = getConfig(jobConfigDeveloperName);
-    CatalogSyncStateService.Snapshot snapshot =
-      CatalogSyncStateService.getSnapshotsByDeveloperName(
+    CatalogSyncStateService.Snapshot snapshot = CatalogSyncStateService.getSnapshotsByDeveloperName(
         new List<CatalogJobConfig__mdt>{ config }
       )
       .get(config.DeveloperName);
@@ -398,7 +400,9 @@ public with sharing class CatalogJobRunner {
 
       RunSnapshot snapshot = new RunSnapshot();
       snapshot.jobId = String.valueOf(job.Id);
-      snapshot.apexClassName = job.ApexClass != null ? job.ApexClass.Name : null;
+      snapshot.apexClassName = job.ApexClass != null
+        ? job.ApexClass.Name
+        : null;
       snapshot.channel = inferChannel(snapshot.apexClassName);
       snapshot.status = job.Status;
       snapshot.jobItemsProcessed = job.JobItemsProcessed;
@@ -471,11 +475,14 @@ public with sharing class CatalogJobRunner {
     launch.label = config.Label;
     launch.mode = mode;
     launch.productSyncMode = CatalogSyncMode.resolve(config);
-    launch.availabilityEnabled =
-      CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(config);
-    launch.buyerGroupAvailabilityMode =
-      CatalogBuyerGroupAvailabilityMode.resolve(config);
-    launch.launchedAt = DateTime.now().formatGmt('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
+    launch.availabilityEnabled = CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(
+      config
+    );
+    launch.buyerGroupAvailabilityMode = CatalogBuyerGroupAvailabilityMode.resolve(
+      config
+    );
+    launch.launchedAt = DateTime.now()
+      .formatGmt('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
     launch.jobs = new List<JobLaunchHandle>();
     return launch;
   }
@@ -497,25 +504,29 @@ public with sharing class CatalogJobRunner {
     }
   }
 
-  private static JobLaunchHandle launchProductJob(CatalogJobConfig__mdt config) {
+  private static JobLaunchHandle launchProductJob(
+    CatalogJobConfig__mdt config
+  ) {
     if (CatalogSyncMode.isDelta(config)) {
-      CatalogSyncStateService.DeltaReadiness readiness =
-        CatalogSyncStateService.requireDeltaReadiness(config);
+      CatalogSyncStateService.DeltaReadiness readiness = CatalogSyncStateService.requireDeltaReadiness(
+        config
+      );
       Datetime baselineTimestamp = readiness.stateRecord.LastSuccessfulSyncAt__c;
       Datetime runCutoff = System.now();
-      CatalogDeltaScopeResolver.ScopeMetrics metrics =
-        CatalogDeltaScopeResolver.describeScope(
-          config,
-          baselineTimestamp,
-          runCutoff
-        );
-      DeltaProductCatalogExportBatch deltaBatch =
-        new DeltaProductCatalogExportBatch(
-          config.DeveloperName,
-          baselineTimestamp,
-          runCutoff
-        );
-      Id deltaJobId = Database.executeBatch(deltaBatch, deltaBatch.getBatchSize());
+      CatalogDeltaScopeResolver.ScopeMetrics metrics = CatalogDeltaScopeResolver.describeScope(
+        config,
+        baselineTimestamp,
+        runCutoff
+      );
+      DeltaProductCatalogExportBatch deltaBatch = new DeltaProductCatalogExportBatch(
+        config.DeveloperName,
+        baselineTimestamp,
+        runCutoff
+      );
+      Id deltaJobId = Database.executeBatch(
+        deltaBatch,
+        deltaBatch.getBatchSize()
+      );
       CatalogSyncStateService.recordStartedProductSync(
         config,
         CatalogSyncMode.DELTA,
@@ -552,8 +563,9 @@ public with sharing class CatalogJobRunner {
   }
 
   private static JobLaunchHandle launchEmbeddedAccessJob(String developerName) {
-    EmbeddedBuyerGroupAccessExportBatch batch =
-      new EmbeddedBuyerGroupAccessExportBatch(developerName);
+    EmbeddedBuyerGroupAccessExportBatch batch = new EmbeddedBuyerGroupAccessExportBatch(
+      developerName
+    );
     Id jobId = Database.executeBatch(batch, batch.getBatchSize());
     return createLaunchHandle(jobId, 'access', 'Embedded Access Sync');
   }
@@ -597,21 +609,20 @@ public with sharing class CatalogJobRunner {
       handle.impactedProductCount = metrics.impactedProductCount;
       handle.changedRootProductCount = metrics.rootProductCount;
       handle.exportProductCount = metrics.exportProductCount;
-      handle.scopeSummary =
-        metrics.exportProductCount > 0
-          ? metrics.impactedProductCount +
-            ' impacted product' +
-            (metrics.impactedProductCount == 1 ? '' : 's') +
-            ' since last sync • ' +
-            metrics.rootProductCount +
-            ' changed root' +
-            (metrics.rootProductCount == 1 ? '' : 's') +
-            ' • ' +
-            metrics.exportProductCount +
-            ' product' +
-            (metrics.exportProductCount == 1 ? '' : 's') +
-            ' queued for export'
-          : metrics.impactedProductCount > 0
+      handle.scopeSummary = metrics.exportProductCount > 0
+        ? metrics.impactedProductCount +
+          ' impacted product' +
+          (metrics.impactedProductCount == 1 ? '' : 's') +
+          ' since last sync • ' +
+          metrics.rootProductCount +
+          ' changed root' +
+          (metrics.rootProductCount == 1 ? '' : 's') +
+          ' • ' +
+          metrics.exportProductCount +
+          ' product' +
+          (metrics.exportProductCount == 1 ? '' : 's') +
+          ' queued for export'
+        : metrics.impactedProductCount > 0
             ? metrics.impactedProductCount +
               ' impacted product' +
               (metrics.impactedProductCount == 1 ? '' : 's') +
@@ -621,7 +632,9 @@ public with sharing class CatalogJobRunner {
     return handle;
   }
 
-  private static CatalogJobConfig__mdt getConfig(String jobConfigDeveloperName) {
+  private static CatalogJobConfig__mdt getConfig(
+    String jobConfigDeveloperName
+  ) {
     List<CatalogJobConfig__mdt> configs = [
       SELECT
         DeveloperName,
@@ -688,9 +701,7 @@ public with sharing class CatalogJobRunner {
   ) {
     if (!CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(config)) {
       throw new CatalogJobConfigException(
-        'Buyer Group access is disabled for ' +
-        config.Label +
-        '.'
+        'Buyer Group access is disabled for ' + config.Label + '.'
       );
     }
   }
@@ -729,8 +740,6 @@ public with sharing class CatalogJobRunner {
 
   @TestVisible
   private static Boolean isTerminalStatus(String status) {
-    return status == 'Completed' ||
-      status == 'Failed' ||
-      status == 'Aborted';
+    return status == 'Completed' || status == 'Failed' || status == 'Aborted';
   }
 }

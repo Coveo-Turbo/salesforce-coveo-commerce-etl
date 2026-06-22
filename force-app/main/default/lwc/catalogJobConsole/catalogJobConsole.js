@@ -18,6 +18,8 @@ const POLL_INTERVAL_MS = 4000;
 const CONFIG_REFRESH_INTERVAL_MS = 15000;
 const RUN_STORAGE_KEY = "catalogJobConsoleRuns:v1";
 const ACTIVITY_STORAGE_KEY = "catalogJobConsoleActivity:v1";
+const SELECTED_CONFIG_STORAGE_KEY = "catalogJobConsoleSelectedConfig:v1";
+const WORKSPACE_FOCUS_STORAGE_KEY = "catalogJobConsoleWorkspaceFocus:v1";
 const MAX_RUNS = 24;
 const MAX_VISIBLE_COMPLETED_RUNS_PER_CONFIG = 3;
 const MAX_ACTIVITY_ITEMS = 18;
@@ -244,12 +246,40 @@ export default class CatalogJobConsole extends NavigationMixin(
       return [];
     }
 
-    return this.runSessions
+    const matchingRuns = [];
+    const includedRunKeys = new Set();
+    const includedJobIds = new Set();
+
+    this.runSessions
       .filter((runSession) => this.runMatchesSelectedConfig(runSession))
-      .sort(
-        (left, right) =>
-          this.getRunSessionSortTime(right) - this.getRunSessionSortTime(left)
-      );
+      .forEach((runSession) => {
+        this.addMatchedRunSession(
+          matchingRuns,
+          includedRunKeys,
+          includedJobIds,
+          runSession
+        );
+      });
+
+    (this.selectedConfig.recentProductRuns || [])
+      .filter(
+        (recentRun) =>
+          (recentRun.configDeveloperName || this.selectedConfig.developerName) ===
+          this.selectedConfig.developerName
+      )
+      .forEach((recentRun) => {
+        this.addMatchedRunSession(
+          matchingRuns,
+          includedRunKeys,
+          includedJobIds,
+          this.createTrackedProductRunSession(this.selectedConfig, recentRun)
+        );
+      });
+
+    return matchingRuns.sort(
+      (left, right) =>
+        this.getRunSessionSortTime(right) - this.getRunSessionSortTime(left)
+    );
   }
 
   get selectedConfigRunSessions() {
@@ -746,6 +776,7 @@ export default class CatalogJobConsole extends NavigationMixin(
     this.configs = this.configs.map((config) =>
       this.decorateConfig(config, this.selectedConfigId)
     );
+    this.persistRunState();
   }
 
   handleSelectWorkspaceFocus(event) {
@@ -755,6 +786,7 @@ export default class CatalogJobConsole extends NavigationMixin(
     }
 
     this.workspaceFocus = focus;
+    this.persistRunState();
   }
 
   async handleRunSelectedProducts() {
@@ -903,7 +935,7 @@ export default class CatalogJobConsole extends NavigationMixin(
   }
 
   downloadRunSummaryByKey(runKey) {
-    const runSession = this.runSessions.find((run) => run.runKey === runKey);
+    const runSession = this.findRunSessionByKey(runKey);
     if (!runSession) {
       this.showToast(
         "Run unavailable",
@@ -1032,24 +1064,25 @@ export default class CatalogJobConsole extends NavigationMixin(
     const configByDeveloperName = new Map(
       this.configs.map((config) => [config.developerName, config])
     );
-    const trackedConfigsByJobId = new Map();
+    const trackedRunsByJobId = new Map();
 
     this.configs.forEach((config) => {
-      if (
-        config.currentProductIsActive !== true ||
-        !config.currentProductJobId
-      ) {
-        return;
-      }
+      (config.recentProductRuns || []).forEach((recentRun) => {
+        if (!recentRun?.jobId) {
+          return;
+        }
 
-      const ownerConfig =
-        configByDeveloperName.get(config.currentProductConfigDeveloperName) ||
-        config;
+        const ownerConfig =
+          configByDeveloperName.get(recentRun.configDeveloperName) || config;
 
-      trackedConfigsByJobId.set(config.currentProductJobId, ownerConfig);
+        trackedRunsByJobId.set(recentRun.jobId, {
+          config: ownerConfig,
+          recentRun
+        });
+      });
     });
 
-    if (!trackedConfigsByJobId.size) {
+    if (!trackedRunsByJobId.size) {
       return;
     }
 
@@ -1063,13 +1096,13 @@ export default class CatalogJobConsole extends NavigationMixin(
     });
 
     const nextRuns = [];
-    trackedConfigsByJobId.forEach((config, jobId) => {
+    trackedRunsByJobId.forEach(({ config, recentRun }, jobId) => {
       if (knownJobIds.has(jobId)) {
         return;
       }
 
       knownJobIds.add(jobId);
-      nextRuns.push(this.createTrackedProductRunSession(config));
+      nextRuns.push(this.createTrackedProductRunSession(config, recentRun));
     });
 
     if (!nextRuns.length) {
@@ -1077,6 +1110,10 @@ export default class CatalogJobConsole extends NavigationMixin(
     }
 
     nextRuns.forEach((runSession) => {
+      if (runSession.jobs?.[0]?.isTerminal === true) {
+        return;
+      }
+
       const trackedJobId = runSession.jobs?.[0]?.jobId;
       this.addActivity(
         `${runSession.label}: tracking active Salesforce product job${
@@ -1093,18 +1130,28 @@ export default class CatalogJobConsole extends NavigationMixin(
     this.startPollingIfNeeded();
   }
 
-  createTrackedProductRunSession(config) {
+  createTrackedProductRunSession(config, recentRun = null) {
     const runMode =
+      recentRun?.runMode === SYNC_MODE_DELTA ||
       config.currentProductRunMode === SYNC_MODE_DELTA
         ? SYNC_MODE_DELTA
         : SYNC_MODE_FULL;
     const launchedAt =
-      config.currentProductStartedAt || new Date().toISOString();
+      recentRun?.startedAt ||
+      config.currentProductStartedAt ||
+      new Date().toISOString();
+    const jobId = recentRun?.jobId || config.currentProductJobId;
+    const status =
+      recentRun?.status || config.currentProductJobStatus || "Queued";
+    const completedAt = recentRun?.completedAt || null;
+    const isTerminal = recentRun?.isTerminal === true;
 
     return {
-      runKey: `tracked-${config.currentProductJobId}`,
+      runKey: `tracked-${jobId}`,
       developerName:
-        config.currentProductConfigDeveloperName || config.developerName,
+        recentRun?.configDeveloperName ||
+        config.currentProductConfigDeveloperName ||
+        config.developerName,
       label: config.label,
       mode: "products",
       source: "trackedProductJob",
@@ -1113,7 +1160,7 @@ export default class CatalogJobConsole extends NavigationMixin(
       launchedAt,
       jobs: [
         {
-          jobId: config.currentProductJobId,
+          jobId,
           channel: "products",
           label:
             runMode === SYNC_MODE_DELTA
@@ -1123,14 +1170,14 @@ export default class CatalogJobConsole extends NavigationMixin(
           changedRootProductCount: undefined,
           exportProductCount: undefined,
           scopeSummary: "",
-          status: config.currentProductJobStatus || "Queued",
+          status,
           jobItemsProcessed: 0,
           totalJobItems: 0,
           numberOfErrors: 0,
           extendedStatus: "",
-          isTerminal: false,
+          isTerminal,
           createdDate: launchedAt,
-          completedDate: null
+          completedDate: completedAt
         }
       ]
     };
@@ -1293,6 +1340,14 @@ export default class CatalogJobConsole extends NavigationMixin(
         ACTIVITY_STORAGE_KEY,
         JSON.stringify(this.activityFeed)
       );
+      window.sessionStorage.setItem(
+        SELECTED_CONFIG_STORAGE_KEY,
+        this.selectedConfigId || ""
+      );
+      window.sessionStorage.setItem(
+        WORKSPACE_FOCUS_STORAGE_KEY,
+        this.workspaceFocus || "status"
+      );
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn("Unable to persist run-center state", error);
@@ -1304,6 +1359,12 @@ export default class CatalogJobConsole extends NavigationMixin(
       const storedRuns = window.sessionStorage.getItem(RUN_STORAGE_KEY);
       const storedActivity =
         window.sessionStorage.getItem(ACTIVITY_STORAGE_KEY);
+      const storedSelectedConfig = window.sessionStorage.getItem(
+        SELECTED_CONFIG_STORAGE_KEY
+      );
+      const storedWorkspaceFocus = window.sessionStorage.getItem(
+        WORKSPACE_FOCUS_STORAGE_KEY
+      );
 
       if (storedRuns) {
         const parsedRuns = JSON.parse(storedRuns);
@@ -1315,6 +1376,14 @@ export default class CatalogJobConsole extends NavigationMixin(
       if (storedActivity) {
         const parsedActivity = JSON.parse(storedActivity);
         this.activityFeed = Array.isArray(parsedActivity) ? parsedActivity : [];
+      }
+
+      if (storedSelectedConfig) {
+        this.selectedConfigId = storedSelectedConfig;
+      }
+
+      if (storedWorkspaceFocus) {
+        this.workspaceFocus = storedWorkspaceFocus;
       }
     } catch (error) {
       this.runSessions = [];
@@ -1501,6 +1570,10 @@ export default class CatalogJobConsole extends NavigationMixin(
       currentProductJobId: config.currentProductJobId || "",
       currentProductConfigDeveloperName:
         config.currentProductConfigDeveloperName || "",
+      recentProductRuns: this.normalizeRecentProductRuns(
+        config.recentProductRuns,
+        config.DeveloperName
+      ),
       scheduleSummary,
       inventoryExperienceSummary: `${this.normalizeText(
         config.CatalogId__c,
@@ -2083,8 +2156,55 @@ export default class CatalogJobConsole extends NavigationMixin(
       : "cc-workspace-nav__button";
   }
 
+  addMatchedRunSession(
+    matchingRuns,
+    includedRunKeys,
+    includedJobIds,
+    runSession
+  ) {
+    if (!runSession) {
+      return;
+    }
+
+    const decoratedRun = runSession.stages
+      ? runSession
+      : this.decorateRunSession(runSession);
+    const jobIds = (decoratedRun.jobs || [])
+      .map((job) => job.jobId)
+      .filter(Boolean);
+    const runKey = jobIds.length
+      ? jobIds.join("|")
+      : decoratedRun.runKey || null;
+
+    if (jobIds.some((jobId) => includedJobIds.has(jobId))) {
+      return;
+    }
+
+    if (!jobIds.length && runKey && includedRunKeys.has(runKey)) {
+      return;
+    }
+
+    matchingRuns.push(decoratedRun);
+    jobIds.forEach((jobId) => includedJobIds.add(jobId));
+    if (runKey) {
+      includedRunKeys.add(runKey);
+    }
+  }
+
   getRunSessionSortTime(runSession) {
     return this.toTimestamp(runSession?.launchedAt) ?? 0;
+  }
+
+  findRunSessionByKey(runKey) {
+    if (!runKey) {
+      return null;
+    }
+
+    return (
+      this.runSessions.find((run) => run.runKey === runKey) ||
+      this.selectedConfigMatchedRunSessions.find((run) => run.runKey === runKey) ||
+      null
+    );
   }
 
   runMatchesSelectedConfig(runSession) {
@@ -2104,6 +2224,29 @@ export default class CatalogJobConsole extends NavigationMixin(
 
   normalizeText(value, fallback) {
     return value && String(value).trim() ? value : fallback;
+  }
+
+  normalizeRecentProductRuns(recentProductRuns, defaultDeveloperName) {
+    if (!Array.isArray(recentProductRuns)) {
+      return [];
+    }
+
+    return recentProductRuns
+      .filter((recentRun) => recentRun?.jobId)
+      .map((recentRun) => ({
+        ...recentRun,
+        jobId: recentRun.jobId,
+        runMode:
+          recentRun.runMode === SYNC_MODE_DELTA
+            ? SYNC_MODE_DELTA
+            : SYNC_MODE_FULL,
+        configDeveloperName:
+          recentRun.configDeveloperName || defaultDeveloperName,
+        status: recentRun.status || "Queued",
+        startedAt: recentRun.startedAt || null,
+        completedAt: recentRun.completedAt || null,
+        isTerminal: recentRun.isTerminal === true
+      }));
   }
 
   formatMetricMoment(isoValue, fallback) {

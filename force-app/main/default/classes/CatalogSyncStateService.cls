@@ -1,4 +1,6 @@
 public with sharing class CatalogSyncStateService {
+  private static final Integer MAX_RECENT_PRODUCT_RUNS = 8;
+
   @TestVisible
   private static Map<String, CatalogJobConfig__mdt> testConfigsByDeveloperName;
   @TestVisible
@@ -24,8 +26,26 @@ public with sharing class CatalogSyncStateService {
     public String currentProductConfigDeveloperName { get; set; }
     public String currentProductStartedAt { get; set; }
     public Boolean currentProductIsActive { get; set; }
+    public List<RecentProductRun> recentProductRuns { get; set; }
     public Boolean deltaReady { get; set; }
     public String deltaReadinessMessage { get; set; }
+  }
+
+  public class RecentProductRun {
+    @AuraEnabled
+    public String jobId { get; set; }
+    @AuraEnabled
+    public String runMode { get; set; }
+    @AuraEnabled
+    public String configDeveloperName { get; set; }
+    @AuraEnabled
+    public String status { get; set; }
+    @AuraEnabled
+    public String startedAt { get; set; }
+    @AuraEnabled
+    public String completedAt { get; set; }
+    @AuraEnabled
+    public Boolean isTerminal { get; set; }
   }
 
   public class DeltaReadiness {
@@ -44,6 +64,15 @@ public with sharing class CatalogSyncStateService {
     public Boolean isTerminal { get; set; }
   }
 
+  private class StoredRecentProductRun {
+    public String jobId { get; set; }
+    public String runMode { get; set; }
+    public String configDeveloperName { get; set; }
+    public String status { get; set; }
+    public String startedAt { get; set; }
+    public String completedAt { get; set; }
+  }
+
   public static String buildResolvedTargetKey(CatalogJobConfig__mdt jobConfig) {
     List<String> resolvedTarget = new List<String>{
       'orgId',
@@ -57,9 +86,7 @@ public with sharing class CatalogSyncStateService {
       'catalogId',
       normalizeText(jobConfig == null ? null : jobConfig.CatalogId__c),
       'productFilter',
-      normalizeText(
-        jobConfig == null ? null : jobConfig.ProductFilter__c
-      ),
+      normalizeText(jobConfig == null ? null : jobConfig.ProductFilter__c),
       'additionalProductFields',
       canonicalizeCsv(
         jobConfig == null ? null : jobConfig.AdditionalProductFields__c
@@ -67,18 +94,19 @@ public with sharing class CatalogSyncStateService {
       'locale',
       normalizeText(jobConfig == null ? null : jobConfig.Locale__c),
       'buyerGroupAvailabilityMode',
-      CatalogBuyerGroupAvailabilityMode.resolve(
-        jobConfig
-      ),
+      CatalogBuyerGroupAvailabilityMode.resolve(jobConfig),
       'embeddedWebStoreId',
       (jobConfig != null &&
-          CatalogBuyerGroupAvailabilityMode.usesEmbedded(jobConfig))
+        CatalogBuyerGroupAvailabilityMode.usesEmbedded(jobConfig))
         ? normalizeText(jobConfig.WebStoreId__c)
         : ''
     };
 
     return EncodingUtil.convertToHex(
-      Crypto.generateDigest('SHA-256', Blob.valueOf(JSON.serialize(resolvedTarget)))
+      Crypto.generateDigest(
+        'SHA-256',
+        Blob.valueOf(JSON.serialize(resolvedTarget))
+      )
     );
   }
 
@@ -108,17 +136,22 @@ public with sharing class CatalogSyncStateService {
         CatalogSyncMode.isDelta(config) &&
         String.isNotBlank(config.BaselineFullConfigDeveloperName__c)
       ) {
-        deltaBaselineNames.add(config.BaselineFullConfigDeveloperName__c.trim());
+        deltaBaselineNames.add(
+          config.BaselineFullConfigDeveloperName__c.trim()
+        );
       }
     }
 
-    Map<String, CatalogJobConfig__mdt> baselineConfigsByDeveloperName =
-      loadConfigsByDeveloperName(deltaBaselineNames);
+    Map<String, CatalogJobConfig__mdt> baselineConfigsByDeveloperName = loadConfigsByDeveloperName(
+      deltaBaselineNames
+    );
     Set<String> stateKeys = new Set<String>();
     stateKeys.addAll(targetKeyByDeveloperName.values());
 
     Map<String, String> baselineKeyByDeveloperName = new Map<String, String>();
-    for (CatalogJobConfig__mdt baselineConfig : baselineConfigsByDeveloperName.values()) {
+    for (
+      CatalogJobConfig__mdt baselineConfig : baselineConfigsByDeveloperName.values()
+    ) {
       String baselineTargetKey = buildResolvedTargetKey(baselineConfig);
       baselineKeyByDeveloperName.put(
         baselineConfig.DeveloperName,
@@ -134,6 +167,16 @@ public with sharing class CatalogSyncStateService {
     for (Catalog_Sync_State__c stateRecord : statesByTargetKey.values()) {
       if (String.isNotBlank(stateRecord.CurrentProductJobId__c)) {
         trackedProductJobIds.add(stateRecord.CurrentProductJobId__c);
+      }
+
+      for (
+        StoredRecentProductRun storedRun : extractStoredRecentProductRuns(
+          stateRecord
+        )
+      ) {
+        if (String.isNotBlank(storedRun.jobId)) {
+          trackedProductJobIds.add(storedRun.jobId);
+        }
       }
     }
     Map<String, TrackedAsyncJob> trackedJobsById = loadTrackedJobsById(
@@ -164,7 +207,8 @@ public with sharing class CatalogSyncStateService {
         stateRecord,
         trackedJobsById.get(
           stateRecord == null ? null : stateRecord.CurrentProductJobId__c
-        )
+        ),
+        trackedJobsById
       );
       snapshotsByDeveloperName.put(config.DeveloperName, snapshot);
     }
@@ -172,7 +216,9 @@ public with sharing class CatalogSyncStateService {
     return snapshotsByDeveloperName;
   }
 
-  public static DeltaReadiness requireDeltaReadiness(CatalogJobConfig__mdt config) {
+  public static DeltaReadiness requireDeltaReadiness(
+    CatalogJobConfig__mdt config
+  ) {
     DeltaReadiness readiness = evaluateDeltaReadiness(config);
     if (readiness.isReady != true) {
       throw new CatalogJobConfigException(readiness.message);
@@ -180,7 +226,9 @@ public with sharing class CatalogSyncStateService {
     return readiness;
   }
 
-  public static DeltaReadiness evaluateDeltaReadiness(CatalogJobConfig__mdt config) {
+  public static DeltaReadiness evaluateDeltaReadiness(
+    CatalogJobConfig__mdt config
+  ) {
     DeltaReadiness readiness = new DeltaReadiness();
     readiness.resolvedTargetKey = buildResolvedTargetKey(config);
     readiness.isReady = false;
@@ -193,8 +241,7 @@ public with sharing class CatalogSyncStateService {
     }
 
     if (String.isBlank(config.BaselineFullConfigDeveloperName__c)) {
-      readiness.message =
-        'BaselineFullConfigDeveloperName__c is required for Delta sync mode.';
+      readiness.message = 'BaselineFullConfigDeveloperName__c is required for Delta sync mode.';
       return readiness;
     }
 
@@ -224,11 +271,17 @@ public with sharing class CatalogSyncStateService {
     String baselineTargetKey = buildResolvedTargetKey(readiness.baselineConfig);
     readiness.stateRecord = loadStateByTargetKey(readiness.resolvedTargetKey);
     TrackedAsyncJob trackedJob = loadTrackedJobsById(
-      new Set<String>{
-        readiness.stateRecord == null ? null : readiness.stateRecord.CurrentProductJobId__c
-      }
-    )
-    .get(readiness.stateRecord == null ? null : readiness.stateRecord.CurrentProductJobId__c);
+        new Set<String>{
+          readiness.stateRecord == null
+            ? null
+            : readiness.stateRecord.CurrentProductJobId__c
+        }
+      )
+      .get(
+        readiness.stateRecord == null
+          ? null
+          : readiness.stateRecord.CurrentProductJobId__c
+      );
     String readinessFailure = evaluateDeltaReadinessFailure(
       config,
       readiness.baselineConfig,
@@ -263,6 +316,12 @@ public with sharing class CatalogSyncStateService {
     stateRecord.LastSuccessfulSyncAt__c = cutoff;
     stateRecord.LastRunMode__c = CatalogSyncMode.FULL;
     stateRecord.LastSuccessfulConfigDeveloperName__c = config.DeveloperName;
+    markCurrentRecentProductRunCompleted(
+      stateRecord,
+      CatalogSyncMode.FULL,
+      config.DeveloperName,
+      cutoff
+    );
     upsert stateRecord ResolvedTargetKey__c;
   }
 
@@ -278,12 +337,17 @@ public with sharing class CatalogSyncStateService {
     }
 
     if (String.isNotBlank(config.BaselineFullConfigDeveloperName__c)) {
-      stateRecord.BaselineFullConfigDeveloperName__c =
-        config.BaselineFullConfigDeveloperName__c.trim();
+      stateRecord.BaselineFullConfigDeveloperName__c = config.BaselineFullConfigDeveloperName__c.trim();
     }
     stateRecord.LastSuccessfulSyncAt__c = cutoff;
     stateRecord.LastRunMode__c = CatalogSyncMode.DELTA;
     stateRecord.LastSuccessfulConfigDeveloperName__c = config.DeveloperName;
+    markCurrentRecentProductRunCompleted(
+      stateRecord,
+      CatalogSyncMode.DELTA,
+      config.DeveloperName,
+      cutoff
+    );
     upsert stateRecord ResolvedTargetKey__c;
   }
 
@@ -307,8 +371,7 @@ public with sharing class CatalogSyncStateService {
     if (CatalogSyncMode.isFull(config)) {
       stateRecord.BaselineFullConfigDeveloperName__c = config.DeveloperName;
     } else if (String.isNotBlank(config.BaselineFullConfigDeveloperName__c)) {
-      stateRecord.BaselineFullConfigDeveloperName__c =
-        config.BaselineFullConfigDeveloperName__c.trim();
+      stateRecord.BaselineFullConfigDeveloperName__c = config.BaselineFullConfigDeveloperName__c.trim();
     }
 
     stateRecord.CurrentProductJobId__c = String.valueOf(jobId);
@@ -317,6 +380,13 @@ public with sharing class CatalogSyncStateService {
     stateRecord.CurrentProductStartedAt__c = startedAt == null
       ? System.now()
       : startedAt;
+    recordRecentProductRunStart(
+      stateRecord,
+      String.valueOf(jobId),
+      runMode,
+      config.DeveloperName,
+      startedAt
+    );
 
     upsert stateRecord ResolvedTargetKey__c;
   }
@@ -336,7 +406,8 @@ public with sharing class CatalogSyncStateService {
     String targetKey,
     String baselineTargetKey,
     Catalog_Sync_State__c stateRecord,
-    TrackedAsyncJob trackedJob
+    TrackedAsyncJob trackedJob,
+    Map<String, TrackedAsyncJob> trackedJobsById
   ) {
     Snapshot snapshot = new Snapshot();
     snapshot.resolvedTargetKey = targetKey;
@@ -352,7 +423,9 @@ public with sharing class CatalogSyncStateService {
     snapshot.lastSuccessfulSyncAt = formatDatetime(
       stateRecord == null ? null : stateRecord.LastSuccessfulSyncAt__c
     );
-    snapshot.lastRunMode = stateRecord == null ? null : stateRecord.LastRunMode__c;
+    snapshot.lastRunMode = stateRecord == null
+      ? null
+      : stateRecord.LastRunMode__c;
     snapshot.lastSuccessfulConfigDeveloperName = stateRecord == null
       ? null
       : stateRecord.LastSuccessfulConfigDeveloperName__c;
@@ -360,8 +433,7 @@ public with sharing class CatalogSyncStateService {
       snapshot.currentProductJobId = trackedJob.jobId;
       snapshot.currentProductJobStatus = trackedJob.status;
       snapshot.currentProductRunMode = stateRecord.CurrentProductRunMode__c;
-      snapshot.currentProductConfigDeveloperName =
-        stateRecord.CurrentProductConfigDeveloperName__c;
+      snapshot.currentProductConfigDeveloperName = stateRecord.CurrentProductConfigDeveloperName__c;
       snapshot.currentProductStartedAt = formatDatetime(
         trackedJob.createdDate == null
           ? stateRecord.CurrentProductStartedAt__c
@@ -371,6 +443,10 @@ public with sharing class CatalogSyncStateService {
     } else {
       snapshot.currentProductIsActive = false;
     }
+    snapshot.recentProductRuns = buildRecentProductRuns(
+      stateRecord,
+      trackedJobsById
+    );
 
     if (!CatalogSyncMode.isDelta(config)) {
       snapshot.deltaReady = true;
@@ -406,31 +482,30 @@ public with sharing class CatalogSyncStateService {
     }
 
     if (baselineConfig == null) {
-      return
-        'Baseline full config "' +
+      return 'Baseline full config "' +
         config.BaselineFullConfigDeveloperName__c.trim() +
         '" was not found.';
     }
 
     if (!CatalogSyncMode.isFull(baselineConfig)) {
-      return
-        'Baseline full config "' +
+      return 'Baseline full config "' +
         baselineConfig.DeveloperName +
         '" must use SyncMode__c = Full.';
     }
 
     if (baselineTargetKey != targetKey) {
-      return
-        'Baseline full config "' +
+      return 'Baseline full config "' +
         baselineConfig.DeveloperName +
         '" does not resolve to the same export target as delta config "' +
         config.DeveloperName +
         '".';
     }
 
-    if (stateRecord == null || stateRecord.LastSuccessfulFullSyncAt__c == null) {
-      return
-        'Run the baseline full sync once before running delta sync "' +
+    if (
+      stateRecord == null ||
+      stateRecord.LastSuccessfulFullSyncAt__c == null
+    ) {
+      return 'Run the baseline full sync once before running delta sync "' +
         config.DeveloperName +
         '".';
     }
@@ -445,8 +520,7 @@ public with sharing class CatalogSyncStateService {
         )
         ? baselineConfig.DeveloperName
         : stateRecord.CurrentProductConfigDeveloperName__c;
-      return
-        'Baseline full sync "' +
+      return 'Baseline full sync "' +
         activeFullConfigDeveloperName +
         '" is currently running. Wait for it to complete before running delta sync "' +
         config.DeveloperName +
@@ -459,8 +533,7 @@ public with sharing class CatalogSyncStateService {
   private static Map<String, CatalogJobConfig__mdt> loadConfigsByDeveloperName(
     Set<String> developerNames
   ) {
-    Map<String, CatalogJobConfig__mdt> configsByDeveloperName =
-      new Map<String, CatalogJobConfig__mdt>();
+    Map<String, CatalogJobConfig__mdt> configsByDeveloperName = new Map<String, CatalogJobConfig__mdt>();
 
     if (developerNames == null || developerNames.isEmpty()) {
       return configsByDeveloperName;
@@ -509,8 +582,7 @@ public with sharing class CatalogSyncStateService {
   private static Map<String, Catalog_Sync_State__c> loadStatesByTargetKey(
     Set<String> targetKeys
   ) {
-    Map<String, Catalog_Sync_State__c> statesByTargetKey =
-      new Map<String, Catalog_Sync_State__c>();
+    Map<String, Catalog_Sync_State__c> statesByTargetKey = new Map<String, Catalog_Sync_State__c>();
 
     if (targetKeys == null || targetKeys.isEmpty()) {
       return statesByTargetKey;
@@ -518,7 +590,9 @@ public with sharing class CatalogSyncStateService {
 
     if (Test.isRunningTest() && testStatesByTargetKey != null) {
       for (String targetKey : targetKeys) {
-        Catalog_Sync_State__c stateRecord = testStatesByTargetKey.get(targetKey);
+        Catalog_Sync_State__c stateRecord = testStatesByTargetKey.get(
+          targetKey
+        );
         if (stateRecord != null) {
           statesByTargetKey.put(targetKey, stateRecord);
         }
@@ -538,7 +612,8 @@ public with sharing class CatalogSyncStateService {
         LastSuccessfulFullSyncAt__c,
         LastSuccessfulSyncAt__c,
         LastRunMode__c,
-        LastSuccessfulConfigDeveloperName__c
+        LastSuccessfulConfigDeveloperName__c,
+        RecentProductRunsJson__c
       FROM Catalog_Sync_State__c
       WHERE ResolvedTargetKey__c IN :targetKeys
     ]) {
@@ -569,7 +644,8 @@ public with sharing class CatalogSyncStateService {
         LastSuccessfulFullSyncAt__c,
         LastSuccessfulSyncAt__c,
         LastRunMode__c,
-        LastSuccessfulConfigDeveloperName__c
+        LastSuccessfulConfigDeveloperName__c,
+        RecentProductRunsJson__c
       FROM Catalog_Sync_State__c
       WHERE ResolvedTargetKey__c = :targetKey
       LIMIT 1
@@ -647,6 +723,324 @@ public with sharing class CatalogSyncStateService {
     return status == 'Completed' || status == 'Aborted' || status == 'Failed';
   }
 
+  private static void recordRecentProductRunStart(
+    Catalog_Sync_State__c stateRecord,
+    String jobId,
+    String runMode,
+    String configDeveloperName,
+    Datetime startedAt
+  ) {
+    if (stateRecord == null || String.isBlank(jobId)) {
+      return;
+    }
+
+    StoredRecentProductRun recentRun = new StoredRecentProductRun();
+    recentRun.jobId = jobId;
+    recentRun.runMode = CatalogSyncMode.resolve(runMode);
+    recentRun.configDeveloperName = configDeveloperName;
+    recentRun.status = 'Queued';
+    recentRun.startedAt = formatDatetime(
+      startedAt == null ? System.now() : startedAt
+    );
+    recentRun.completedAt = null;
+    stateRecord.RecentProductRunsJson__c = serializeRecentProductRuns(
+      upsertRecentProductRun(
+        extractStoredRecentProductRuns(stateRecord),
+        recentRun
+      )
+    );
+  }
+
+  private static void markCurrentRecentProductRunCompleted(
+    Catalog_Sync_State__c stateRecord,
+    String runMode,
+    String configDeveloperName,
+    Datetime completedAt
+  ) {
+    if (
+      stateRecord == null || String.isBlank(stateRecord.CurrentProductJobId__c)
+    ) {
+      return;
+    }
+
+    StoredRecentProductRun recentRun = new StoredRecentProductRun();
+    recentRun.jobId = stateRecord.CurrentProductJobId__c;
+    recentRun.runMode = CatalogSyncMode.resolve(runMode);
+    recentRun.configDeveloperName = configDeveloperName;
+    recentRun.status = 'Completed';
+    recentRun.startedAt = formatDatetime(
+      stateRecord.CurrentProductStartedAt__c
+    );
+    recentRun.completedAt = formatDatetime(
+      completedAt == null ? System.now() : completedAt
+    );
+    stateRecord.RecentProductRunsJson__c = serializeRecentProductRuns(
+      upsertRecentProductRun(
+        extractStoredRecentProductRuns(stateRecord),
+        recentRun
+      )
+    );
+  }
+
+  private static List<RecentProductRun> buildRecentProductRuns(
+    Catalog_Sync_State__c stateRecord,
+    Map<String, TrackedAsyncJob> trackedJobsById
+  ) {
+    List<RecentProductRun> recentProductRuns = new List<RecentProductRun>();
+
+    for (
+      StoredRecentProductRun storedRun : extractStoredRecentProductRuns(
+        stateRecord
+      )
+    ) {
+      if (String.isBlank(storedRun.jobId)) {
+        continue;
+      }
+
+      TrackedAsyncJob trackedJob = trackedJobsById == null
+        ? null
+        : trackedJobsById.get(storedRun.jobId);
+      RecentProductRun recentRun = new RecentProductRun();
+      recentRun.jobId = storedRun.jobId;
+      recentRun.runMode = CatalogSyncMode.resolve(storedRun.runMode);
+      recentRun.configDeveloperName = normalizeStoredRecentProductRunValue(
+        storedRun.configDeveloperName
+      );
+      recentRun.status = trackedJob == null
+        ? defaultRecentProductRunStatus(storedRun)
+        : trackedJob.status;
+      recentRun.startedAt = trackedJob != null &&
+        trackedJob.createdDate != null
+        ? formatDatetime(trackedJob.createdDate)
+        : storedRun.startedAt;
+      recentRun.completedAt = trackedJob != null &&
+        trackedJob.completedDate != null
+        ? formatDatetime(trackedJob.completedDate)
+        : storedRun.completedAt;
+      recentRun.isTerminal = trackedJob != null
+        ? trackedJob.isTerminal
+        : isTerminalAsyncJobStatus(recentRun.status);
+      recentProductRuns.add(recentRun);
+    }
+
+    return recentProductRuns;
+  }
+
+  private static String defaultRecentProductRunStatus(
+    StoredRecentProductRun storedRun
+  ) {
+    if (String.isNotBlank(storedRun.status)) {
+      return storedRun.status;
+    }
+
+    return String.isNotBlank(storedRun.completedAt) ? 'Completed' : 'Queued';
+  }
+
+  private static List<StoredRecentProductRun> extractStoredRecentProductRuns(
+    Catalog_Sync_State__c stateRecord
+  ) {
+    List<StoredRecentProductRun> recentRuns = parseRecentProductRuns(
+      stateRecord == null ? null : stateRecord.RecentProductRunsJson__c
+    );
+
+    if (
+      stateRecord == null || String.isBlank(stateRecord.CurrentProductJobId__c)
+    ) {
+      return recentRuns;
+    }
+
+    StoredRecentProductRun currentRun = new StoredRecentProductRun();
+    currentRun.jobId = stateRecord.CurrentProductJobId__c;
+    currentRun.runMode = stateRecord.CurrentProductRunMode__c;
+    currentRun.configDeveloperName = stateRecord.CurrentProductConfigDeveloperName__c;
+    currentRun.startedAt = formatDatetime(
+      stateRecord.CurrentProductStartedAt__c
+    );
+    return upsertRecentProductRun(recentRuns, currentRun);
+  }
+
+  private static List<StoredRecentProductRun> parseRecentProductRuns(
+    String jsonValue
+  ) {
+    List<StoredRecentProductRun> recentRuns = new List<StoredRecentProductRun>();
+
+    if (String.isBlank(jsonValue)) {
+      return recentRuns;
+    }
+
+    try {
+      for (Object rawRun : (List<Object>) JSON.deserializeUntyped(jsonValue)) {
+        Map<String, Object> rawFields;
+        try {
+          rawFields = (Map<String, Object>) rawRun;
+        } catch (Exception e) {
+          continue;
+        }
+
+        StoredRecentProductRun recentRun = new StoredRecentProductRun();
+        recentRun.jobId = normalizeStoredRecentProductRunValue(
+          rawFields.get('jobId')
+        );
+        recentRun.runMode = normalizeStoredRecentProductRunValue(
+          rawFields.get('runMode')
+        );
+        recentRun.configDeveloperName = normalizeStoredRecentProductRunValue(
+          rawFields.get('configDeveloperName')
+        );
+        recentRun.status = normalizeStoredRecentProductRunValue(
+          rawFields.get('status')
+        );
+        recentRun.startedAt = normalizeStoredRecentProductRunValue(
+          rawFields.get('startedAt')
+        );
+        recentRun.completedAt = normalizeStoredRecentProductRunValue(
+          rawFields.get('completedAt')
+        );
+        if (String.isNotBlank(recentRun.jobId)) {
+          recentRuns.add(recentRun);
+        }
+      }
+    } catch (Exception e) {
+      return new List<StoredRecentProductRun>();
+    }
+
+    return upsertRecentProductRun(
+      new List<StoredRecentProductRun>(),
+      null,
+      recentRuns
+    );
+  }
+
+  private static List<StoredRecentProductRun> upsertRecentProductRun(
+    List<StoredRecentProductRun> existingRuns,
+    StoredRecentProductRun newRun
+  ) {
+    return upsertRecentProductRun(
+      existingRuns,
+      newRun,
+      new List<StoredRecentProductRun>()
+    );
+  }
+
+  private static List<StoredRecentProductRun> upsertRecentProductRun(
+    List<StoredRecentProductRun> existingRuns,
+    StoredRecentProductRun newRun,
+    List<StoredRecentProductRun> additionalRuns
+  ) {
+    Map<String, StoredRecentProductRun> existingRunsByJobId = new Map<String, StoredRecentProductRun>();
+    List<String> orderedJobIds = new List<String>();
+
+    for (StoredRecentProductRun existingRun : existingRuns) {
+      if (existingRun == null || String.isBlank(existingRun.jobId)) {
+        continue;
+      }
+
+      existingRunsByJobId.put(existingRun.jobId, existingRun);
+      if (!orderedJobIds.contains(existingRun.jobId)) {
+        orderedJobIds.add(existingRun.jobId);
+      }
+    }
+
+    List<StoredRecentProductRun> mergedRuns = new List<StoredRecentProductRun>();
+    Set<String> includedJobIds = new Set<String>();
+    List<StoredRecentProductRun> preferredRuns = new List<StoredRecentProductRun>();
+
+    if (newRun != null && String.isNotBlank(newRun.jobId)) {
+      preferredRuns.add(newRun);
+    }
+    preferredRuns.addAll(additionalRuns);
+
+    for (StoredRecentProductRun preferredRun : preferredRuns) {
+      if (preferredRun == null || String.isBlank(preferredRun.jobId)) {
+        continue;
+      }
+
+      if (includedJobIds.contains(preferredRun.jobId)) {
+        continue;
+      }
+
+      mergedRuns.add(
+        mergeStoredRecentProductRun(
+          preferredRun,
+          existingRunsByJobId.get(preferredRun.jobId)
+        )
+      );
+      includedJobIds.add(preferredRun.jobId);
+      if (mergedRuns.size() >= MAX_RECENT_PRODUCT_RUNS) {
+        return mergedRuns;
+      }
+    }
+
+    for (String jobId : orderedJobIds) {
+      if (includedJobIds.contains(jobId)) {
+        continue;
+      }
+
+      mergedRuns.add(
+        mergeStoredRecentProductRun(existingRunsByJobId.get(jobId), null)
+      );
+      includedJobIds.add(jobId);
+      if (mergedRuns.size() >= MAX_RECENT_PRODUCT_RUNS) {
+        break;
+      }
+    }
+
+    return mergedRuns;
+  }
+
+  private static StoredRecentProductRun mergeStoredRecentProductRun(
+    StoredRecentProductRun preferredRun,
+    StoredRecentProductRun fallbackRun
+  ) {
+    StoredRecentProductRun mergedRun = new StoredRecentProductRun();
+    mergedRun.jobId = firstNonBlank(
+      preferredRun == null ? null : preferredRun.jobId,
+      fallbackRun == null ? null : fallbackRun.jobId
+    );
+    mergedRun.runMode = CatalogSyncMode.resolve(
+      firstNonBlank(
+        preferredRun == null ? null : preferredRun.runMode,
+        fallbackRun == null ? null : fallbackRun.runMode
+      )
+    );
+    mergedRun.configDeveloperName = firstNonBlank(
+      preferredRun == null ? null : preferredRun.configDeveloperName,
+      fallbackRun == null ? null : fallbackRun.configDeveloperName
+    );
+    mergedRun.status = firstNonBlank(
+      preferredRun == null ? null : preferredRun.status,
+      fallbackRun == null ? null : fallbackRun.status
+    );
+    mergedRun.startedAt = firstNonBlank(
+      preferredRun == null ? null : preferredRun.startedAt,
+      fallbackRun == null ? null : fallbackRun.startedAt
+    );
+    mergedRun.completedAt = firstNonBlank(
+      preferredRun == null ? null : preferredRun.completedAt,
+      fallbackRun == null ? null : fallbackRun.completedAt
+    );
+    return mergedRun;
+  }
+
+  private static String serializeRecentProductRuns(
+    List<StoredRecentProductRun> recentRuns
+  ) {
+    return recentRuns == null || recentRuns.isEmpty()
+      ? null
+      : JSON.serialize(recentRuns);
+  }
+
+  private static String firstNonBlank(
+    String primaryValue,
+    String fallbackValue
+  ) {
+    return String.isNotBlank(primaryValue) ? primaryValue : fallbackValue;
+  }
+
+  private static String normalizeStoredRecentProductRunValue(Object rawValue) {
+    return rawValue == null ? null : String.valueOf(rawValue).trim();
+  }
+
   private static String canonicalizeCsv(String csvValue) {
     List<String> normalizedValues = new List<String>();
 
@@ -656,7 +1050,10 @@ public with sharing class CatalogSyncStateService {
 
     for (String token : csvValue.split(',')) {
       String normalizedToken = normalizeText(token).toLowerCase();
-      if (String.isNotBlank(normalizedToken) && !normalizedValues.contains(normalizedToken)) {
+      if (
+        String.isNotBlank(normalizedToken) &&
+        !normalizedValues.contains(normalizedToken)
+      ) {
         normalizedValues.add(normalizedToken);
       }
     }
@@ -670,6 +1067,8 @@ public with sharing class CatalogSyncStateService {
   }
 
   private static String formatDatetime(Datetime value) {
-    return value == null ? null : value.formatGmt('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
+    return value == null
+      ? null
+      : value.formatGmt('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
   }
 }

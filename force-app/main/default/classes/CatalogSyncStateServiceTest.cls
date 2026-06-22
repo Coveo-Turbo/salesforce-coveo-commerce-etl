@@ -57,12 +57,10 @@ private class CatalogSyncStateServiceTest {
       ResolvedTargetKey__c = CatalogSyncStateService.buildResolvedTargetKey(
         config
       ),
-      BaselineFullConfigDeveloperName__c =
-        config.BaselineFullConfigDeveloperName__c,
+      BaselineFullConfigDeveloperName__c = config.BaselineFullConfigDeveloperName__c,
       CurrentProductJobId__c = currentProductJobId,
       CurrentProductRunMode__c = currentProductRunMode,
-      CurrentProductConfigDeveloperName__c =
-        currentProductConfigDeveloperName,
+      CurrentProductConfigDeveloperName__c = currentProductConfigDeveloperName,
       CurrentProductStartedAt__c = currentProductStartedAt,
       LastSuccessfulFullSyncAt__c = fullCutoff,
       LastSuccessfulSyncAt__c = syncCutoff,
@@ -103,22 +101,33 @@ private class CatalogSyncStateServiceTest {
         LastRunMode__c,
         LastSuccessfulConfigDeveloperName__c
       FROM Catalog_Sync_State__c
-      WHERE ResolvedTargetKey__c = :CatalogSyncStateService.buildResolvedTargetKey(
-        config
-      )
+      WHERE
+        ResolvedTargetKey__c = :CatalogSyncStateService.buildResolvedTargetKey(
+          config
+        )
       LIMIT 1
     ];
 
-    System.assertEquals('FULL_CONFIG', stateRecord.BaselineFullConfigDeveloperName__c);
+    System.assertEquals(
+      'FULL_CONFIG',
+      stateRecord.BaselineFullConfigDeveloperName__c
+    );
     System.assertEquals(cutoff, stateRecord.LastSuccessfulFullSyncAt__c);
     System.assertEquals(cutoff, stateRecord.LastSuccessfulSyncAt__c);
     System.assertEquals(CatalogSyncMode.FULL, stateRecord.LastRunMode__c);
-    System.assertEquals('FULL_CONFIG', stateRecord.LastSuccessfulConfigDeveloperName__c);
+    System.assertEquals(
+      'FULL_CONFIG',
+      stateRecord.LastSuccessfulConfigDeveloperName__c
+    );
   }
 
   @IsTest
   static void testRecordSuccessfulDeltaSync_updatesExistingState() {
-    CatalogJobConfig__mdt fullConfig = createConfig('FULL_CONFIG', 'Full', null);
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_CONFIG',
+      'Full',
+      null
+    );
     CatalogJobConfig__mdt deltaConfig = createConfig(
       'DELTA_CONFIG',
       'Delta',
@@ -141,13 +150,17 @@ private class CatalogSyncStateServiceTest {
         LastRunMode__c,
         LastSuccessfulConfigDeveloperName__c
       FROM Catalog_Sync_State__c
-      WHERE ResolvedTargetKey__c = :CatalogSyncStateService.buildResolvedTargetKey(
-        deltaConfig
-      )
+      WHERE
+        ResolvedTargetKey__c = :CatalogSyncStateService.buildResolvedTargetKey(
+          deltaConfig
+        )
       LIMIT 1
     ];
 
-    System.assertEquals('FULL_CONFIG', stateRecord.BaselineFullConfigDeveloperName__c);
+    System.assertEquals(
+      'FULL_CONFIG',
+      stateRecord.BaselineFullConfigDeveloperName__c
+    );
     System.assertEquals(fullCutoff, stateRecord.LastSuccessfulFullSyncAt__c);
     System.assertEquals(deltaCutoff, stateRecord.LastSuccessfulSyncAt__c);
     System.assertEquals(CatalogSyncMode.DELTA, stateRecord.LastRunMode__c);
@@ -176,11 +189,13 @@ private class CatalogSyncStateServiceTest {
         CurrentProductJobId__c,
         CurrentProductRunMode__c,
         CurrentProductConfigDeveloperName__c,
-        CurrentProductStartedAt__c
+        CurrentProductStartedAt__c,
+        RecentProductRunsJson__c
       FROM Catalog_Sync_State__c
-      WHERE ResolvedTargetKey__c = :CatalogSyncStateService.buildResolvedTargetKey(
-        config
-      )
+      WHERE
+        ResolvedTargetKey__c = :CatalogSyncStateService.buildResolvedTargetKey(
+          config
+        )
       LIMIT 1
     ];
 
@@ -188,30 +203,84 @@ private class CatalogSyncStateServiceTest {
       String.valueOf(UserInfo.getUserId()),
       stateRecord.CurrentProductJobId__c
     );
-    System.assertEquals(CatalogSyncMode.FULL, stateRecord.CurrentProductRunMode__c);
+    System.assertEquals(
+      CatalogSyncMode.FULL,
+      stateRecord.CurrentProductRunMode__c
+    );
     System.assertEquals(
       'FULL_CONFIG',
       stateRecord.CurrentProductConfigDeveloperName__c
     );
     System.assertEquals(startedAt, stateRecord.CurrentProductStartedAt__c);
+    System.assert(stateRecord.RecentProductRunsJson__c.contains('FULL_CONFIG'));
+    System.assert(
+      stateRecord.RecentProductRunsJson__c.contains(
+        String.valueOf(UserInfo.getUserId())
+      )
+    );
+  }
+
+  @IsTest
+  static void testRecordSuccessfulFullSync_marksRecentRunCompleted() {
+    CatalogJobConfig__mdt config = createConfig('FULL_CONFIG', 'Full', null);
+    Datetime startedAt = Datetime.newInstanceGmt(2026, 4, 2, 9, 15, 0);
+    Datetime cutoff = Datetime.newInstanceGmt(2026, 4, 2, 9, 45, 0);
+    Id jobId = UserInfo.getUserId();
+
+    CatalogSyncStateService.recordStartedProductSync(
+      config,
+      CatalogSyncMode.FULL,
+      jobId,
+      startedAt
+    );
+
+    Test.startTest();
+    CatalogSyncStateService.recordSuccessfulFullSync(config, cutoff);
+    Test.stopTest();
+
+    Catalog_Sync_State__c stateRecord = [
+      SELECT RecentProductRunsJson__c
+      FROM Catalog_Sync_State__c
+      WHERE
+        ResolvedTargetKey__c = :CatalogSyncStateService.buildResolvedTargetKey(
+          config
+        )
+      LIMIT 1
+    ];
+
+    System.assert(stateRecord.RecentProductRunsJson__c.contains('Completed'));
+    System.assert(
+      stateRecord.RecentProductRunsJson__c.contains('2026-04-02T09:45:00Z')
+    );
   }
 
   @IsTest
   static void testEvaluateDeltaReadiness_requiresBaselineReference() {
-    CatalogJobConfig__mdt deltaConfig = createConfig('DELTA_ONLY', 'Delta', null);
+    CatalogJobConfig__mdt deltaConfig = createConfig(
+      'DELTA_ONLY',
+      'Delta',
+      null
+    );
 
-    CatalogSyncStateService.DeltaReadiness readiness =
-      CatalogSyncStateService.evaluateDeltaReadiness(deltaConfig);
+    CatalogSyncStateService.DeltaReadiness readiness = CatalogSyncStateService.evaluateDeltaReadiness(
+      deltaConfig
+    );
 
     System.assertEquals(false, readiness.isReady);
     System.assert(
-      readiness.message.contains('BaselineFullConfigDeveloperName__c is required')
+      readiness.message.contains(
+        'BaselineFullConfigDeveloperName__c is required'
+      )
     );
   }
 
   @IsTest
   static void testEvaluateDeltaReadiness_rejectsBaselineTargetMismatch() {
-    CatalogJobConfig__mdt fullConfig = createConfig('FULL_CONFIG', 'Full', null);
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_CONFIG',
+      'Full',
+      null
+    );
     fullConfig.SourceId__c = 'full-source';
     CatalogJobConfig__mdt deltaConfig = createConfig(
       'DELTA_CONFIG',
@@ -220,38 +289,54 @@ private class CatalogSyncStateServiceTest {
     );
     deltaConfig.SourceId__c = 'delta-source';
 
-    CatalogSyncStateService.testConfigsByDeveloperName =
-      new Map<String, CatalogJobConfig__mdt>{ 'FULL_CONFIG' => fullConfig };
+    CatalogSyncStateService.testConfigsByDeveloperName = new Map<String, CatalogJobConfig__mdt>{
+      'FULL_CONFIG' => fullConfig
+    };
 
-    CatalogSyncStateService.DeltaReadiness readiness =
-      CatalogSyncStateService.evaluateDeltaReadiness(deltaConfig);
+    CatalogSyncStateService.DeltaReadiness readiness = CatalogSyncStateService.evaluateDeltaReadiness(
+      deltaConfig
+    );
 
     System.assertEquals(false, readiness.isReady);
-    System.assert(readiness.message.contains('does not resolve to the same export target'));
+    System.assert(
+      readiness.message.contains('does not resolve to the same export target')
+    );
   }
 
   @IsTest
   static void testEvaluateDeltaReadiness_rejectsMissingBaselineState() {
-    CatalogJobConfig__mdt fullConfig = createConfig('FULL_CONFIG', 'Full', null);
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_CONFIG',
+      'Full',
+      null
+    );
     CatalogJobConfig__mdt deltaConfig = createConfig(
       'DELTA_CONFIG',
       'Delta',
       'FULL_CONFIG'
     );
 
-    CatalogSyncStateService.testConfigsByDeveloperName =
-      new Map<String, CatalogJobConfig__mdt>{ 'FULL_CONFIG' => fullConfig };
+    CatalogSyncStateService.testConfigsByDeveloperName = new Map<String, CatalogJobConfig__mdt>{
+      'FULL_CONFIG' => fullConfig
+    };
 
-    CatalogSyncStateService.DeltaReadiness readiness =
-      CatalogSyncStateService.evaluateDeltaReadiness(deltaConfig);
+    CatalogSyncStateService.DeltaReadiness readiness = CatalogSyncStateService.evaluateDeltaReadiness(
+      deltaConfig
+    );
 
     System.assertEquals(false, readiness.isReady);
-    System.assert(readiness.message.contains('Run the baseline full sync once'));
+    System.assert(
+      readiness.message.contains('Run the baseline full sync once')
+    );
   }
 
   @IsTest
   static void testEvaluateDeltaReadiness_acceptsMatchingBaselineState() {
-    CatalogJobConfig__mdt fullConfig = createConfig('FULL_CONFIG', 'Full', null);
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_CONFIG',
+      'Full',
+      null
+    );
     CatalogJobConfig__mdt deltaConfig = createConfig(
       'DELTA_CONFIG',
       'Delta',
@@ -260,30 +345,40 @@ private class CatalogSyncStateServiceTest {
     Datetime fullCutoff = System.now().addHours(-3);
     Datetime deltaCutoff = System.now().addHours(-1);
 
-    CatalogSyncStateService.testConfigsByDeveloperName =
-      new Map<String, CatalogJobConfig__mdt>{ 'FULL_CONFIG' => fullConfig };
-    CatalogSyncStateService.testStatesByTargetKey =
-      new Map<String, Catalog_Sync_State__c>{
-        CatalogSyncStateService.buildResolvedTargetKey(deltaConfig) => createState(
-          deltaConfig,
-          fullCutoff,
-          deltaCutoff,
-          CatalogSyncMode.DELTA,
-          'DELTA_CONFIG'
-        )
-      };
+    CatalogSyncStateService.testConfigsByDeveloperName = new Map<String, CatalogJobConfig__mdt>{
+      'FULL_CONFIG' => fullConfig
+    };
+    CatalogSyncStateService.testStatesByTargetKey = new Map<String, Catalog_Sync_State__c>{
+      CatalogSyncStateService.buildResolvedTargetKey(
+        deltaConfig
+      ) => createState(
+        deltaConfig,
+        fullCutoff,
+        deltaCutoff,
+        CatalogSyncMode.DELTA,
+        'DELTA_CONFIG'
+      )
+    };
 
-    CatalogSyncStateService.DeltaReadiness readiness =
-      CatalogSyncStateService.evaluateDeltaReadiness(deltaConfig);
+    CatalogSyncStateService.DeltaReadiness readiness = CatalogSyncStateService.evaluateDeltaReadiness(
+      deltaConfig
+    );
 
     System.assertEquals(true, readiness.isReady);
     System.assertEquals('Delta sync is ready.', readiness.message);
-    System.assertEquals(deltaCutoff, readiness.stateRecord.LastSuccessfulSyncAt__c);
+    System.assertEquals(
+      deltaCutoff,
+      readiness.stateRecord.LastSuccessfulSyncAt__c
+    );
   }
 
   @IsTest
   static void testEvaluateDeltaReadiness_rejectsActiveFullRun() {
-    CatalogJobConfig__mdt fullConfig = createConfig('FULL_CONFIG', 'Full', null);
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_CONFIG',
+      'Full',
+      null
+    );
     CatalogJobConfig__mdt deltaConfig = createConfig(
       'DELTA_CONFIG',
       'Delta',
@@ -292,27 +387,31 @@ private class CatalogSyncStateServiceTest {
     Datetime fullCutoff = Datetime.newInstanceGmt(2026, 4, 1, 10, 0, 0);
     String trackedJobId = '707000000000001AAA';
 
-    CatalogSyncStateService.testConfigsByDeveloperName =
-      new Map<String, CatalogJobConfig__mdt>{ 'FULL_CONFIG' => fullConfig };
-    CatalogSyncStateService.testStatesByTargetKey =
-      new Map<String, Catalog_Sync_State__c>{
-        CatalogSyncStateService.buildResolvedTargetKey(deltaConfig) => createState(
-          deltaConfig,
-          fullCutoff,
-          fullCutoff,
-          CatalogSyncMode.FULL,
-          'FULL_CONFIG',
-          trackedJobId,
-          CatalogSyncMode.FULL,
-          'FULL_CONFIG',
-          Datetime.newInstanceGmt(2026, 4, 2, 9, 15, 0)
-        )
-      };
-    CatalogSyncStateService.testAsyncJobStatusesById =
-      new Map<String, String>{ trackedJobId => 'Processing' };
+    CatalogSyncStateService.testConfigsByDeveloperName = new Map<String, CatalogJobConfig__mdt>{
+      'FULL_CONFIG' => fullConfig
+    };
+    CatalogSyncStateService.testStatesByTargetKey = new Map<String, Catalog_Sync_State__c>{
+      CatalogSyncStateService.buildResolvedTargetKey(
+        deltaConfig
+      ) => createState(
+        deltaConfig,
+        fullCutoff,
+        fullCutoff,
+        CatalogSyncMode.FULL,
+        'FULL_CONFIG',
+        trackedJobId,
+        CatalogSyncMode.FULL,
+        'FULL_CONFIG',
+        Datetime.newInstanceGmt(2026, 4, 2, 9, 15, 0)
+      )
+    };
+    CatalogSyncStateService.testAsyncJobStatusesById = new Map<String, String>{
+      trackedJobId => 'Processing'
+    };
 
-    CatalogSyncStateService.DeltaReadiness readiness =
-      CatalogSyncStateService.evaluateDeltaReadiness(deltaConfig);
+    CatalogSyncStateService.DeltaReadiness readiness = CatalogSyncStateService.evaluateDeltaReadiness(
+      deltaConfig
+    );
 
     System.assertEquals(false, readiness.isReady);
     System.assert(readiness.message.contains('currently running'));
@@ -320,7 +419,11 @@ private class CatalogSyncStateServiceTest {
 
   @IsTest
   static void testGetSnapshotsByDeveloperName_includesDeltaReadinessAndWatermarks() {
-    CatalogJobConfig__mdt fullConfig = createConfig('FULL_CONFIG', 'Full', null);
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_CONFIG',
+      'Full',
+      null
+    );
     CatalogJobConfig__mdt deltaConfig = createConfig(
       'DELTA_CONFIG',
       'Delta',
@@ -329,28 +432,33 @@ private class CatalogSyncStateServiceTest {
     Datetime fullCutoff = Datetime.newInstanceGmt(2026, 4, 1, 10, 0, 0);
     Datetime deltaCutoff = Datetime.newInstanceGmt(2026, 4, 1, 12, 0, 0);
 
-    CatalogSyncStateService.testConfigsByDeveloperName =
-      new Map<String, CatalogJobConfig__mdt>{ 'FULL_CONFIG' => fullConfig };
-    CatalogSyncStateService.testStatesByTargetKey =
-      new Map<String, Catalog_Sync_State__c>{
-        CatalogSyncStateService.buildResolvedTargetKey(fullConfig) => createState(
-          deltaConfig,
-          fullCutoff,
-          deltaCutoff,
-          CatalogSyncMode.DELTA,
-          'DELTA_CONFIG'
-        )
-      };
+    CatalogSyncStateService.testConfigsByDeveloperName = new Map<String, CatalogJobConfig__mdt>{
+      'FULL_CONFIG' => fullConfig
+    };
+    CatalogSyncStateService.testStatesByTargetKey = new Map<String, Catalog_Sync_State__c>{
+      CatalogSyncStateService.buildResolvedTargetKey(fullConfig) => createState(
+        deltaConfig,
+        fullCutoff,
+        deltaCutoff,
+        CatalogSyncMode.DELTA,
+        'DELTA_CONFIG'
+      )
+    };
 
-    Map<String, CatalogSyncStateService.Snapshot> snapshots =
-      CatalogSyncStateService.getSnapshotsByDeveloperName(
-        new List<CatalogJobConfig__mdt>{ fullConfig, deltaConfig }
-      );
+    Map<String, CatalogSyncStateService.Snapshot> snapshots = CatalogSyncStateService.getSnapshotsByDeveloperName(
+      new List<CatalogJobConfig__mdt>{ fullConfig, deltaConfig }
+    );
 
     System.assertEquals(true, snapshots.get('FULL_CONFIG').deltaReady);
-    System.assertEquals(false, String.isBlank(snapshots.get('FULL_CONFIG').resolvedTargetKey));
+    System.assertEquals(
+      false,
+      String.isBlank(snapshots.get('FULL_CONFIG').resolvedTargetKey)
+    );
     System.assertEquals(true, snapshots.get('DELTA_CONFIG').deltaReady);
-    System.assertEquals('FULL_CONFIG', snapshots.get('DELTA_CONFIG').baselineFullConfigDeveloperName);
+    System.assertEquals(
+      'FULL_CONFIG',
+      snapshots.get('DELTA_CONFIG').baselineFullConfigDeveloperName
+    );
     System.assertEquals(
       '2026-04-01T10:00:00Z',
       snapshots.get('DELTA_CONFIG').lastSuccessfulFullSyncAt
@@ -359,39 +467,46 @@ private class CatalogSyncStateServiceTest {
       '2026-04-01T12:00:00Z',
       snapshots.get('DELTA_CONFIG').lastSuccessfulSyncAt
     );
-    System.assertEquals(CatalogSyncMode.DELTA, snapshots.get('DELTA_CONFIG').lastRunMode);
+    System.assertEquals(
+      CatalogSyncMode.DELTA,
+      snapshots.get('DELTA_CONFIG').lastRunMode
+    );
   }
 
   @IsTest
   static void testGetSnapshotsByDeveloperName_includesActiveProductRunDetails() {
-    CatalogJobConfig__mdt fullConfig = createConfig('FULL_CONFIG', 'Full', null);
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_CONFIG',
+      'Full',
+      null
+    );
     Datetime fullCutoff = Datetime.newInstanceGmt(2026, 4, 1, 10, 0, 0);
     Datetime startedAt = Datetime.newInstanceGmt(2026, 4, 2, 9, 15, 0);
     String trackedJobId = '707000000000001AAA';
 
-    CatalogSyncStateService.testStatesByTargetKey =
-      new Map<String, Catalog_Sync_State__c>{
-        CatalogSyncStateService.buildResolvedTargetKey(fullConfig) => createState(
-          fullConfig,
-          fullCutoff,
-          fullCutoff,
-          CatalogSyncMode.FULL,
-          'FULL_CONFIG',
-          trackedJobId,
-          CatalogSyncMode.FULL,
-          'FULL_CONFIG',
-          startedAt
-        )
-      };
-    CatalogSyncStateService.testAsyncJobStatusesById =
-      new Map<String, String>{ trackedJobId => 'Processing' };
-    CatalogSyncStateService.testAsyncJobCreatedDatesById =
-      new Map<String, Datetime>{ trackedJobId => startedAt };
+    CatalogSyncStateService.testStatesByTargetKey = new Map<String, Catalog_Sync_State__c>{
+      CatalogSyncStateService.buildResolvedTargetKey(fullConfig) => createState(
+        fullConfig,
+        fullCutoff,
+        fullCutoff,
+        CatalogSyncMode.FULL,
+        'FULL_CONFIG',
+        trackedJobId,
+        CatalogSyncMode.FULL,
+        'FULL_CONFIG',
+        startedAt
+      )
+    };
+    CatalogSyncStateService.testAsyncJobStatusesById = new Map<String, String>{
+      trackedJobId => 'Processing'
+    };
+    CatalogSyncStateService.testAsyncJobCreatedDatesById = new Map<String, Datetime>{
+      trackedJobId => startedAt
+    };
 
-    Map<String, CatalogSyncStateService.Snapshot> snapshots =
-      CatalogSyncStateService.getSnapshotsByDeveloperName(
-        new List<CatalogJobConfig__mdt>{ fullConfig }
-      );
+    Map<String, CatalogSyncStateService.Snapshot> snapshots = CatalogSyncStateService.getSnapshotsByDeveloperName(
+      new List<CatalogJobConfig__mdt>{ fullConfig }
+    );
 
     CatalogSyncStateService.Snapshot snapshot = snapshots.get('FULL_CONFIG');
     System.assertEquals(trackedJobId, snapshot.currentProductJobId);
@@ -401,13 +516,71 @@ private class CatalogSyncStateServiceTest {
       'FULL_CONFIG',
       snapshot.currentProductConfigDeveloperName
     );
-    System.assertEquals('2026-04-02T09:15:00Z', snapshot.currentProductStartedAt);
+    System.assertEquals(
+      '2026-04-02T09:15:00Z',
+      snapshot.currentProductStartedAt
+    );
     System.assertEquals(true, snapshot.currentProductIsActive);
   }
 
   @IsTest
+  static void testGetSnapshotsByDeveloperName_includesRecentCompletedProductRuns() {
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_CONFIG',
+      'Full',
+      null
+    );
+    Datetime fullCutoff = Datetime.newInstanceGmt(2026, 4, 1, 10, 0, 0);
+    Catalog_Sync_State__c stateRecord = createState(
+      fullConfig,
+      fullCutoff,
+      fullCutoff,
+      CatalogSyncMode.FULL,
+      'FULL_CONFIG'
+    );
+    stateRecord.RecentProductRunsJson__c = JSON.serialize(
+      new List<Object>{
+        new Map<String, Object>{
+          'jobId' => '707000000000001AAA',
+          'runMode' => CatalogSyncMode.FULL,
+          'configDeveloperName' => 'FULL_CONFIG',
+          'status' => 'Completed',
+          'startedAt' => '2026-04-02T09:15:00Z',
+          'completedAt' => '2026-04-02T09:45:00Z'
+        }
+      }
+    );
+
+    CatalogSyncStateService.testStatesByTargetKey = new Map<String, Catalog_Sync_State__c>{
+      CatalogSyncStateService.buildResolvedTargetKey(fullConfig) => stateRecord
+    };
+
+    Map<String, CatalogSyncStateService.Snapshot> snapshots = CatalogSyncStateService.getSnapshotsByDeveloperName(
+      new List<CatalogJobConfig__mdt>{ fullConfig }
+    );
+
+    CatalogSyncStateService.Snapshot snapshot = snapshots.get('FULL_CONFIG');
+    System.assertEquals(false, snapshot.currentProductIsActive);
+    System.assertEquals(1, snapshot.recentProductRuns.size());
+    System.assertEquals(
+      '707000000000001AAA',
+      snapshot.recentProductRuns[0].jobId
+    );
+    System.assertEquals('Completed', snapshot.recentProductRuns[0].status);
+    System.assertEquals(true, snapshot.recentProductRuns[0].isTerminal);
+    System.assertEquals(
+      '2026-04-02T09:45:00Z',
+      snapshot.recentProductRuns[0].completedAt
+    );
+  }
+
+  @IsTest
   static void testGetSnapshotsByDeveloperName_blocksDeltaWhileFullRunIsActive() {
-    CatalogJobConfig__mdt fullConfig = createConfig('FULL_CONFIG', 'Full', null);
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_CONFIG',
+      'Full',
+      null
+    );
     CatalogJobConfig__mdt deltaConfig = createConfig(
       'DELTA_CONFIG',
       'Delta',
@@ -416,33 +589,36 @@ private class CatalogSyncStateServiceTest {
     Datetime fullCutoff = Datetime.newInstanceGmt(2026, 4, 1, 10, 0, 0);
     String trackedJobId = '707000000000001AAA';
 
-    CatalogSyncStateService.testConfigsByDeveloperName =
-      new Map<String, CatalogJobConfig__mdt>{ 'FULL_CONFIG' => fullConfig };
-    CatalogSyncStateService.testStatesByTargetKey =
-      new Map<String, Catalog_Sync_State__c>{
-        CatalogSyncStateService.buildResolvedTargetKey(deltaConfig) => createState(
-          deltaConfig,
-          fullCutoff,
-          fullCutoff,
-          CatalogSyncMode.FULL,
-          'FULL_CONFIG',
-          trackedJobId,
-          CatalogSyncMode.FULL,
-          'FULL_CONFIG',
-          Datetime.newInstanceGmt(2026, 4, 2, 9, 15, 0)
-        )
-      };
-    CatalogSyncStateService.testAsyncJobStatusesById =
-      new Map<String, String>{ trackedJobId => 'Processing' };
+    CatalogSyncStateService.testConfigsByDeveloperName = new Map<String, CatalogJobConfig__mdt>{
+      'FULL_CONFIG' => fullConfig
+    };
+    CatalogSyncStateService.testStatesByTargetKey = new Map<String, Catalog_Sync_State__c>{
+      CatalogSyncStateService.buildResolvedTargetKey(
+        deltaConfig
+      ) => createState(
+        deltaConfig,
+        fullCutoff,
+        fullCutoff,
+        CatalogSyncMode.FULL,
+        'FULL_CONFIG',
+        trackedJobId,
+        CatalogSyncMode.FULL,
+        'FULL_CONFIG',
+        Datetime.newInstanceGmt(2026, 4, 2, 9, 15, 0)
+      )
+    };
+    CatalogSyncStateService.testAsyncJobStatusesById = new Map<String, String>{
+      trackedJobId => 'Processing'
+    };
 
-    Map<String, CatalogSyncStateService.Snapshot> snapshots =
-      CatalogSyncStateService.getSnapshotsByDeveloperName(
-        new List<CatalogJobConfig__mdt>{ fullConfig, deltaConfig }
-      );
+    Map<String, CatalogSyncStateService.Snapshot> snapshots = CatalogSyncStateService.getSnapshotsByDeveloperName(
+      new List<CatalogJobConfig__mdt>{ fullConfig, deltaConfig }
+    );
 
     System.assertEquals(false, snapshots.get('DELTA_CONFIG').deltaReady);
     System.assert(
-      snapshots.get('DELTA_CONFIG').deltaReadinessMessage.contains('currently running')
+      snapshots.get('DELTA_CONFIG')
+        .deltaReadinessMessage.contains('currently running')
     );
   }
 }
