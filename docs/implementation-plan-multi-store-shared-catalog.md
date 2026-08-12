@@ -3,6 +3,13 @@
 > **Branch:** `feature/multi-store-shared-catalog`  
 > **Base:** `main` @ `v1.3.3` (`d3f2739`)  
 > **Date:** 2026-08-11
+> **Implementation branch:** `feature/option-c-hybrid`
+
+## Implementation Status
+
+Option C is implemented and validated in a B2B scratch org. Multi-pricebook resolution, backward-compatible raw keys for Web Store-scoped prices, readable explicit-pricebook keys, multi-store paired availability, chained scheduling, setup/run-center exposure, metadata, and permission updates are complete. Existing blank-scope price behavior and singular `WebStoreId__c` availability remain backward-compatible.
+
+One planned UI item is intentionally deferred: chain membership is serialized in the scheduled Apex instance, but there is no persistent chain-definition metadata object. The setup UI can create and remove a chain from its current draft but cannot reconstruct membership or display durable chain progress after reload. Queueable chaining is launch-sequential rather than batch-completion-sequential.
 
 ---
 
@@ -16,14 +23,14 @@ This addresses the customer's Salesforce **100 scheduled Apex job limit** by col
 
 ## Current State (Baseline)
 
-| Aspect | Today |
-|--------|-------|
-| Product scope | All active products (no `CatalogId__c` for this customer) |
+| Aspect               | Today                                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Product scope        | All active products (no `CatalogId__c` for this customer)                                                  |
 | Pricebook resolution | `loadPricesByProduct()` loads **all** active `PricebookEntry` records for in-scope products — no filtering |
-| Price payload | `ec_price` emitted as a dictionary keyed by raw `Pricebook2Id` or `Pricebook2Id:SellingModelId` |
-| WebStoreId__c | Used only for Buyer Group entitlement resolution |
-| Scheduling | 1–4 native `CronTrigger` per config per sync mode |
-| Chaining | None — all batches launched independently |
+| Price payload        | `ec_price` emitted as a dictionary keyed by raw `Pricebook2Id` or `Pricebook2Id:SellingModelId`            |
+| WebStoreId\_\_c      | Used only for Buyer Group entitlement resolution                                                           |
+| Scheduling           | 1–4 native `CronTrigger` per config per sync mode                                                          |
+| Chaining             | None — all batches launched independently                                                                  |
 
 ---
 
@@ -33,16 +40,17 @@ This addresses the customer's Salesforce **100 scheduled Apex job limit** by col
 
 **File:** `force-app/main/default/objects/CatalogJobConfig__mdt/fields/PricebookIds__c.field-meta.xml`
 
-| Property | Value |
-|----------|-------|
-| Type | LongTextArea |
-| Length | 32768 |
-| Visible Lines | 3 |
-| Required | No |
-| Description | CSV of Pricebook2 IDs (18-char) to include in the export. When blank, all active pricebook entries are included (backward-compatible). |
-| Manageability | SubscriberControlled |
+| Property      | Value                                                                                                                                  |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Type          | LongTextArea                                                                                                                           |
+| Length        | 32768                                                                                                                                  |
+| Visible Lines | 3                                                                                                                                      |
+| Required      | No                                                                                                                                     |
+| Description   | CSV of Pricebook2 IDs (18-char) to include in the export. When blank, all active pricebook entries are included (backward-compatible). |
+| Manageability | SubscriberControlled                                                                                                                   |
 
 **Behavior:**
+
 - Blank/null → current behavior (all pricebooks exported)
 - Populated → only `PricebookEntry` records whose `Pricebook2Id` is in the list are included
 
@@ -50,16 +58,17 @@ This addresses the customer's Salesforce **100 scheduled Apex job limit** by col
 
 **File:** `force-app/main/default/objects/CatalogJobConfig__mdt/fields/WebStoreIds__c.field-meta.xml`
 
-| Property | Value |
-|----------|-------|
-| Type | LongTextArea |
-| Length | 32768 |
-| Visible Lines | 3 |
-| Required | No |
-| Description | CSV of WebStore IDs. Used to auto-resolve associated pricebooks via `WebStorePricebook` when `PricebookIds__c` is blank. Also used for multi-store buyer group availability resolution. |
-| Manageability | SubscriberControlled |
+| Property      | Value                                                                                                                                                                                   |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Type          | LongTextArea                                                                                                                                                                            |
+| Length        | 32768                                                                                                                                                                                   |
+| Visible Lines | 3                                                                                                                                                                                       |
+| Required      | No                                                                                                                                                                                      |
+| Description   | CSV of WebStore IDs. Used to auto-resolve associated pricebooks via `WebStorePricebook` when `PricebookIds__c` is blank. Also used for multi-store buyer group availability resolution. |
+| Manageability | SubscriberControlled                                                                                                                                                                    |
 
 **Resolution priority:**
+
 1. If `PricebookIds__c` is populated → use those pricebook IDs directly
 2. Else if `WebStoreIds__c` is populated → query `WebStorePricebook` to resolve pricebook IDs
 3. Else → no filter (all pricebooks, current behavior)
@@ -132,6 +141,7 @@ this.targetPricebookIds = WebStorePricebookResolver.resolveEffectivePricebookIds
 ```
 
 **Pass to execute:**
+
 ```apex
 Map<Id, Map<String, Decimal>> pricesByProduct =
   CatalogProductExportSupport.loadPricesByProduct(scope, stdPricebookId, targetPricebookIds);
@@ -142,9 +152,10 @@ Same change applies to `DeltaProductCatalogExportBatch`.
 ### A.6 — Update Price Key Strategy in Payload
 
 **Current:** Keys are raw Salesforce IDs (`01sABC123...`).  
-**New:** Keys should be human-readable pricebook names or WebStore labels.
+**Final hybrid decision:** Explicit `PricebookIds__c` scopes use readable Pricebook names. `WebStoreIds__c` scopes retain raw `Pricebook2` IDs so existing downstream lookups remain compatible while the selected stores still filter the exported pricebooks.
 
 **Option 1 — Keyed by Pricebook Name (recommended):**
+
 ```json
 {
   "ec_price": {
@@ -155,9 +166,10 @@ Same change applies to `DeltaProductCatalogExportBatch`.
 }
 ```
 
-**Implementation:** Pass a `Map<Id, String> pricebookIdToLabel` into `loadPricesByProduct()` (or resolve it once and pass to the builder context). The price key becomes the label instead of the raw ID.
+**Implementation:** Pass a `Map<Id, String> pricebookIdToLabel` into `loadPricesByProduct()` (or resolve it once and pass to the builder context). Explicit scopes map IDs to Pricebook names; Web Store scopes map each resolved ID to its own raw string value.
 
 **Change locations:**
+
 - `CatalogProductExportSupport.loadPricesByProduct()` — use label as key
 - Or introduce a post-processing step that remaps keys before handing to the builder
 
@@ -180,6 +192,7 @@ This ensures that changing the pricebook scope invalidates delta readiness (forc
 ### A.8 — Update All Config Loaders
 
 Every SOQL that loads `CatalogJobConfig__mdt` must include the new fields. Affected classes:
+
 - `ProductCatalogExportBatch.loadJobConfig()`
 - `DeltaProductCatalogExportBatch.loadJobConfig()`
 - `BuyerGroupAvailabilityExportBatch.loadJobConfig()`
@@ -298,6 +311,7 @@ global with sharing class CatalogChainedSyncScheduler implements Schedulable {
 **File:** `force-app/main/default/classes/CatalogJobRunner.cls`
 
 Add methods:
+
 ```apex
 public static void runAllActiveChained() { ... }
 public static void runAllActiveAvailabilityChained() { ... }
@@ -317,10 +331,10 @@ These collect active config developer names and hand them to `CatalogSyncChainQu
 
 ## Part C: New Field Metadata Definitions
 
-| New File | Purpose |
-|----------|---------|
-| `objects/CatalogJobConfig__mdt/fields/PricebookIds__c.field-meta.xml` | CSV of Pricebook2 IDs to include |
-| `objects/CatalogJobConfig__mdt/fields/WebStoreIds__c.field-meta.xml` | CSV of WebStore IDs for pricebook auto-resolution and multi-store availability |
+| New File                                                              | Purpose                                                                        |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `objects/CatalogJobConfig__mdt/fields/PricebookIds__c.field-meta.xml` | CSV of Pricebook2 IDs to include                                               |
+| `objects/CatalogJobConfig__mdt/fields/WebStoreIds__c.field-meta.xml`  | CSV of WebStore IDs for pricebook auto-resolution and multi-store availability |
 
 ---
 
@@ -328,88 +342,117 @@ These collect active config developer names and hand them to `CatalogSyncChainQu
 
 ### Phase 1: Multi-Pricebook Foundation (3 days)
 
-| # | Task | Files |
-|---|------|-------|
-| 1.1 | Add `PricebookIds__c` and `WebStoreIds__c` field metadata | `objects/CatalogJobConfig__mdt/fields/` |
-| 1.2 | Create `WebStorePricebookResolver.cls` + test | `classes/` |
-| 1.3 | Add `resolveEffectivePricebookIds()` to resolve the pricebook filter | `WebStorePricebookResolver.cls` |
-| 1.4 | Overload `loadPricesByProduct()` with pricebook filter | `CatalogProductExportSupport.cls` |
-| 1.5 | Wire pricebook resolution into `ProductCatalogExportBatch` constructor | `ProductCatalogExportBatch.cls` |
-| 1.6 | Wire pricebook resolution into `DeltaProductCatalogExportBatch` constructor | `DeltaProductCatalogExportBatch.cls` |
-| 1.7 | Update all SOQL config loaders to include new fields | Multiple files |
-| 1.8 | Update `buildResolvedTargetKey()` with pricebook/webstore dimensions | `CatalogSyncStateService.cls` |
-| 1.9 | Tests: pricebook filtering, WebStore resolution, backward compat | New test classes |
+**Status: Complete.** Explicit scope is fail-closed; a configured scope that resolves no pricebooks exports no prices.
+
+| #   | Task                                                                        | Files                                   |
+| --- | --------------------------------------------------------------------------- | --------------------------------------- |
+| 1.1 | Add `PricebookIds__c` and `WebStoreIds__c` field metadata                   | `objects/CatalogJobConfig__mdt/fields/` |
+| 1.2 | Create `WebStorePricebookResolver.cls` + test                               | `classes/`                              |
+| 1.3 | Add `resolveEffectivePricebookIds()` to resolve the pricebook filter        | `WebStorePricebookResolver.cls`         |
+| 1.4 | Overload `loadPricesByProduct()` with pricebook filter                      | `CatalogProductExportSupport.cls`       |
+| 1.5 | Wire pricebook resolution into `ProductCatalogExportBatch` constructor      | `ProductCatalogExportBatch.cls`         |
+| 1.6 | Wire pricebook resolution into `DeltaProductCatalogExportBatch` constructor | `DeltaProductCatalogExportBatch.cls`    |
+| 1.7 | Update all SOQL config loaders to include new fields                        | Multiple files                          |
+| 1.8 | Update `buildResolvedTargetKey()` with pricebook/webstore dimensions        | `CatalogSyncStateService.cls`           |
+| 1.9 | Tests: pricebook filtering, WebStore resolution, backward compat            | New test classes                        |
 
 ### Phase 2: Price Key Labeling (1 day)
 
-| # | Task | Files |
-|---|------|-------|
-| 2.1 | Resolve `Map<Id, String>` pricebook labels (name or store label) | `WebStorePricebookResolver.cls` |
-| 2.2 | Replace raw ID keys with human-readable labels in price map | `CatalogProductExportSupport.cls` |
-| 2.3 | Update existing builder tests to verify labeled keys | `CatalogJsonBuilderCommerceTest.cls` etc. |
+**Status: Complete with backward-compatible Web Store keys.** Explicit scopes use Pricebook names with Salesforce IDs appended for collisions. Store-resolved scopes use raw `Pricebook2` IDs and retain raw `Pricebook2Id:ProductSellingModelId` composed keys.
+
+| #   | Task                                                                                | Files                                     |
+| --- | ----------------------------------------------------------------------------------- | ----------------------------------------- |
+| 2.1 | Resolve `Map<Id, String>` pricebook labels (explicit name or raw store-resolved ID) | `WebStorePricebookResolver.cls`           |
+| 2.2 | Apply readable explicit labels while preserving raw Web Store-scoped keys           | `CatalogProductExportSupport.cls`         |
+| 2.3 | Update existing builder tests to verify labeled keys                                | `CatalogJsonBuilderCommerceTest.cls` etc. |
 
 ### Phase 3: Chained Scheduling (2 days)
 
-| # | Task | Files |
-|---|------|-------|
-| 3.1 | Create `CatalogSyncChainQueueable.cls` + test | `classes/` |
-| 3.2 | Create `CatalogChainedSyncScheduler.cls` + test | `classes/` |
-| 3.3 | Add `runAllActiveChained()` to `CatalogJobRunner` | `CatalogJobRunner.cls` |
-| 3.4 | Integration test: chain launches batches in sequence | Test class |
+**Status: Complete.** Full/delta mode enforcement, inactive-config skipping, product/access combinations, and shared minute/hourly/weekly schedules are implemented and tested.
+
+| #   | Task                                                 | Files                  |
+| --- | ---------------------------------------------------- | ---------------------- |
+| 3.1 | Create `CatalogSyncChainQueueable.cls` + test        | `classes/`             |
+| 3.2 | Create `CatalogChainedSyncScheduler.cls` + test      | `classes/`             |
+| 3.3 | Add `runAllActiveChained()` to `CatalogJobRunner`    | `CatalogJobRunner.cls` |
+| 3.4 | Integration test: chain launches batches in sequence | Test class             |
 
 ### Phase 4: Multi-Store Availability (1 day)
 
-| # | Task | Files |
-|---|------|-------|
-| 4.1 | Update `BuyerGroupAvailabilityExportBatch.start()` to support `WebStoreIds__c` | `BuyerGroupAvailabilityExportBatch.cls` |
-| 4.2 | Backward compat: fall back to singular `WebStoreId__c` when `WebStoreIds__c` is blank | Same |
-| 4.3 | Test: multi-store buyer group union | Test class |
+**Status: Complete.** Buyer Groups are unioned across selected stores and payloads expose sorted `sf_webstore_ids`, retaining `sf_webstore_id` only when one store applies.
+
+| #   | Task                                                                                  | Files                                   |
+| --- | ------------------------------------------------------------------------------------- | --------------------------------------- |
+| 4.1 | Update `BuyerGroupAvailabilityExportBatch.start()` to support `WebStoreIds__c`        | `BuyerGroupAvailabilityExportBatch.cls` |
+| 4.2 | Backward compat: fall back to singular `WebStoreId__c` when `WebStoreIds__c` is blank | Same                                    |
+| 4.3 | Test: multi-store buyer group union                                                   | Test class                              |
 
 ### Phase 5: LWC & Documentation (1–2 days)
 
-| # | Task | Files |
-|---|------|-------|
-| 5.1 | Add multi-store pricebook configuration UI to setup workspace | `lwc/catalogJobConsole/` |
-| 5.2 | Add chain scheduling UI | Same |
-| 5.3 | Update README with new fields and configuration examples | `README.md` |
-| 5.4 | Add permission set field access for new CMDT fields | `permissionsets/` |
+**Status: Complete with persistent chain membership/progress display deferred.** Setup exposes both scope selectors and chain scheduling; the run center exposes resolved scope details.
+
+| #   | Task                                                                                                            | Files                    |
+| --- | --------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| 5.1 | Add multi-store pricebook configuration UI to setup workspace                                                   | `lwc/catalogJobConsole/` |
+| 5.2 | Add chain scheduling UI                                                                                         | Same                     |
+| 5.3 | Update README with new fields and configuration examples                                                        | `README.md`              |
+| 5.4 | Add new Apex class access to the admin permission set (CMDT fields do not use ordinary field-level permissions) | `permissionsets/`        |
+
+---
+
+## Final Multi-Store Pricing Semantics
+
+`WebStoreIds__c` controls Pricebook discovery and filtering; it does not become part of the price key. For each configured Web Store, the resolver loads its `WebStorePricebook` associations and computes a set union of the resulting `Pricebook2` IDs. Because this is a set, a Pricebook shared by multiple stores is exported once.
+
+```txt
+Store A -> Pricebook Shared, Pricebook US
+Store B -> Pricebook Shared, Pricebook CA
+Result  -> Pricebook Shared, Pricebook US, Pricebook CA
+```
+
+The final `ec_price` dictionary remains flat. Store-resolved keys preserve the legacy raw formats `<Pricebook2Id>` and `<Pricebook2Id>:<ProductSellingModelId>`. They do not use `<WebStoreId>:<Pricebook2Id>` aliases because `WebStorePricebook` membership does not change the underlying Pricebook Entry price. Adding store-qualified aliases would duplicate shared prices and break existing downstream key lookups.
+
+If `PricebookIds__c` is also configured, its explicit Pricebook list takes precedence for pricing. `WebStoreIds__c` can still be used independently as the multi-store Buyer Group availability scope.
 
 ---
 
 ## Backward Compatibility Contract
 
-| Scenario | Behavior |
-|----------|----------|
-| `PricebookIds__c` blank + `WebStoreIds__c` blank | **No change.** All pricebook entries exported, keys remain raw IDs. |
-| `PricebookIds__c` populated | Only listed pricebooks included. Keys use pricebook names. |
-| `WebStoreIds__c` populated, `PricebookIds__c` blank | Auto-resolves pricebooks from `WebStorePricebook`. Keys use store/pricebook names. |
-| Existing scheduled jobs | Continue working unchanged. Chained scheduling is opt-in. |
-| `WebStoreId__c` (singular, existing) | Continues to work for Buyer Group availability. `WebStoreIds__c` takes precedence when populated. |
+| Scenario                                                     | Behavior                                                                                                                             |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `PricebookIds__c` blank + `WebStoreIds__c` blank             | **No change.** All pricebook entries exported, keys remain raw IDs.                                                                  |
+| `PricebookIds__c` populated                                  | Only explicitly listed Pricebooks are included. Keys use Pricebook names. This pricing scope takes precedence over `WebStoreIds__c`. |
+| One `WebStoreIds__c` value, `PricebookIds__c` blank          | Auto-resolves that store's Pricebooks through `WebStorePricebook`; keys remain raw `Pricebook2` IDs.                                 |
+| Multiple `WebStoreIds__c` values, `PricebookIds__c` blank    | Exports the deduplicated union of all linked Pricebooks. A shared Pricebook appears once; keys remain raw IDs.                       |
+| Resolved Pricebook has a Product Selling Model               | Uses the flat raw `<Pricebook2Id>:<ProductSellingModelId>` key; the Web Store ID is not prefixed.                                    |
+| Configured Pricebook or Web Store scope resolves to no books | Exports no prices and fails closed; it never falls back to an unscoped all-Pricebook export.                                         |
+| Existing scheduled jobs                                      | Continue working unchanged. Chained scheduling is opt-in.                                                                            |
+| `WebStoreId__c` (singular, existing)                         | Continues to work for Buyer Group availability. `WebStoreIds__c` takes precedence when populated.                                    |
 
 ---
 
 ## Risk & Mitigation
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| `WebStorePricebook` object not present in all orgs | Query fails at runtime | Guard with `Schema.getGlobalDescribe().containsKey('WebStorePricebook')` check; fall back gracefully |
-| Queueable chain depth limit | Chain stops mid-way | Use async-to-async chaining (unlimited depth) rather than sync invocation |
-| Large price dictionaries bloat payload | Heap/callout size limits | `PricebookIds__c` filtering keeps only relevant prices; batch size tuning via `BatchSize__c` |
-| Delta readiness invalidation | First run after config change requires full baseline | Expected and documented; same behavior as changing any other config dimension |
-| Label collisions (two pricebooks with same name) | Ambiguous keys | Use `<StoreName>:<PricebookName>` composite key or enforce uniqueness in resolver |
+| Risk                                                      | Impact                                               | Mitigation                                                                                                      |
+| --------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `WebStorePricebook` object not present in all orgs        | An explicit store scope cannot be resolved           | Guard with schema checks and fail with a clear configuration error; never fall back to an unscoped price export |
+| Queueable chain depth limit                               | Chain stops mid-way                                  | Use async-to-async chaining (unlimited depth) rather than sync invocation                                       |
+| Large price dictionaries bloat payload                    | Heap/callout size limits                             | `PricebookIds__c` filtering keeps only relevant prices; batch size tuning via `BatchSize__c`                    |
+| Delta readiness invalidation                              | First run after config change requires full baseline | Expected and documented; same behavior as changing any other config dimension                                   |
+| Explicit-label collisions (two pricebooks with same name) | Ambiguous keys                                       | Append Salesforce IDs and enforce case-insensitive uniqueness in the resolver                                   |
 
 ---
 
 ## Estimated Total Effort
 
-| Phase | Days |
-|-------|------|
-| Phase 1 — Multi-Pricebook Foundation | 3 |
-| Phase 2 — Price Key Labeling | 1 |
-| Phase 3 — Chained Scheduling | 2 |
-| Phase 4 — Multi-Store Availability | 1 |
-| Phase 5 — LWC & Documentation | 1–2 |
-| **Total** | **8–9 days** |
+| Phase                                | Days         |
+| ------------------------------------ | ------------ |
+| Phase 1 — Multi-Pricebook Foundation | 3            |
+| Phase 2 — Price Key Labeling         | 1            |
+| Phase 3 — Chained Scheduling         | 2            |
+| Phase 4 — Multi-Store Availability   | 1            |
+| Phase 5 — LWC & Documentation        | 1–2          |
+| **Total**                            | **8–9 days** |
 
 ---
 

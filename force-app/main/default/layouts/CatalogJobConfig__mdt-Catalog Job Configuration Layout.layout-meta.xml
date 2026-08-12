@@ -62,7 +62,15 @@
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
+                <field>PricebookIds__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
                 <field>WebStoreId__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>WebStoreIds__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>

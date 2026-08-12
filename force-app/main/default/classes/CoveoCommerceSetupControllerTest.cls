@@ -394,6 +394,10 @@ private class CoveoCommerceSetupControllerTest {
       'Workspace options should include productCatalogs'
     );
     System.assert(
+      result.containsKey('pricebooks'),
+      'Workspace options should include active pricebooks'
+    );
+    System.assert(
       result.containsKey('builderTypeOptions'),
       'Workspace options should include builderTypeOptions'
     );
@@ -809,6 +813,157 @@ private class CoveoCommerceSetupControllerTest {
       true,
       foundBaselineMessage,
       'Delta previews should explain that a baseline full config is required'
+    );
+  }
+
+  @IsTest
+  static void testPreviewMultiStoreCatalogJobDraft_countsScopesAndWarnsOnPrecedence() {
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.previewMultiStoreCatalogJobDraft(
+      'Shared Catalog',
+      'SHARED_CATALOG',
+      'my-coveo-org',
+      'catalog-products-shared',
+      'catalog-availability-shared',
+      CatalogSyncMode.FULL,
+      null,
+      null,
+      null,
+      new List<String>{ '0ZE000000000001', '0ZE000000000002' },
+      new List<String>{ '01s000000000001', '01s000000000002' },
+      'en-US',
+      'Commerce',
+      CatalogBuyerGroupAvailabilityMode.PAIRED_SOURCE,
+      null,
+      new List<String>()
+    );
+    Test.stopTest();
+
+    System.assertEquals(2, result.get('webStoreCount'));
+    System.assertEquals(2, result.get('pricebookCount'));
+    System.assertEquals(
+      true,
+      result.get('isReady'),
+      'Plural Web Store selection should satisfy availability preflight'
+    );
+    System.assert(
+      JSON.serialize(result.get('warningMessages'))
+        .contains('Explicit Pricebook IDs take precedence'),
+      'Preview should explain explicit-pricebook precedence'
+    );
+  }
+
+  @IsTest
+  static void testPreviewMultiStoreCatalogJobDraft_requiresSingularStoreForEmbeddedAccess() {
+    Map<String, Object> result = CoveoCommerceSetupController.previewMultiStoreCatalogJobDraft(
+      'Embedded Shared Catalog',
+      'EMBEDDED_SHARED_CATALOG',
+      'my-coveo-org',
+      'catalog-products-shared',
+      null,
+      CatalogSyncMode.FULL,
+      null,
+      null,
+      null,
+      new List<String>{ '0ZE000000000001' },
+      new List<String>(),
+      'en-US',
+      'Commerce',
+      CatalogBuyerGroupAvailabilityMode.EMBEDDED,
+      null,
+      new List<String>()
+    );
+
+    System.assertEquals(false, result.get('isReady'));
+    System.assert(
+      JSON.serialize(result.get('validationMessages'))
+        .contains('Web Store is required'),
+      'Embedded access must continue to require singular WebStoreId__c'
+    );
+  }
+
+  @IsTest
+  static void testPreviewMultiStoreCatalogJobDraft_dualWriteRetainsEmbeddedRequirement() {
+    Map<String, Object> result = CoveoCommerceSetupController.previewMultiStoreCatalogJobDraft(
+      'Dual Shared Catalog',
+      'DUAL_SHARED_CATALOG',
+      'my-coveo-org',
+      'catalog-products-shared',
+      'catalog-availability-shared',
+      CatalogSyncMode.FULL,
+      null,
+      null,
+      null,
+      new List<String>{ '0ZE000000000001', '0ZE000000000002' },
+      new List<String>(),
+      'en-US',
+      'Commerce',
+      CatalogBuyerGroupAvailabilityMode.DUAL_WRITE,
+      null,
+      new List<String>()
+    );
+
+    System.assertEquals(false, result.get('isReady'));
+    System.assertEquals(2, result.get('webStoreCount'));
+    System.assert(
+      JSON.serialize(result.get('validationMessages'))
+        .contains('Web Store is required'),
+      'DualWrite must require singular WebStoreId__c for its embedded side while previewing plural paired coverage'
+    );
+  }
+
+  @IsTest
+  static void testSaveAndClearCatalogChainSchedule() {
+    CatalogChainedSyncScheduler.skipQueueableExecutionInTests = true;
+    CoveoCommerceSetupController.testChainConfigsByDeveloperName = new Map<String, CatalogJobConfig__mdt>{
+      'FULL_A' => new CatalogJobConfig__mdt(
+        DeveloperName = 'FULL_A',
+        IsActive__c = true,
+        SyncMode__c = CatalogSyncMode.FULL
+      ),
+      'FULL_B' => new CatalogJobConfig__mdt(
+        DeveloperName = 'FULL_B',
+        IsActive__c = true,
+        SyncMode__c = CatalogSyncMode.FULL
+      )
+    };
+
+    Test.startTest();
+    Map<String, Object> result = CoveoCommerceSetupController.saveCatalogChainSchedule(
+      'Weekly Shared Catalog',
+      new List<String>{ 'FULL_A', 'FULL_B' },
+      CatalogSyncMode.FULL,
+      true,
+      'Weekly',
+      null,
+      null,
+      'SUN',
+      3,
+      15
+    );
+    Test.stopTest();
+
+    System.assertEquals('Weekly Shared Catalog', result.get('chainName'));
+    System.assertEquals(CatalogSyncMode.FULL, result.get('syncMode'));
+    System.assertEquals(true, result.get('includeAvailability'));
+    System.assertEquals('0 15 3 ? * SUN', result.get('cronExpression'));
+    System.assert(
+      String.valueOf(result.get('jobName')).contains('Weekly Shared Catalog')
+    );
+
+    CoveoCommerceSetupController.clearCatalogChainSchedule(
+      'Weekly Shared Catalog',
+      CatalogSyncMode.FULL
+    );
+    String jobName = (String) result.get('jobName');
+    System.assertEquals(
+      0,
+      [
+        SELECT COUNT()
+        FROM CronTrigger
+        WHERE CronJobDetail.Name = :jobName AND State != 'DELETED'
+      ],
+      'Clearing the chain should remove its active scheduled job'
     );
   }
 

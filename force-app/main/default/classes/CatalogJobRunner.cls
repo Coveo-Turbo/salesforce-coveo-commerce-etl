@@ -100,6 +100,8 @@ public with sharing class CatalogJobRunner {
         SourceId__c,
         AvailabilitySourceId__c,
         WebStoreId__c,
+        WebStoreIds__c,
+        PricebookIds__c,
         Locale__c,
         IsActive__c,
         ProductFilter__c,
@@ -142,6 +144,8 @@ public with sharing class CatalogJobRunner {
           'SourceId__c' => config.SourceId__c,
           'AvailabilitySourceId__c' => config.AvailabilitySourceId__c,
           'WebStoreId__c' => config.WebStoreId__c,
+          'WebStoreIds__c' => config.WebStoreIds__c,
+          'PricebookIds__c' => config.PricebookIds__c,
           'Locale__c' => config.Locale__c,
           'IsActive__c' => config.IsActive__c,
           'ProductFilter__c' => config.ProductFilter__c,
@@ -298,6 +302,118 @@ public with sharing class CatalogJobRunner {
       );
     }
     return launches;
+  }
+
+  public static String runAllActiveChained() {
+    List<String> configDeveloperNames = new List<String>();
+    for (CatalogJobConfig__mdt config : getActiveConfigs()) {
+      if (isProductSyncReady(config)) {
+        configDeveloperNames.add(config.DeveloperName);
+      }
+    }
+    return enqueueChain(configDeveloperNames, null, true, false);
+  }
+
+  public static String runAllActiveAvailabilityChained() {
+    List<String> configDeveloperNames = new List<String>();
+    for (CatalogJobConfig__mdt config : getActiveConfigs()) {
+      if (CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(config)) {
+        configDeveloperNames.add(config.DeveloperName);
+      }
+    }
+    return enqueueChain(configDeveloperNames, null, false, true);
+  }
+
+  public static String runAllActiveChained(
+    String syncMode,
+    Boolean includeAvailability
+  ) {
+    String resolvedSyncMode = String.isBlank(syncMode)
+      ? null
+      : CatalogSyncMode.resolve(syncMode);
+    List<String> configDeveloperNames = new List<String>();
+    for (CatalogJobConfig__mdt config : getActiveConfigs()) {
+      if (
+        (resolvedSyncMode == null ||
+        CatalogSyncMode.resolve(config) == resolvedSyncMode) &&
+        isProductSyncReady(config)
+      ) {
+        configDeveloperNames.add(config.DeveloperName);
+      }
+    }
+    return enqueueChain(
+      configDeveloperNames,
+      resolvedSyncMode,
+      true,
+      includeAvailability
+    );
+  }
+
+  public static LaunchResult runChainedConfig(
+    String jobConfigDeveloperName,
+    String expectedSyncMode,
+    Boolean runProducts,
+    Boolean includeAvailability
+  ) {
+    CatalogJobConfig__mdt config = getConfig(jobConfigDeveloperName);
+    if (config.IsActive__c != true) {
+      return null;
+    }
+
+    String resolvedConfigMode = CatalogSyncMode.resolve(config);
+    if (
+      String.isNotBlank(expectedSyncMode) &&
+      resolvedConfigMode != CatalogSyncMode.resolve(expectedSyncMode)
+    ) {
+      throw new CatalogJobConfigException(
+        'Chained sync expected SyncMode__c = ' +
+          CatalogSyncMode.resolve(expectedSyncMode) +
+          ' for ' +
+          jobConfigDeveloperName +
+          ', but the config resolves to ' +
+          resolvedConfigMode +
+          '.'
+      );
+    }
+
+    Boolean shouldRunProducts =
+      runProducts == true && isProductSyncReady(config);
+    Boolean shouldRunAvailability =
+      includeAvailability == true &&
+      CatalogBuyerGroupAvailabilityMode.isBuyerGroupAccessEnabled(config);
+    if (!shouldRunProducts && !shouldRunAvailability) {
+      return null;
+    }
+
+    return launchForConfig(
+      config,
+      shouldRunProducts,
+      shouldRunAvailability,
+      shouldRunProducts && shouldRunAvailability
+        ? 'both'
+        : shouldRunProducts ? 'products' : 'availability'
+    );
+  }
+
+  private static String enqueueChain(
+    List<String> configDeveloperNames,
+    String syncMode,
+    Boolean runProducts,
+    Boolean includeAvailability
+  ) {
+    if (configDeveloperNames == null || configDeveloperNames.isEmpty()) {
+      return null;
+    }
+    return String.valueOf(
+      System.enqueueJob(
+        new CatalogSyncChainQueueable(
+          configDeveloperNames,
+          syncMode,
+          runProducts,
+          includeAvailability
+        )
+      )
+    );
   }
 
   @AuraEnabled
@@ -643,6 +759,8 @@ public with sharing class CatalogJobRunner {
         SourceId__c,
         AvailabilitySourceId__c,
         WebStoreId__c,
+        WebStoreIds__c,
+        PricebookIds__c,
         Locale__c,
         IsActive__c,
         ProductFilter__c,
@@ -678,6 +796,8 @@ public with sharing class CatalogJobRunner {
         SourceId__c,
         AvailabilitySourceId__c,
         WebStoreId__c,
+        WebStoreIds__c,
+        PricebookIds__c,
         Locale__c,
         IsActive__c,
         ProductFilter__c,

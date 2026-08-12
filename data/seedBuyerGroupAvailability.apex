@@ -50,18 +50,16 @@ System.assert(
 );
 
 Set<Id> simpleCatalogCategoryIds = new Map<Id, ProductCategory>(
-  simpleCatalogCategories
-)
+    simpleCatalogCategories
+  )
   .keySet();
 Set<Id> simpleCatalogProductIds = new Set<Id>();
 
-for (
-  ProductCategoryProduct categoryProductLink : [
-    SELECT ProductId
-    FROM ProductCategoryProduct
-    WHERE ProductCategoryId IN :simpleCatalogCategoryIds
-  ]
-) {
+for (ProductCategoryProduct categoryProductLink : [
+  SELECT ProductId
+  FROM ProductCategoryProduct
+  WHERE ProductCategoryId IN :simpleCatalogCategoryIds
+]) {
   simpleCatalogProductIds.add(categoryProductLink.ProductId);
 }
 
@@ -80,39 +78,60 @@ System.assert(
 );
 
 List<Product2> limitedProducts = new List<Product2>();
-for (Integer i = 0; i < Math.min(limitedProductCount, demoProducts.size()); i++) {
+for (
+  Integer i = 0; i < Math.min(limitedProductCount, demoProducts.size()); i++
+) {
   limitedProducts.add(demoProducts[i]);
 }
 
-WebStore ensureWebStore(String name) {
-  List<WebStore> stores = [
-    SELECT Id, Name
-    FROM WebStore
-    WHERE Name = :name
-    LIMIT 1
-  ];
+SObject ensureWebStore(String name) {
+  Schema.SObjectType webStoreType = Schema.getGlobalDescribe().get('WebStore');
+  System.assertNotEquals(
+    null,
+    webStoreType,
+    'WebStore is unavailable. Recreate this org from the Commerce-enabled B2B scratch definition.'
+  );
+
+  List<SObject> stores = Database.query(
+    'SELECT Id, Name FROM WebStore WHERE Name = :name LIMIT 1'
+  );
 
   if (!stores.isEmpty()) {
     return stores[0];
   }
 
-  WebStore store = new WebStore(
-    Name = name,
-    OptionsAutoFacetingEnabled = false,
-    OptionsCartAsyncProcessingEnabled = false,
-    OptionsCartCalculateEnabled = false,
-    OptionsCartToOrderAutoCustomFieldMapping = false,
-    OptionsCommerceEinsteinActivitiesTracked = false,
-    OptionsCommerceEinsteinDeployed = false,
-    OptionsDuplicateCartItemsEnabled = false,
-    OptionsGuestBrowsingEnabled = false,
-    OptionsGuestCartEnabled = false,
-    OptionsGuestCheckoutEnabled = false,
-    OptionsPreserveGuestCartEnabled = false,
-    OptionsSkipAdditionalEntitlementCheckForSearch = false,
-    OptionsSkuDetectionEnabled = false,
-    OptionsSplitShipmentEnabled = false
-  );
+  SObject store = webStoreType.newSObject();
+  store.put('Name', name);
+
+  Map<String, Schema.SObjectField> webStoreFields = webStoreType
+    .getDescribe()
+    .fields.getMap();
+  for (
+    String optionField : new List<String>{
+      'OptionsAutoFacetingEnabled',
+      'OptionsCartAsyncProcessingEnabled',
+      'OptionsCartCalculateEnabled',
+      'OptionsCartToOrderAutoCustomFieldMapping',
+      'OptionsCommerceEinsteinActivitiesTracked',
+      'OptionsCommerceEinsteinDeployed',
+      'OptionsDuplicateCartItemsEnabled',
+      'OptionsGuestBrowsingEnabled',
+      'OptionsGuestCartEnabled',
+      'OptionsGuestCheckoutEnabled',
+      'OptionsPreserveGuestCartEnabled',
+      'OptionsSkipAdditionalEntitlementCheckForSearch',
+      'OptionsSkuDetectionEnabled',
+      'OptionsSplitShipmentEnabled'
+    }
+  ) {
+    if (
+      webStoreFields.containsKey(optionField) &&
+      webStoreFields.get(optionField).getDescribe().isCreateable()
+    ) {
+      store.put(optionField, false);
+    }
+  }
+
   insert store;
   return store;
 }
@@ -211,7 +230,10 @@ void syncPolicyProducts(Id policyId, Set<Id> desiredProductIds) {
   Map<Id, SObject> existingLinksByProductId = new Map<Id, SObject>();
 
   for (SObject existingLink : existingLinks) {
-    existingLinksByProductId.put((Id) existingLink.get('ProductId'), existingLink);
+    existingLinksByProductId.put(
+      (Id) existingLink.get('ProductId'),
+      existingLink
+    );
   }
 
   List<SObject> linksToInsert = new List<SObject>();
@@ -242,7 +264,8 @@ void syncPolicyProducts(Id policyId, Set<Id> desiredProductIds) {
   }
 }
 
-WebStore webStore = ensureWebStore(webStoreName);
+SObject webStore = ensureWebStore(webStoreName);
+Id webStoreId = (Id) webStore.get('Id');
 SObject allBuyerGroup = ensureBuyerGroup(allGroupName);
 SObject limitedBuyerGroup = ensureBuyerGroup(limitedGroupName);
 SObject emptyBuyerGroup = ensureBuyerGroup(emptyGroupName);
@@ -251,9 +274,9 @@ SObject allPolicy = ensurePolicy(allPolicyName, true, true);
 SObject limitedPolicy = ensurePolicy(limitedPolicyName, true, true);
 SObject emptyPolicy = ensurePolicy(emptyPolicyName, true, false);
 
-ensureWebStoreBuyerGroup(webStore.Id, (Id) allBuyerGroup.get('Id'));
-ensureWebStoreBuyerGroup(webStore.Id, (Id) limitedBuyerGroup.get('Id'));
-ensureWebStoreBuyerGroup(webStore.Id, (Id) emptyBuyerGroup.get('Id'));
+ensureWebStoreBuyerGroup(webStoreId, (Id) allBuyerGroup.get('Id'));
+ensureWebStoreBuyerGroup(webStoreId, (Id) limitedBuyerGroup.get('Id'));
+ensureWebStoreBuyerGroup(webStoreId, (Id) emptyBuyerGroup.get('Id'));
 
 ensurePolicyBuyerGroup((Id) allPolicy.get('Id'), (Id) allBuyerGroup.get('Id'));
 ensurePolicyBuyerGroup(
@@ -285,8 +308,8 @@ for (Product2 product : limitedProducts) {
 Map<String, Object> summary = new Map<String, Object>{
   'catalogName' => simpleCatalog.Name,
   'catalogId' => simpleCatalog.Id,
-  'webStoreName' => webStore.Name,
-  'webStoreId' => webStore.Id,
+  'webStoreName' => (String) webStore.get('Name'),
+  'webStoreId' => webStoreId,
   'buyerGroups' => new List<Object>{
     new Map<String, Object>{
       'name' => (String) allBuyerGroup.get('Name'),
@@ -309,7 +332,7 @@ Map<String, Object> summary = new Map<String, Object>{
 System.debug('RESULT_JSON ' + JSON.serializePretty(summary));
 System.debug(
   'NEXT_STEP Set CatalogJobConfig__mdt.WebStoreId__c = ' +
-    webStore.Id +
+    webStoreId +
     ', set EnableBuyerGroupAvailability__c = true, and provide your AvailabilitySourceId__c before running BuyerGroupAvailabilityExportBatch.'
 );
 System.debug('🎉 Buyer Group availability seed complete!');

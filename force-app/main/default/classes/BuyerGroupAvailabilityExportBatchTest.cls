@@ -61,8 +61,7 @@ private class BuyerGroupAvailabilityExportBatchTest {
       AvailabilitySourceId__c = 'availability-source-test',
       WebStoreId__c = String.valueOf(webStoreId),
       EnableBuyerGroupAvailability__c = true,
-      BuyerGroupAvailabilityMode__c =
-        CatalogBuyerGroupAvailabilityMode.PAIRED_SOURCE,
+      BuyerGroupAvailabilityMode__c = CatalogBuyerGroupAvailabilityMode.PAIRED_SOURCE,
       EnablePayloadLogging__c = true,
       ProductFilter__c = 'Family = \'Hardware\'',
       BuilderType__c = builderType,
@@ -81,7 +80,8 @@ private class BuyerGroupAvailabilityExportBatchTest {
   }
 
   private static SObject createWebStore(String name) {
-    Schema.SObjectType webStoreType = Schema.getGlobalDescribe().get('WebStore');
+    Schema.SObjectType webStoreType = Schema.getGlobalDescribe()
+      .get('WebStore');
     System.assertNotEquals(
       null,
       webStoreType,
@@ -109,7 +109,9 @@ private class BuyerGroupAvailabilityExportBatchTest {
   }
 
   private static SObject createBuyerGroup(String name) {
-    SObject buyerGroup = Schema.getGlobalDescribe().get('BuyerGroup').newSObject();
+    SObject buyerGroup = Schema.getGlobalDescribe()
+      .get('BuyerGroup')
+      .newSObject();
     buyerGroup.put('Name', name);
     insert buyerGroup;
     return buyerGroup;
@@ -131,7 +133,9 @@ private class BuyerGroupAvailabilityExportBatchTest {
   }
 
   private static void linkWebStoreBuyerGroup(Id webStoreId, Id buyerGroupId) {
-    SObject link = Schema.getGlobalDescribe().get('WebStoreBuyerGroup').newSObject();
+    SObject link = Schema.getGlobalDescribe()
+      .get('WebStoreBuyerGroup')
+      .newSObject();
     link.put('WebStoreId', webStoreId);
     link.put('BuyerGroupId', buyerGroupId);
     insert link;
@@ -175,8 +179,12 @@ private class BuyerGroupAvailabilityExportBatchTest {
     return product;
   }
 
-  private static ProductCatalog createCatalogWithProducts(List<Product2> products) {
-    ProductCatalog catalog = new ProductCatalog(Name = 'Availability Test Catalog');
+  private static ProductCatalog createCatalogWithProducts(
+    List<Product2> products
+  ) {
+    ProductCatalog catalog = new ProductCatalog(
+      Name = 'Availability Test Catalog'
+    );
     insert catalog;
 
     ProductCategory category = new ProductCategory(
@@ -205,7 +213,9 @@ private class BuyerGroupAvailabilityExportBatchTest {
     );
   }
 
-  private static List<String> readQueryLocatorNames(Database.QueryLocator locator) {
+  private static List<String> readQueryLocatorNames(
+    Database.QueryLocator locator
+  ) {
     List<String> names = new List<String>();
     Database.QueryLocatorIterator iterator = locator.iterator();
     while (iterator.hasNext()) {
@@ -219,12 +229,8 @@ private class BuyerGroupAvailabilityExportBatchTest {
   static void testConstructorValidation_requiresEnabledAvailabilityAndFields() {
     CatalogJobConfig__mdt disabledConfig = createConfig(FALLBACK_WEB_STORE_ID);
     disabledConfig.EnableBuyerGroupAvailability__c = false;
-    disabledConfig.BuyerGroupAvailabilityMode__c =
-      CatalogBuyerGroupAvailabilityMode.DISABLED;
-    assertConfigFailure(
-      disabledConfig,
-      'PairedSource or DualWrite'
-    );
+    disabledConfig.BuyerGroupAvailabilityMode__c = CatalogBuyerGroupAvailabilityMode.DISABLED;
+    assertConfigFailure(disabledConfig, 'PairedSource or DualWrite');
 
     CatalogJobConfig__mdt missingSourceConfig = createConfig(
       FALLBACK_WEB_STORE_ID
@@ -255,8 +261,9 @@ private class BuyerGroupAvailabilityExportBatchTest {
     linkWebStoreBuyerGroup(storeId, (Id) alphaBuyerGroup.get('Id'));
     linkWebStoreBuyerGroup(storeId, (Id) betaBuyerGroup.get('Id'));
 
-    BuyerGroupAvailabilityExportBatch batch =
-      new BuyerGroupAvailabilityExportBatch(createConfig(storeId));
+    BuyerGroupAvailabilityExportBatch batch = new BuyerGroupAvailabilityExportBatch(
+      createConfig(storeId)
+    );
 
     List<String> names = readQueryLocatorNames(batch.start(null));
 
@@ -264,6 +271,100 @@ private class BuyerGroupAvailabilityExportBatchTest {
       new List<String>{ 'Alpha Buyers', 'Beta Buyers' },
       names,
       'The start query should scope Buyer Groups to the configured store'
+    );
+  }
+
+  @IsTest
+  static void testStart_unionsBuyerGroupsAcrossConfiguredStores() {
+    if (!hasCommerceAvailabilitySchema()) {
+      return;
+    }
+
+    Id firstStoreId = (Id) createWebStore('First Union Store').get('Id');
+    Id secondStoreId = (Id) createWebStore('Second Union Store').get('Id');
+    SObject firstOnlyGroup = createBuyerGroup('First Only Buyers');
+    SObject sharedGroup = createBuyerGroup('Shared Buyers');
+    SObject secondOnlyGroup = createBuyerGroup('Second Only Buyers');
+    linkWebStoreBuyerGroup(firstStoreId, (Id) firstOnlyGroup.get('Id'));
+    linkWebStoreBuyerGroup(firstStoreId, (Id) sharedGroup.get('Id'));
+    linkWebStoreBuyerGroup(secondStoreId, (Id) sharedGroup.get('Id'));
+    linkWebStoreBuyerGroup(secondStoreId, (Id) secondOnlyGroup.get('Id'));
+
+    CatalogJobConfig__mdt config = createConfig(firstStoreId);
+    config.WebStoreId__c = null;
+    config.WebStoreIds__c = String.join(
+      new List<String>{
+        String.valueOf(firstStoreId),
+        String.valueOf(secondStoreId)
+      },
+      ','
+    );
+
+    BuyerGroupAvailabilityExportBatch batch = new BuyerGroupAvailabilityExportBatch(
+      config
+    );
+    System.assertEquals(
+      new List<String>{
+        'First Only Buyers',
+        'Second Only Buyers',
+        'Shared Buyers'
+      },
+      readQueryLocatorNames(batch.start(null)),
+      'Multi-store availability should union and de-duplicate Buyer Groups'
+    );
+
+    Map<Id, Set<String>> storesByGroup = BuyerGroupAvailabilityExportBatch.getBuyerGroupIdsForWebStores(
+      new Set<Id>{ firstStoreId, secondStoreId }
+    );
+    System.assertEquals(
+      new Set<String>{
+        String.valueOf(firstStoreId),
+        String.valueOf(secondStoreId)
+      },
+      storesByGroup.get((Id) sharedGroup.get('Id')),
+      'A shared Buyer Group should retain both contributing store IDs'
+    );
+  }
+
+  @IsTest
+  static void testMultiStorePayload_emitsSortedPluralStoreIds() {
+    if (!hasCommerceAvailabilitySchema()) {
+      return;
+    }
+
+    SObject buyerGroup = createBuyerGroup('Multi Store Payload Buyers');
+    Id buyerGroupId = (Id) buyerGroup.get('Id');
+    String payload = BuyerGroupAvailabilityPayloadBuilder.buildFullUpdateNdjson(
+      new List<SObject>{ buyerGroup },
+      new Map<Id, Set<String>>{
+        buyerGroupId => new Set<String>{ 'SKU-002', 'SKU-001' }
+      },
+      new Map<Id, Set<String>>{
+        buyerGroupId => new Set<String>{
+          '0ZE000000000002AAA',
+          '0ZE000000000001AAA'
+        }
+      }
+    );
+    Map<String, Object> envelope = (Map<String, Object>) JSON.deserializeUntyped(
+      payload
+    );
+    Map<String, Object> item = (Map<String, Object>) ((List<Object>) envelope.get(
+      'addOrUpdate'
+    ))[0];
+
+    System.assertEquals(
+      new List<Object>{ 'SKU-001', 'SKU-002' },
+      item.get('ec_available_items')
+    );
+    System.assertEquals(
+      new List<Object>{ '0ZE000000000001AAA', '0ZE000000000002AAA' },
+      item.get('sf_webstore_ids')
+    );
+    System.assertEquals(
+      false,
+      item.containsKey('sf_webstore_id'),
+      'The singular field should only be emitted when exactly one store applies'
     );
   }
 
@@ -325,8 +426,14 @@ private class BuyerGroupAvailabilityExportBatchTest {
 
     SObject visiblePolicy = createPolicy('Visible Policy', true, false);
     SObject hiddenPolicy = createPolicy('Hidden Policy', false, false);
-    linkPolicyBuyerGroup((Id) visiblePolicy.get('Id'), (Id) buyerGroup.get('Id'));
-    linkPolicyBuyerGroup((Id) hiddenPolicy.get('Id'), (Id) buyerGroup.get('Id'));
+    linkPolicyBuyerGroup(
+      (Id) visiblePolicy.get('Id'),
+      (Id) buyerGroup.get('Id')
+    );
+    linkPolicyBuyerGroup(
+      (Id) hiddenPolicy.get('Id'),
+      (Id) buyerGroup.get('Id')
+    );
     linkPolicyProduct((Id) visiblePolicy.get('Id'), hardwareProduct.Id);
     linkPolicyProduct((Id) visiblePolicy.get('Id'), plumbingProduct.Id);
     linkPolicyProduct((Id) visiblePolicy.get('Id'), outsideCatalogProduct.Id);
@@ -335,13 +442,13 @@ private class BuyerGroupAvailabilityExportBatchTest {
     CatalogJobConfig__mdt config = createConfig(storeId);
     config.CatalogId__c = String.valueOf(catalog.Id);
 
-    BuyerGroupAvailabilityExportBatch batch =
-      new BuyerGroupAvailabilityExportBatch(config);
+    BuyerGroupAvailabilityExportBatch batch = new BuyerGroupAvailabilityExportBatch(
+      config
+    );
 
-    Map<Id, Set<Id>> visiblePolicyIdsByBuyerGroup =
-      batch.getVisiblePolicyIdsByBuyerGroup(
-        new Set<Id>{ (Id) buyerGroup.get('Id') }
-      );
+    Map<Id, Set<Id>> visiblePolicyIdsByBuyerGroup = batch.getVisiblePolicyIdsByBuyerGroup(
+      new Set<Id>{ (Id) buyerGroup.get('Id') }
+    );
 
     System.assertEquals(
       new Set<Id>{ (Id) visiblePolicy.get('Id') },
@@ -349,8 +456,9 @@ private class BuyerGroupAvailabilityExportBatchTest {
       'Only CanViewProduct policies should be returned'
     );
 
-    Map<Id, Set<String>> exportedItemIdsByBuyerGroup =
-      batch.getExportedItemIdsByBuyerGroup(visiblePolicyIdsByBuyerGroup);
+    Map<Id, Set<String>> exportedItemIdsByBuyerGroup = batch.getExportedItemIdsByBuyerGroup(
+      visiblePolicyIdsByBuyerGroup
+    );
 
     System.assertEquals(
       new Set<String>{ 'SKU-HARD-001' },
@@ -390,7 +498,10 @@ private class BuyerGroupAvailabilityExportBatchTest {
     linkWebStoreBuyerGroup(storeId, (Id) buyerGroup.get('Id'));
 
     SObject visiblePolicy = createPolicy('Provider Policy', true, false);
-    linkPolicyBuyerGroup((Id) visiblePolicy.get('Id'), (Id) buyerGroup.get('Id'));
+    linkPolicyBuyerGroup(
+      (Id) visiblePolicy.get('Id'),
+      (Id) buyerGroup.get('Id')
+    );
     linkPolicyProduct((Id) visiblePolicy.get('Id'), hardwareProduct.Id);
 
     CatalogJobConfig__mdt config = createConfig(
@@ -399,15 +510,15 @@ private class BuyerGroupAvailabilityExportBatchTest {
     );
     config.CatalogId__c = String.valueOf(catalog.Id);
 
-    BuyerGroupAvailabilityExportBatch batch =
-      new BuyerGroupAvailabilityExportBatch(config);
+    BuyerGroupAvailabilityExportBatch batch = new BuyerGroupAvailabilityExportBatch(
+      config
+    );
 
-    Map<Id, Set<String>> exportedItemIdsByBuyerGroup =
-      batch.getExportedItemIdsByBuyerGroup(
-        batch.getVisiblePolicyIdsByBuyerGroup(
-          new Set<Id>{ (Id) buyerGroup.get('Id') }
-        )
-      );
+    Map<Id, Set<String>> exportedItemIdsByBuyerGroup = batch.getExportedItemIdsByBuyerGroup(
+      batch.getVisiblePolicyIdsByBuyerGroup(
+        new Set<Id>{ (Id) buyerGroup.get('Id') }
+      )
+    );
 
     System.assertEquals(
       new Set<String>{ 'STOCK-HARD-ALT-001' },
@@ -437,7 +548,10 @@ private class BuyerGroupAvailabilityExportBatchTest {
     linkWebStoreBuyerGroup(storeId, (Id) buyerGroup.get('Id'));
 
     SObject visiblePolicy = createPolicy('Legacy Policy', true, false);
-    linkPolicyBuyerGroup((Id) visiblePolicy.get('Id'), (Id) buyerGroup.get('Id'));
+    linkPolicyBuyerGroup(
+      (Id) visiblePolicy.get('Id'),
+      (Id) buyerGroup.get('Id')
+    );
     linkPolicyProduct((Id) visiblePolicy.get('Id'), hardwareProduct.Id);
 
     CatalogJobConfig__mdt config = createConfig(
@@ -446,15 +560,15 @@ private class BuyerGroupAvailabilityExportBatchTest {
     );
     config.CatalogId__c = String.valueOf(catalog.Id);
 
-    BuyerGroupAvailabilityExportBatch batch =
-      new BuyerGroupAvailabilityExportBatch(config);
+    BuyerGroupAvailabilityExportBatch batch = new BuyerGroupAvailabilityExportBatch(
+      config
+    );
 
-    Map<Id, Set<String>> exportedItemIdsByBuyerGroup =
-      batch.getExportedItemIdsByBuyerGroup(
-        batch.getVisiblePolicyIdsByBuyerGroup(
-          new Set<Id>{ (Id) buyerGroup.get('Id') }
-        )
-      );
+    Map<Id, Set<String>> exportedItemIdsByBuyerGroup = batch.getExportedItemIdsByBuyerGroup(
+      batch.getVisiblePolicyIdsByBuyerGroup(
+        new Set<Id>{ (Id) buyerGroup.get('Id') }
+      )
+    );
 
     System.assertEquals(
       new Set<String>{ 'SKU-HARD-LEGACY-001' },
@@ -480,7 +594,10 @@ private class BuyerGroupAvailabilityExportBatchTest {
     linkWebStoreBuyerGroup(storeId, (Id) buyerGroup.get('Id'));
 
     SObject visiblePolicy = createPolicy('Broken Policy', true, false);
-    linkPolicyBuyerGroup((Id) visiblePolicy.get('Id'), (Id) buyerGroup.get('Id'));
+    linkPolicyBuyerGroup(
+      (Id) visiblePolicy.get('Id'),
+      (Id) buyerGroup.get('Id')
+    );
     linkPolicyProduct((Id) visiblePolicy.get('Id'), hardwareProduct.Id);
 
     CatalogJobConfig__mdt config = createConfig(
@@ -489,8 +606,9 @@ private class BuyerGroupAvailabilityExportBatchTest {
     );
     config.CatalogId__c = String.valueOf(catalog.Id);
 
-    BuyerGroupAvailabilityExportBatch batch =
-      new BuyerGroupAvailabilityExportBatch(config);
+    BuyerGroupAvailabilityExportBatch batch = new BuyerGroupAvailabilityExportBatch(
+      config
+    );
 
     Boolean failed = false;
     try {
@@ -513,8 +631,9 @@ private class BuyerGroupAvailabilityExportBatchTest {
 
     if (!hasCommerceAvailabilitySchema()) {
       CatalogJobConfig__mdt config = createConfig(FALLBACK_WEB_STORE_ID);
-      BuyerGroupAvailabilityExportBatch batch =
-        new BuyerGroupAvailabilityExportBatch(config);
+      BuyerGroupAvailabilityExportBatch batch = new BuyerGroupAvailabilityExportBatch(
+        config
+      );
 
       Test.setMock(
         HttpCalloutMock.class,
@@ -547,7 +666,12 @@ private class BuyerGroupAvailabilityExportBatchTest {
       );
 
       List<Coveo_Payload_Log__c> logs = [
-        SELECT ScopeSize__c, OperationCount__c, IsValid__c, Reason__c, Payload__c
+        SELECT
+          ScopeSize__c,
+          OperationCount__c,
+          IsValid__c,
+          Reason__c,
+          Payload__c
         FROM Coveo_Payload_Log__c
       ];
       System.assertEquals(1, logs.size(), 'Payload logging should still occur');
@@ -583,8 +707,15 @@ private class BuyerGroupAvailabilityExportBatchTest {
     linkWebStoreBuyerGroup(storeId, (Id) filteredBuyerGroup.get('Id'));
 
     SObject allPolicy = createPolicy('All Buyers Policy', true, true);
-    SObject filteredPolicy = createPolicy('Filtered Buyers Policy', true, false);
-    linkPolicyBuyerGroup((Id) allPolicy.get('Id'), (Id) allBuyerGroup.get('Id'));
+    SObject filteredPolicy = createPolicy(
+      'Filtered Buyers Policy',
+      true,
+      false
+    );
+    linkPolicyBuyerGroup(
+      (Id) allPolicy.get('Id'),
+      (Id) allBuyerGroup.get('Id')
+    );
     linkPolicyBuyerGroup(
       (Id) filteredPolicy.get('Id'),
       (Id) filteredBuyerGroup.get('Id')
@@ -596,8 +727,9 @@ private class BuyerGroupAvailabilityExportBatchTest {
     CatalogJobConfig__mdt config = createConfig(storeId);
     config.CatalogId__c = String.valueOf(catalog.Id);
 
-    BuyerGroupAvailabilityExportBatch batch =
-      new BuyerGroupAvailabilityExportBatch(config);
+    BuyerGroupAvailabilityExportBatch batch = new BuyerGroupAvailabilityExportBatch(
+      config
+    );
 
     List<SObject> scope = queryBuyerGroups(
       new Set<Id>{
@@ -641,14 +773,21 @@ private class BuyerGroupAvailabilityExportBatchTest {
       'create container, upload, and stream update should all run'
     );
     System.assert(recordedRequests[0].getEndpoint().contains('/files'));
-    System.assertEquals('abc', recordedRequests[1].getHeader('x-amz-meta-test'));
+    System.assertEquals(
+      'abc',
+      recordedRequests[1].getHeader('x-amz-meta-test')
+    );
     System.assert(recordedRequests[2].getEndpoint().contains('/stream/update'));
 
     List<Coveo_Payload_Log__c> logs = [
       SELECT ScopeSize__c, OperationCount__c, IsValid__c, Reason__c, Payload__c
       FROM Coveo_Payload_Log__c
     ];
-    System.assertEquals(1, logs.size(), 'Payload logging should enqueue one log');
+    System.assertEquals(
+      1,
+      logs.size(),
+      'Payload logging should enqueue one log'
+    );
     System.assertEquals(2, logs[0].ScopeSize__c.intValue());
     System.assertEquals(true, logs[0].IsValid__c);
     System.assert(logs[0].Payload__c.contains('"objecttype":"Availability"'));
@@ -666,8 +805,9 @@ private class BuyerGroupAvailabilityExportBatchTest {
     CatalogJobConfig__mdt config = createConfig(FALLBACK_WEB_STORE_ID);
     config.EnablePayloadLogging__c = false;
 
-    BuyerGroupAvailabilityExportBatch batch =
-      new BuyerGroupAvailabilityExportBatch(config);
+    BuyerGroupAvailabilityExportBatch batch = new BuyerGroupAvailabilityExportBatch(
+      config
+    );
     batch.firstOrderingId = 84L;
 
     Test.setMock(
@@ -688,7 +828,9 @@ private class BuyerGroupAvailabilityExportBatchTest {
     Test.stopTest();
 
     System.assertEquals(1, recordedRequests.size());
-    System.assert(recordedRequests[0].getEndpoint().contains('/deleteolderthan/'));
+    System.assert(
+      recordedRequests[0].getEndpoint().contains('/deleteolderthan/')
+    );
   }
 
   private static void assertConfigFailure(

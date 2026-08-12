@@ -2,17 +2,16 @@
   "orgName": "Coveo Commerce ETL (B2B)",
   "edition": "Developer",
   "hasSampleData": false,
-  "features": [
-    "Communities",
-    "B2BCommerce",
-    "ProductCatalogManagementAddOn"
-  ],
+  "features": ["Communities", "B2BCommerce", "ProductCatalogManagementAddOn"],
   "settings": {
     "experienceBundleSettings": {
       "enableExperienceBundleMetadata": true
     },
     "communitiesSettings": {
       "enableNetworksEnabled": true
+    },
+    "commerceSettings": {
+      "commerceEnabled": true
     }
   }
 }

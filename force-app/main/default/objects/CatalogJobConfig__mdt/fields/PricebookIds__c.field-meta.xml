@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>PricebookIds__c</fullName>
+    <description>Comma-separated Pricebook2 IDs to include in product exports. Takes precedence over Web Store IDs. When both fields are blank, all active pricebook entries are exported.</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Pricebook IDs</label>
+    <length>32768</length>
+    <required>false</required>
+    <type>LongTextArea</type>
+    <visibleLines>3</visibleLines>
+</CustomField>

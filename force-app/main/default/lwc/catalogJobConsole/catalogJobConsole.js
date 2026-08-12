@@ -264,7 +264,8 @@ export default class CatalogJobConsole extends NavigationMixin(
     (this.selectedConfig.recentProductRuns || [])
       .filter(
         (recentRun) =>
-          (recentRun.configDeveloperName || this.selectedConfig.developerName) ===
+          (recentRun.configDeveloperName ||
+            this.selectedConfig.developerName) ===
           this.selectedConfig.developerName
       )
       .forEach((recentRun) => {
@@ -403,6 +404,14 @@ export default class CatalogJobConsole extends NavigationMixin(
       {
         label: "Web Store",
         value: this.selectedConfig.webStoreLabel
+      },
+      {
+        label: "Shared Web Stores",
+        value: this.selectedConfig.webStoreIdsLabel
+      },
+      {
+        label: "Pricebooks",
+        value: this.selectedConfig.pricebookIdsLabel
       },
       {
         label: "Filter",
@@ -1524,6 +1533,16 @@ export default class CatalogJobConsole extends NavigationMixin(
       webStoreLabel: buyerGroupAccessEnabled
         ? this.normalizeText(config.WebStoreId__c, "Web store missing")
         : "Not required",
+      webStoreIdsLabel: this.describeIdScope(
+        config.WebStoreIds__c,
+        "No shared stores"
+      ),
+      pricebookIdsLabel: this.describeIdScope(
+        config.PricebookIds__c,
+        config.WebStoreIds__c
+          ? "Resolved from shared stores"
+          : "All active pricebooks"
+      ),
       scopeSummary: filterText,
       extraFieldsSummary: extraFields.length
         ? `${extraFields.length} extra field${extraFields.length === 1 ? "" : "s"}`
@@ -2202,7 +2221,9 @@ export default class CatalogJobConsole extends NavigationMixin(
 
     return (
       this.runSessions.find((run) => run.runKey === runKey) ||
-      this.selectedConfigMatchedRunSessions.find((run) => run.runKey === runKey) ||
+      this.selectedConfigMatchedRunSessions.find(
+        (run) => run.runKey === runKey
+      ) ||
       null
     );
   }
@@ -2220,6 +2241,13 @@ export default class CatalogJobConsole extends NavigationMixin(
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean);
+  }
+
+  describeIdScope(value, fallback) {
+    const values = this.splitCsv(value);
+    return values.length
+      ? `${values.length} configured: ${values.join(", ")}`
+      : fallback;
   }
 
   normalizeText(value, fallback) {
