@@ -179,7 +179,7 @@ Use Custom Metadata (`CatalogJobConfig__mdt`) to define multiple catalogs:
 - Builder Type (`BuilderType__c`) - Determines how product grouping/variants are handled
 - (Optional) paired Availability source (`AvailabilitySourceId__c`) for Buyer Group visibility
 - (Optional) Web Store ID (`WebStoreId__c`) used to resolve Buyer Groups
-- (Optional) explicit Pricebook IDs (`PricebookIds__c`) for a scoped, labeled price export
+- (Optional) explicit Pricebook IDs (`PricebookIds__c`) for a scoped price export with legacy raw keys
 - (Optional) Shared Catalog Web Store IDs (`WebStoreIds__c`) for automatic pricebook resolution and multi-store Buyer Group availability
 - (Optional) `EnableBuyerGroupAvailability__c` flag to turn on the availability export
 
@@ -304,7 +304,7 @@ A catalog config can scope prices in either of two ways:
 1. `PricebookIds__c`: an explicit CSV of `Pricebook2` IDs.
 2. `WebStoreIds__c`: a CSV of `WebStore` IDs whose pricebooks are resolved through `WebStorePricebook`.
 
-Explicit pricebooks take precedence when both fields are populated. Explicit scope uses readable Pricebook names, with duplicate labels disambiguated by Salesforce ID.
+Explicit pricebooks take precedence when both fields are populated. Both explicit and Web Store-resolved scopes preserve the legacy raw price-key contract so existing consumers do not need different lookup logic based on how the scope was configured.
 
 For pricing, `WebStoreIds__c` is a **pricebook selector**, not part of the price identity. The resolver:
 
@@ -313,7 +313,7 @@ For pricing, `WebStoreIds__c` is a **pricebook selector**, not part of the price
 3. Removes duplicates when multiple stores share the same Pricebook.
 4. Exports only prices from that resolved set.
 
-The Web Store ID is not added to `ec_price` keys. A `WebStorePricebook` association does not create a store-specific price: the price still belongs to its Pricebook Entry and optional Product Selling Model. Web Store-scoped exports therefore preserve the existing raw key formats:
+The Web Store ID is not added to `ec_price` keys. A `WebStorePricebook` association does not create a store-specific price: the price still belongs to its Pricebook Entry and optional Product Selling Model. All scoped exports therefore use the existing raw key formats:
 
 - `<Pricebook2Id>`
 - `<Pricebook2Id>:<ProductSellingModelId>`

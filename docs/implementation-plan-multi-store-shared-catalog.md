@@ -7,7 +7,7 @@
 
 ## Implementation Status
 
-Option C is implemented and validated in a B2B scratch org. Multi-pricebook resolution, backward-compatible raw keys for Web Store-scoped prices, readable explicit-pricebook keys, multi-store paired availability, chained scheduling, setup/run-center exposure, metadata, and permission updates are complete. Existing blank-scope price behavior and singular `WebStoreId__c` availability remain backward-compatible.
+Option C is implemented and validated in a B2B scratch org. Multi-pricebook resolution, backward-compatible raw keys for all scoped prices, multi-store paired availability, chained scheduling, setup/run-center exposure, metadata, and permission updates are complete. Existing blank-scope price behavior and singular `WebStoreId__c` availability remain backward-compatible.
 
 One planned UI item is intentionally deferred: chain membership is serialized in the scheduled Apex instance, but there is no persistent chain-definition metadata object. The setup UI can create and remove a chain from its current draft but cannot reconstruct membership or display durable chain progress after reload. Queueable chaining is launch-sequential rather than batch-completion-sequential.
 
@@ -152,25 +152,25 @@ Same change applies to `DeltaProductCatalogExportBatch`.
 ### A.6 — Update Price Key Strategy in Payload
 
 **Current:** Keys are raw Salesforce IDs (`01sABC123...`).  
-**Final hybrid decision:** Explicit `PricebookIds__c` scopes use readable Pricebook names. `WebStoreIds__c` scopes retain raw `Pricebook2` IDs so existing downstream lookups remain compatible while the selected stores still filter the exported pricebooks.
+**Final compatibility decision:** Both explicit `PricebookIds__c` scopes and `WebStoreIds__c`-resolved scopes retain raw `Pricebook2` IDs. Scope configuration changes which prices are selected, but it never changes the downstream key contract.
 
-**Option 1 — Keyed by Pricebook Name (recommended):**
+**Final format:**
 
 ```json
 {
   "ec_price": {
-    "Standard": 99.99,
-    "Brand_A_Web_Store": 89.99,
-    "Brand_B_Web_Store": 109.99
+    "01s_SHARED": 99.99,
+    "01s_SHARED:0jP_MONTHLY": 8.99,
+    "01s_REGIONAL": 109.99
   }
 }
 ```
 
-**Implementation:** Pass a `Map<Id, String> pricebookIdToLabel` into `loadPricesByProduct()` (or resolve it once and pass to the builder context). Explicit scopes map IDs to Pricebook names; Web Store scopes map each resolved ID to its own raw string value.
+**Implementation:** Pass a `Map<Id, String> pricebookIdToLabel` into `loadPricesByProduct()` (or resolve it once and pass to the builder context). Both scoped paths map each resolved Pricebook ID to its own raw string value.
 
 **Change locations:**
 
-- `CatalogProductExportSupport.loadPricesByProduct()` — use label as key
+- `CatalogProductExportSupport.loadPricesByProduct()` — use the resolved raw ID label as the key
 - Or introduce a post-processing step that remaps keys before handing to the builder
 
 ### A.7 — Update `CatalogSyncStateService.buildResolvedTargetKey()`
@@ -356,15 +356,15 @@ These collect active config developer names and hand them to `CatalogSyncChainQu
 | 1.8 | Update `buildResolvedTargetKey()` with pricebook/webstore dimensions        | `CatalogSyncStateService.cls`           |
 | 1.9 | Tests: pricebook filtering, WebStore resolution, backward compat            | New test classes                        |
 
-### Phase 2: Price Key Labeling (1 day)
+### Phase 2: Price Key Compatibility (1 day)
 
-**Status: Complete with backward-compatible Web Store keys.** Explicit scopes use Pricebook names with Salesforce IDs appended for collisions. Store-resolved scopes use raw `Pricebook2` IDs and retain raw `Pricebook2Id:ProductSellingModelId` composed keys.
+**Status: Complete with backward-compatible raw keys.** Explicit and store-resolved scopes both use raw `Pricebook2` IDs and retain raw `Pricebook2Id:ProductSellingModelId` composed keys.
 
-| #   | Task                                                                                | Files                                     |
-| --- | ----------------------------------------------------------------------------------- | ----------------------------------------- |
-| 2.1 | Resolve `Map<Id, String>` pricebook labels (explicit name or raw store-resolved ID) | `WebStorePricebookResolver.cls`           |
-| 2.2 | Apply readable explicit labels while preserving raw Web Store-scoped keys           | `CatalogProductExportSupport.cls`         |
-| 2.3 | Update existing builder tests to verify labeled keys                                | `CatalogJsonBuilderCommerceTest.cls` etc. |
+| #   | Task                                                                     | Files                               |
+| --- | ------------------------------------------------------------------------ | ----------------------------------- |
+| 2.1 | Resolve `Map<Id, String>` raw Pricebook ID labels for either scoped path | `WebStorePricebookResolver.cls`     |
+| 2.2 | Preserve raw IDs while filtering the price map                           | `CatalogProductExportSupport.cls`   |
+| 2.3 | Update tests to verify the legacy raw key formats                        | `WebStorePricebookResolverTest.cls` |
 
 ### Phase 3: Chained Scheduling (2 days)
 
@@ -418,28 +418,27 @@ If `PricebookIds__c` is also configured, its explicit Pricebook list takes prece
 
 ## Backward Compatibility Contract
 
-| Scenario                                                     | Behavior                                                                                                                             |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `PricebookIds__c` blank + `WebStoreIds__c` blank             | **No change.** All pricebook entries exported, keys remain raw IDs.                                                                  |
-| `PricebookIds__c` populated                                  | Only explicitly listed Pricebooks are included. Keys use Pricebook names. This pricing scope takes precedence over `WebStoreIds__c`. |
-| One `WebStoreIds__c` value, `PricebookIds__c` blank          | Auto-resolves that store's Pricebooks through `WebStorePricebook`; keys remain raw `Pricebook2` IDs.                                 |
-| Multiple `WebStoreIds__c` values, `PricebookIds__c` blank    | Exports the deduplicated union of all linked Pricebooks. A shared Pricebook appears once; keys remain raw IDs.                       |
-| Resolved Pricebook has a Product Selling Model               | Uses the flat raw `<Pricebook2Id>:<ProductSellingModelId>` key; the Web Store ID is not prefixed.                                    |
-| Configured Pricebook or Web Store scope resolves to no books | Exports no prices and fails closed; it never falls back to an unscoped all-Pricebook export.                                         |
-| Existing scheduled jobs                                      | Continue working unchanged. Chained scheduling is opt-in.                                                                            |
-| `WebStoreId__c` (singular, existing)                         | Continues to work for Buyer Group availability. `WebStoreIds__c` takes precedence when populated.                                    |
+| Scenario                                                     | Behavior                                                                                                                                     |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PricebookIds__c` blank + `WebStoreIds__c` blank             | **No change.** All pricebook entries exported, keys remain raw IDs.                                                                          |
+| `PricebookIds__c` populated                                  | Only explicitly listed Pricebooks are included. Keys remain raw `Pricebook2` IDs. This pricing scope takes precedence over `WebStoreIds__c`. |
+| One `WebStoreIds__c` value, `PricebookIds__c` blank          | Auto-resolves that store's Pricebooks through `WebStorePricebook`; keys remain raw `Pricebook2` IDs.                                         |
+| Multiple `WebStoreIds__c` values, `PricebookIds__c` blank    | Exports the deduplicated union of all linked Pricebooks. A shared Pricebook appears once; keys remain raw IDs.                               |
+| Resolved Pricebook has a Product Selling Model               | Uses the flat raw `<Pricebook2Id>:<ProductSellingModelId>` key; the Web Store ID is not prefixed.                                            |
+| Configured Pricebook or Web Store scope resolves to no books | Exports no prices and fails closed; it never falls back to an unscoped all-Pricebook export.                                                 |
+| Existing scheduled jobs                                      | Continue working unchanged. Chained scheduling is opt-in.                                                                                    |
+| `WebStoreId__c` (singular, existing)                         | Continues to work for Buyer Group availability. `WebStoreIds__c` takes precedence when populated.                                            |
 
 ---
 
 ## Risk & Mitigation
 
-| Risk                                                      | Impact                                               | Mitigation                                                                                                      |
-| --------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `WebStorePricebook` object not present in all orgs        | An explicit store scope cannot be resolved           | Guard with schema checks and fail with a clear configuration error; never fall back to an unscoped price export |
-| Queueable chain depth limit                               | Chain stops mid-way                                  | Use async-to-async chaining (unlimited depth) rather than sync invocation                                       |
-| Large price dictionaries bloat payload                    | Heap/callout size limits                             | `PricebookIds__c` filtering keeps only relevant prices; batch size tuning via `BatchSize__c`                    |
-| Delta readiness invalidation                              | First run after config change requires full baseline | Expected and documented; same behavior as changing any other config dimension                                   |
-| Explicit-label collisions (two pricebooks with same name) | Ambiguous keys                                       | Append Salesforce IDs and enforce case-insensitive uniqueness in the resolver                                   |
+| Risk                                               | Impact                                               | Mitigation                                                                                                      |
+| -------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `WebStorePricebook` object not present in all orgs | An explicit store scope cannot be resolved           | Guard with schema checks and fail with a clear configuration error; never fall back to an unscoped price export |
+| Queueable chain depth limit                        | Chain stops mid-way                                  | Use async-to-async chaining (unlimited depth) rather than sync invocation                                       |
+| Large price dictionaries bloat payload             | Heap/callout size limits                             | `PricebookIds__c` filtering keeps only relevant prices; batch size tuning via `BatchSize__c`                    |
+| Delta readiness invalidation                       | First run after config change requires full baseline | Expected and documented; same behavior as changing any other config dimension                                   |
 
 ---
 

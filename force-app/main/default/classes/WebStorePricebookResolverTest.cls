@@ -1,7 +1,7 @@
 @IsTest
 private class WebStorePricebookResolverTest {
   @IsTest
-  static void resolvesExplicitPricebooksWithHumanReadableLabels() {
+  static void resolvesExplicitPricebooksWithRawIdLabels() {
     Pricebook2 firstPricebook = new Pricebook2(
       Name = 'Retail USD',
       IsActive = true
@@ -28,12 +28,23 @@ private class WebStorePricebookResolverTest {
       resolution.pricebookIds
     );
     System.assertEquals(
-      'Retail USD',
+      String.valueOf(firstPricebook.Id),
       resolution.labelsByPricebookId.get(firstPricebook.Id)
     );
     System.assertEquals(
-      'Wholesale USD',
+      String.valueOf(secondPricebook.Id),
       resolution.labelsByPricebookId.get(secondPricebook.Id)
+    );
+    Id sellingModelId = Id.valueOf('0jP000000000001');
+    System.assertEquals(
+      String.valueOf(firstPricebook.Id) + ':' + String.valueOf(sellingModelId),
+      CatalogProductExportSupport.buildUniquePriceKey(
+        new Map<String, Decimal>(),
+        resolution.labelsByPricebookId.get(firstPricebook.Id),
+        sellingModelId,
+        firstPricebook.Id,
+        Id.valueOf('01u000000000001')
+      )
     );
   }
 
@@ -69,39 +80,39 @@ private class WebStorePricebookResolverTest {
   }
 
   @IsTest
-  static void finalResolvedLabelsRemainUniqueAfterDuplicateSuffixing() {
-    Pricebook2 firstPricebook = new Pricebook2(
+  static void explicitPricebooksTakePrecedenceAndRemainRaw() {
+    Pricebook2 explicitPricebook = new Pricebook2(
       Name = 'Retail',
       IsActive = true
     );
-    Pricebook2 secondPricebook = new Pricebook2(
-      Name = 'Retail',
+    Pricebook2 storePricebook = new Pricebook2(
+      Name = 'Store Retail',
       IsActive = true
     );
-    insert new List<Pricebook2>{ firstPricebook, secondPricebook };
-    Pricebook2 adversarialPricebook = new Pricebook2(
-      Name = 'Retail [' + String.valueOf(firstPricebook.Id) + ']',
-      IsActive = true
-    );
-    insert adversarialPricebook;
+    insert new List<Pricebook2>{ explicitPricebook, storePricebook };
+    Id webStoreId = Id.valueOf('0ZE000000000001');
+    WebStorePricebookResolver.testPricebooksByWebStoreIds = new Map<Id, String>{
+      storePricebook.Id => 'Store A'
+    };
 
     WebStorePricebookResolver.PricebookResolution resolution = WebStorePricebookResolver.resolve(
       new CatalogJobConfig__mdt(
-        PricebookIds__c = String.join(
-          new List<String>{
-            String.valueOf(firstPricebook.Id),
-            String.valueOf(secondPricebook.Id),
-            String.valueOf(adversarialPricebook.Id)
-          },
-          ','
-        )
+        PricebookIds__c = String.valueOf(explicitPricebook.Id),
+        WebStoreIds__c = String.valueOf(webStoreId)
       )
     );
 
     System.assertEquals(
-      3,
-      new Set<String>(resolution.labelsByPricebookId.values()).size(),
-      'Final labels must remain unique even when a raw name resembles a generated collision suffix'
+      new Set<Id>{ explicitPricebook.Id },
+      resolution.pricebookIds
+    );
+    System.assertEquals(
+      String.valueOf(explicitPricebook.Id),
+      resolution.labelsByPricebookId.get(explicitPricebook.Id)
+    );
+    System.assertEquals(
+      false,
+      resolution.pricebookIds.contains(storePricebook.Id)
     );
   }
 
@@ -129,7 +140,7 @@ private class WebStorePricebookResolverTest {
   }
 
   @IsTest
-  static void filtersPricesAndUsesConfiguredLabels() {
+  static void filtersPricesAndUsesRawIdLabels() {
     Id standardPricebookId = Test.getStandardPricebookId();
     Product2 product = new Product2(Name = 'Filtered Product', IsActive = true);
     insert product;
@@ -167,13 +178,15 @@ private class WebStorePricebookResolverTest {
       new List<Product2>{ product },
       standardPricebookId,
       new Set<Id>{ targetPricebook.Id },
-      new Map<Id, String>{ targetPricebook.Id => 'Brand A Store:Brand A' }
+      new Map<Id, String>{
+        targetPricebook.Id => String.valueOf(targetPricebook.Id)
+      }
     );
 
     System.assertEquals(1, prices.get(product.Id).size());
     System.assertEquals(
       90,
-      prices.get(product.Id).get('Brand A Store:Brand A')
+      prices.get(product.Id).get(String.valueOf(targetPricebook.Id))
     );
   }
 

@@ -26,7 +26,7 @@ public with sharing class WebStorePricebookResolver {
       );
       return new PricebookResolution(
         pricebookIds,
-        makeLabelsUnique(resolvePricebookNames(pricebookIds)),
+        buildRawLabels(pricebookIds),
         true
       );
     }
@@ -39,11 +39,9 @@ public with sharing class WebStorePricebookResolver {
       Map<Id, String> storeLabelsByPricebookId = resolvePricebooksByWebStoreIds(
         webStoreIds
       );
-      Map<Id, String> labelsByPricebookId = new Map<Id, String>();
-
-      for (Id pricebookId : storeLabelsByPricebookId.keySet()) {
-        labelsByPricebookId.put(pricebookId, String.valueOf(pricebookId));
-      }
+      Map<Id, String> labelsByPricebookId = buildRawLabels(
+        storeLabelsByPricebookId.keySet()
+      );
 
       return new PricebookResolution(
         new Set<Id>(storeLabelsByPricebookId.keySet()),
@@ -221,38 +219,14 @@ public with sharing class WebStorePricebookResolver {
     return namesByPricebookId;
   }
 
-  private static Map<Id, String> makeLabelsUnique(Map<Id, String> rawLabels) {
-    Map<String, Integer> countsByLabel = new Map<String, Integer>();
-    for (String label : rawLabels.values()) {
-      String normalized = String.isBlank(label)
-        ? ''
-        : label.trim().toLowerCase();
-      countsByLabel.put(
-        normalized,
-        countsByLabel.containsKey(normalized)
-          ? countsByLabel.get(normalized) + 1
-          : 1
-      );
+  private static Map<Id, String> buildRawLabels(Set<Id> pricebookIds) {
+    Map<Id, String> labelsByPricebookId = new Map<Id, String>();
+    if (pricebookIds == null) {
+      return labelsByPricebookId;
     }
-
-    Map<Id, String> uniqueLabels = new Map<Id, String>();
-    Set<String> usedLabels = new Set<String>();
-    List<Id> sortedPricebookIds = new List<Id>(rawLabels.keySet());
-    sortedPricebookIds.sort();
-    for (Id pricebookId : sortedPricebookIds) {
-      String label = rawLabels.get(pricebookId);
-      String normalized = String.isBlank(label)
-        ? ''
-        : label.trim().toLowerCase();
-      String candidate = countsByLabel.get(normalized) > 1
-        ? label + ' [' + String.valueOf(pricebookId) + ']'
-        : label;
-      while (usedLabels.contains(candidate.trim().toLowerCase())) {
-        candidate += ' [' + String.valueOf(pricebookId) + ']';
-      }
-      uniqueLabels.put(pricebookId, candidate);
-      usedLabels.add(candidate.trim().toLowerCase());
+    for (Id pricebookId : pricebookIds) {
+      labelsByPricebookId.put(pricebookId, String.valueOf(pricebookId));
     }
-    return uniqueLabels;
+    return labelsByPricebookId;
   }
 }
