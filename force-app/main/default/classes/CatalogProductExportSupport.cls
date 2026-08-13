@@ -206,10 +206,13 @@ public with sharing class CatalogProductExportSupport {
         scope,
         builder
       );
+      Set<Id> effectiveWebStoreIds = WebStorePricebookResolver.resolveEffectiveWebStoreIds(
+        jobConfig
+      );
       ndjsonPayload = CatalogBuyerGroupPayloadDecorator.decorateFullUpdatePayload(
         ndjsonPayload,
         snapshotsByProductId,
-        jobConfig.WebStoreId__c
+        effectiveWebStoreIds
       );
     }
 

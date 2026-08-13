@@ -854,7 +854,7 @@ private class CoveoCommerceSetupControllerTest {
   }
 
   @IsTest
-  static void testPreviewMultiStoreCatalogJobDraft_requiresSingularStoreForEmbeddedAccess() {
+  static void testPreviewMultiStoreCatalogJobDraft_embeddedAcceptsPluralStores() {
     Map<String, Object> result = CoveoCommerceSetupController.previewMultiStoreCatalogJobDraft(
       'Embedded Shared Catalog',
       'EMBEDDED_SHARED_CATALOG',
@@ -874,41 +874,39 @@ private class CoveoCommerceSetupControllerTest {
       new List<String>()
     );
 
-    System.assertEquals(false, result.get('isReady'));
-    System.assert(
-      JSON.serialize(result.get('validationMessages'))
-        .contains('Web Store is required'),
-      'Embedded access must continue to require singular WebStoreId__c'
+    System.assertEquals(
+      true,
+      result.get('isReady'),
+      'Embedded access should accept plural Web Store selection as the store scope'
     );
   }
 
   @IsTest
-  static void testPreviewMultiStoreCatalogJobDraft_dualWriteRetainsEmbeddedRequirement() {
+  static void testPreviewMultiStoreCatalogJobDraft_embeddedRequiresAtLeastOneStore() {
     Map<String, Object> result = CoveoCommerceSetupController.previewMultiStoreCatalogJobDraft(
-      'Dual Shared Catalog',
-      'DUAL_SHARED_CATALOG',
+      'Embedded No Store',
+      'EMBEDDED_NO_STORE',
       'my-coveo-org',
       'catalog-products-shared',
-      'catalog-availability-shared',
+      null,
       CatalogSyncMode.FULL,
       null,
       null,
       null,
-      new List<String>{ '0ZE000000000001', '0ZE000000000002' },
+      new List<String>(),
       new List<String>(),
       'en-US',
       'Commerce',
-      CatalogBuyerGroupAvailabilityMode.DUAL_WRITE,
+      CatalogBuyerGroupAvailabilityMode.EMBEDDED,
       null,
       new List<String>()
     );
 
     System.assertEquals(false, result.get('isReady'));
-    System.assertEquals(2, result.get('webStoreCount'));
     System.assert(
       JSON.serialize(result.get('validationMessages'))
-        .contains('Web Store is required'),
-      'DualWrite must require singular WebStoreId__c for its embedded side while previewing plural paired coverage'
+        .contains('At least one Web Store is required'),
+      'Embedded access must require at least one store (singular or plural)'
     );
   }
 

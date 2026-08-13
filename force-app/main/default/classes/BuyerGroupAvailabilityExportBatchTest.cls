@@ -230,7 +230,7 @@ private class BuyerGroupAvailabilityExportBatchTest {
     CatalogJobConfig__mdt disabledConfig = createConfig(FALLBACK_WEB_STORE_ID);
     disabledConfig.EnableBuyerGroupAvailability__c = false;
     disabledConfig.BuyerGroupAvailabilityMode__c = CatalogBuyerGroupAvailabilityMode.DISABLED;
-    assertConfigFailure(disabledConfig, 'PairedSource or DualWrite');
+    assertConfigFailure(disabledConfig, 'must resolve to PairedSource');
 
     CatalogJobConfig__mdt missingSourceConfig = createConfig(
       FALLBACK_WEB_STORE_ID

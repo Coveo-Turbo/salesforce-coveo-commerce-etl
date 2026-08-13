@@ -148,13 +148,16 @@ global with sharing class EmbeddedBuyerGroupAccessExportBatch implements Databas
   private void validateConfig() {
     if (!CatalogBuyerGroupAvailabilityMode.usesEmbedded(jobConfig)) {
       throw new CatalogJobConfigException(
-        'BuyerGroupAvailabilityMode__c must be Embedded or DualWrite to run EmbeddedBuyerGroupAccessExportBatch.'
+        'BuyerGroupAvailabilityMode__c must be Embedded to run EmbeddedBuyerGroupAccessExportBatch.'
       );
     }
 
-    if (String.isBlank(jobConfig.WebStoreId__c)) {
+    Set<Id> effectiveWebStoreIds = WebStorePricebookResolver.resolveEffectiveWebStoreIds(
+      jobConfig
+    );
+    if (effectiveWebStoreIds.isEmpty()) {
       throw new CatalogJobConfigException(
-        'WebStoreId__c is required when embedded Buyer Group access is enabled.'
+        'At least one Web Store (WebStoreIds__c or WebStoreId__c) is required when embedded Buyer Group access is enabled.'
       );
     }
   }

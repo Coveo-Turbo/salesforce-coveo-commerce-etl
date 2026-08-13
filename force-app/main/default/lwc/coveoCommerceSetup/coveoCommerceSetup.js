@@ -22,7 +22,6 @@ const CONFIG_REFRESH_INTERVAL_MS = 15000;
 const BUYER_GROUP_MODE_DISABLED = "Disabled";
 const BUYER_GROUP_MODE_PAIRED = "PairedSource";
 const BUYER_GROUP_MODE_EMBEDDED = "Embedded";
-const BUYER_GROUP_MODE_DUAL = "DualWrite";
 const SYNC_MODE_FULL = "Full";
 const SYNC_MODE_DELTA = "Delta";
 const SYNC_MODE_OPTIONS = Object.freeze([
@@ -55,8 +54,7 @@ const SCHEDULE_DAY_LABELS = Object.freeze(
 const BUYER_GROUP_MODE_OPTIONS = Object.freeze([
   { label: "Disabled", value: BUYER_GROUP_MODE_DISABLED },
   { label: "Paired Source", value: BUYER_GROUP_MODE_PAIRED },
-  { label: "Embedded", value: BUYER_GROUP_MODE_EMBEDDED },
-  { label: "Dual Write", value: BUYER_GROUP_MODE_DUAL }
+  { label: "Embedded", value: BUYER_GROUP_MODE_EMBEDDED }
 ]);
 
 const DEFAULT_DRAFT = Object.freeze({
@@ -107,7 +105,6 @@ function resolveBuyerGroupAvailabilityMode(mode, legacyEnabled = false) {
   switch (mode) {
     case BUYER_GROUP_MODE_PAIRED:
     case BUYER_GROUP_MODE_EMBEDDED:
-    case BUYER_GROUP_MODE_DUAL:
     case BUYER_GROUP_MODE_DISABLED:
       return mode;
     default:
@@ -123,18 +120,12 @@ function isBuyerGroupAccessEnabled(mode) {
 
 function usesPairedSource(mode) {
   const resolvedMode = resolveBuyerGroupAvailabilityMode(mode);
-  return (
-    resolvedMode === BUYER_GROUP_MODE_PAIRED ||
-    resolvedMode === BUYER_GROUP_MODE_DUAL
-  );
+  return resolvedMode === BUYER_GROUP_MODE_PAIRED;
 }
 
 function usesEmbeddedAccess(mode) {
   const resolvedMode = resolveBuyerGroupAvailabilityMode(mode);
-  return (
-    resolvedMode === BUYER_GROUP_MODE_EMBEDDED ||
-    resolvedMode === BUYER_GROUP_MODE_DUAL
-  );
+  return resolvedMode === BUYER_GROUP_MODE_EMBEDDED;
 }
 
 function formatBuyerGroupAvailabilityMode(mode) {
@@ -143,8 +134,6 @@ function formatBuyerGroupAvailabilityMode(mode) {
       return "Paired Source";
     case BUYER_GROUP_MODE_EMBEDDED:
       return "Embedded";
-    case BUYER_GROUP_MODE_DUAL:
-      return "Dual Write";
     default:
       return "Disabled";
   }
@@ -689,7 +678,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   }
 
   get isSingularWebStoreRequired() {
-    return this.draftUsesEmbeddedAccess;
+    return false;
   }
 
   get singularWebStoreLabel() {
@@ -700,8 +689,8 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     if (mode === BUYER_GROUP_MODE_PAIRED) {
       return "Legacy Web Store Fallback";
     }
-    if (mode === BUYER_GROUP_MODE_EMBEDDED || mode === BUYER_GROUP_MODE_DUAL) {
-      return "Embedded Access Web Store";
+    if (mode === BUYER_GROUP_MODE_EMBEDDED) {
+      return "Web Store (legacy fallback)";
     }
     return "Web Store";
   }
@@ -715,10 +704,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       return "Optional backward-compatible fallback. It is used only when Shared Catalog Web Stores is empty; otherwise the plural store selection takes precedence.";
     }
     if (mode === BUYER_GROUP_MODE_EMBEDDED) {
-      return "Required. Embedded access currently resolves Buyer Groups from exactly one Web Store. Shared Catalog Web Stores does not replace this selection.";
-    }
-    if (mode === BUYER_GROUP_MODE_DUAL) {
-      return "Required for embedded access. The paired source uses Shared Catalog Web Stores when selected, otherwise it falls back to this store.";
+      return "Optional backward-compatible fallback. Embedded access now resolves Buyer Groups from Shared Catalog Web Stores. Use this field only when the plural selection is empty.";
     }
     return "Select a Buyer Group Availability Mode to configure its Web Store scope.";
   }
@@ -732,10 +718,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       return "Paired Source prefers Shared Catalog Web Stores and unions Buyer Groups across them. Use the singular field only for an existing legacy configuration.";
     }
     if (mode === BUYER_GROUP_MODE_EMBEDDED) {
-      return "Embedded access requires one singular Web Store. Shared Catalog Web Stores can still scope prices, but they are not used for embedded Buyer Group access.";
-    }
-    if (mode === BUYER_GROUP_MODE_DUAL) {
-      return "Dual Write requires one singular store for embedded access. Its paired export unions Shared Catalog Web Stores when configured.";
+      return "Embedded access unions Buyer Groups across Shared Catalog Web Stores. The singular Web Store field is a backward-compatible fallback when no shared stores are selected.";
     }
     return "Web Store selections are not required while Buyer Group access is disabled.";
   }
@@ -977,20 +960,15 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     }
 
     if (mode === BUYER_GROUP_MODE_EMBEDDED) {
+      if (sharedStores.length) {
+        return `${sharedStoreText} (embedded union)`;
+      }
       return this.draft.webStoreId
-        ? `${this.selectedWebStoreLabel} (embedded)`
-        : "Select one embedded access store";
+        ? `${this.selectedWebStoreLabel} (legacy fallback)`
+        : "Select shared stores or a legacy fallback";
     }
 
-    const embeddedStore = this.draft.webStoreId
-      ? this.selectedWebStoreLabel
-      : "missing";
-    const pairedStores = sharedStores.length
-      ? sharedStoreText
-      : this.draft.webStoreId
-        ? "same store fallback"
-        : "missing";
-    return `Embedded: ${embeddedStore}; paired: ${pairedStores}`;
+    return "Not required";
   }
 
   get selectedConfigTitle() {

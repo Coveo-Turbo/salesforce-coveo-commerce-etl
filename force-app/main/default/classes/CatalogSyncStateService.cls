@@ -108,7 +108,12 @@ public with sharing class CatalogSyncStateService {
       'embeddedWebStoreId',
       (jobConfig != null &&
         CatalogBuyerGroupAvailabilityMode.usesEmbedded(jobConfig))
-        ? normalizeText(jobConfig.WebStoreId__c)
+        ? canonicalizeIdCsv(
+            jobConfig.WebStoreIds__c != null
+              ? jobConfig.WebStoreIds__c
+              : jobConfig.WebStoreId__c,
+            'WebStoreIds__c'
+          )
         : ''
     };
 

@@ -514,7 +514,7 @@ public with sharing class CoveoCommerceSetupController {
     }
     if (!modeSupported) {
       validationMessages.add(
-        'Buyer Group Availability Mode must be Disabled, PairedSource, Embedded, or DualWrite.'
+        'Buyer Group Availability Mode must be Disabled, PairedSource, or Embedded.'
       );
     }
     if (
@@ -532,7 +532,7 @@ public with sharing class CoveoCommerceSetupController {
     }
     if (availabilityEnabled && String.isBlank(webStoreId)) {
       validationMessages.add(
-        'Web Store is required when Buyer Group availability is enabled.'
+        'At least one Web Store is required when Buyer Group availability is enabled.'
       );
     }
 
@@ -672,7 +672,6 @@ public with sharing class CoveoCommerceSetupController {
     );
     String effectivePreviewWebStoreId = webStoreId;
     if (
-      !usesEmbedded &&
       String.isBlank(effectivePreviewWebStoreId) &&
       webStoreIds != null &&
       !webStoreIds.isEmpty()

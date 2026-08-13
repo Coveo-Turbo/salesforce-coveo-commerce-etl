@@ -2,7 +2,6 @@ public with sharing class CatalogBuyerGroupAvailabilityMode {
   public static final String DISABLED = 'Disabled';
   public static final String PAIRED_SOURCE = 'PairedSource';
   public static final String EMBEDDED = 'Embedded';
-  public static final String DUAL_WRITE = 'DualWrite';
 
   public static String resolve(CatalogJobConfig__mdt jobConfig) {
     if (jobConfig == null) {
@@ -28,7 +27,9 @@ public with sharing class CatalogBuyerGroupAvailabilityMode {
     return String.isBlank(mode) || normalize(mode) != null;
   }
 
-  public static Boolean isBuyerGroupAccessEnabled(CatalogJobConfig__mdt jobConfig) {
+  public static Boolean isBuyerGroupAccessEnabled(
+    CatalogJobConfig__mdt jobConfig
+  ) {
     return isBuyerGroupAccessEnabled(resolve(jobConfig));
   }
 
@@ -42,7 +43,7 @@ public with sharing class CatalogBuyerGroupAvailabilityMode {
 
   public static Boolean usesPairedSource(String mode) {
     String resolvedMode = resolveDraftMode(mode);
-    return resolvedMode == PAIRED_SOURCE || resolvedMode == DUAL_WRITE;
+    return resolvedMode == PAIRED_SOURCE;
   }
 
   public static Boolean usesEmbedded(CatalogJobConfig__mdt jobConfig) {
@@ -51,7 +52,7 @@ public with sharing class CatalogBuyerGroupAvailabilityMode {
 
   public static Boolean usesEmbedded(String mode) {
     String resolvedMode = resolveDraftMode(mode);
-    return resolvedMode == EMBEDDED || resolvedMode == DUAL_WRITE;
+    return resolvedMode == EMBEDDED;
   }
 
   public static String getLabel(String mode) {
@@ -61,9 +62,6 @@ public with sharing class CatalogBuyerGroupAvailabilityMode {
     }
     if (resolvedMode == EMBEDDED) {
       return 'Embedded On Product Documents';
-    }
-    if (resolvedMode == DUAL_WRITE) {
-      return 'Dual Write';
     }
     return 'Disabled';
   }
@@ -91,9 +89,6 @@ public with sharing class CatalogBuyerGroupAvailabilityMode {
       normalizedMode == 'embeddedonproductdocuments'
     ) {
       return EMBEDDED;
-    }
-    if (normalizedMode == 'dualwrite' || normalizedMode == 'dual') {
-      return DUAL_WRITE;
     }
     return null;
   }

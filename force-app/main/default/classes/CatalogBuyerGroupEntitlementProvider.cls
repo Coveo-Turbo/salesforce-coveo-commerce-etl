@@ -1,5 +1,4 @@
-public with sharing class CatalogBuyerGroupEntitlementProvider
-  implements ICatalogBuyerGroupAccessProvider {
+public with sharing class CatalogBuyerGroupEntitlementProvider implements ICatalogBuyerGroupAccessProvider {
   @TestVisible
   private static Boolean testHasCommerceAvailabilitySchema;
 
@@ -35,13 +34,16 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
     List<Product2> products,
     Map<Id, String> ecProductIdByProductId
   ) {
-    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId =
-      new Map<Id, CatalogBuyerGroupAccessSnapshot>();
+    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId = new Map<Id, CatalogBuyerGroupAccessSnapshot>();
+
+    Set<Id> effectiveWebStoreIds = WebStorePricebookResolver.resolveEffectiveWebStoreIds(
+      jobConfig
+    );
 
     if (
       !hasCommerceAvailabilitySchema() ||
       jobConfig == null ||
-      String.isBlank(jobConfig.WebStoreId__c) ||
+      effectiveWebStoreIds.isEmpty() ||
       products == null ||
       products.isEmpty()
     ) {
@@ -64,14 +66,15 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
       return snapshotsByProductId;
     }
 
-    Set<Id> buyerGroupIds = getBuyerGroupIdsForWebStore(jobConfig.WebStoreId__c);
+    Set<Id> buyerGroupIds = getBuyerGroupIdsForWebStores(effectiveWebStoreIds);
     if (buyerGroupIds.isEmpty()) {
       return snapshotsByProductId;
     }
 
     Map<Id, String> buyerGroupNameById = getBuyerGroupNameById(buyerGroupIds);
-    Map<Id, Set<Id>> visiblePolicyIdsByBuyerGroup =
-      getVisiblePolicyIdsByBuyerGroup(buyerGroupIds);
+    Map<Id, Set<Id>> visiblePolicyIdsByBuyerGroup = getVisiblePolicyIdsByBuyerGroup(
+      buyerGroupIds
+    );
 
     if (visiblePolicyIdsByBuyerGroup.isEmpty()) {
       return snapshotsByProductId;
@@ -95,10 +98,7 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
     }
 
     for (
-      PolicyProductLink link : getPolicyProductLinks(
-        policyIds,
-        productIds
-      )
+      PolicyProductLink link : getPolicyProductLinks(policyIds, productIds)
     ) {
       Id policyId = link.policyId;
       Id productId = link.productId;
@@ -111,7 +111,7 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
         snapshotsByProductId,
         productId,
         ecProductIdByProductId,
-        jobConfig.WebStoreId__c
+        effectiveWebStoreIds
       );
 
       for (Id buyerGroupId : buyerGroupIdsByPolicy.get(policyId)) {
@@ -131,17 +131,20 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
     Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId,
     Id productId,
     Map<Id, String> ecProductIdByProductId,
-    String webStoreId
+    Set<Id> webStoreIds
   ) {
     if (!snapshotsByProductId.containsKey(productId)) {
-      snapshotsByProductId.put(
-        productId,
-        CatalogBuyerGroupAccessResolver.createEmptySnapshot(
-          productId,
-          ecProductIdByProductId.get(productId),
-          webStoreId
-        )
-      );
+      CatalogBuyerGroupAccessSnapshot snapshot = new CatalogBuyerGroupAccessSnapshot();
+      snapshot.productId = productId;
+      snapshot.ecProductId = ecProductIdByProductId.get(productId);
+      for (Id webStoreId : webStoreIds) {
+        snapshot.webStoreIds.add(String.valueOf(webStoreId));
+      }
+      if (!snapshot.webStoreIds.isEmpty()) {
+        List<String> sorted = snapshot.getSortedWebStoreIds();
+        snapshot.webStoreId = sorted[0];
+      }
+      snapshotsByProductId.put(productId, snapshot);
     }
 
     return snapshotsByProductId.get(productId);
@@ -160,25 +163,28 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
       globalDescribe.containsKey('CommerceEntitlementProduct');
   }
 
-  private static Set<Id> getBuyerGroupIdsForWebStore(String webStoreId) {
+  private static Set<Id> getBuyerGroupIdsForWebStores(Set<Id> webStoreIds) {
     Set<Id> buyerGroupIds = new Set<Id>();
 
-    if (String.isBlank(webStoreId)) {
+    if (webStoreIds == null || webStoreIds.isEmpty()) {
       return buyerGroupIds;
     }
 
     if (Test.isRunningTest() && testBuyerGroupIdsByWebStoreId != null) {
-      Set<Id> overrideBuyerGroupIds = testBuyerGroupIdsByWebStoreId.get(webStoreId);
-      return overrideBuyerGroupIds == null
-        ? buyerGroupIds
-        : new Set<Id>(overrideBuyerGroupIds);
+      for (String webStoreId : webStoreIds) {
+        Set<Id> overrideBuyerGroupIds = testBuyerGroupIdsByWebStoreId.get(
+          webStoreId
+        );
+        if (overrideBuyerGroupIds != null) {
+          buyerGroupIds.addAll(overrideBuyerGroupIds);
+        }
+      }
+      return buyerGroupIds;
     }
 
     for (
       SObject link : Database.query(
-        'SELECT BuyerGroupId FROM WebStoreBuyerGroup WHERE WebStoreId = \'' +
-          String.escapeSingleQuotes(webStoreId) +
-          '\' AND BuyerGroupId != NULL'
+        'SELECT BuyerGroupId FROM WebStoreBuyerGroup WHERE WebStoreId IN :webStoreIds AND BuyerGroupId != NULL'
       )
     ) {
       buyerGroupIds.add((Id) link.get('BuyerGroupId'));
@@ -231,9 +237,7 @@ public with sharing class CatalogBuyerGroupEntitlementProvider
       return policyIdsByBuyerGroup;
     }
 
-    if (
-      Test.isRunningTest() && testVisiblePolicyIdsByBuyerGroupId != null
-    ) {
+    if (Test.isRunningTest() && testVisiblePolicyIdsByBuyerGroupId != null) {
       for (Id buyerGroupId : buyerGroupIds) {
         Set<Id> overridePolicyIds = testVisiblePolicyIdsByBuyerGroupId.get(
           buyerGroupId

@@ -2,7 +2,7 @@ public with sharing class CatalogBuyerGroupPayloadDecorator {
   public static String decorateFullUpdatePayload(
     String jsonPayload,
     Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId,
-    String webStoreId
+    Set<Id> webStoreIds
   ) {
     if (String.isBlank(jsonPayload)) {
       return jsonPayload;
@@ -21,11 +21,21 @@ public with sharing class CatalogBuyerGroupPayloadDecorator {
       return jsonPayload;
     }
 
-    Map<String, CatalogBuyerGroupAccessSnapshot> snapshotsByEcProductId =
-      CatalogBuyerGroupAccessResolver.indexSnapshotsByEcProductId(
-        snapshotsByProductId,
-        webStoreId
-      );
+    List<String> sortedWebStoreIds = new List<String>();
+    if (webStoreIds != null) {
+      for (Id webStoreId : webStoreIds) {
+        sortedWebStoreIds.add(String.valueOf(webStoreId));
+      }
+      sortedWebStoreIds.sort();
+    }
+    String singleWebStoreId = sortedWebStoreIds.size() == 1
+      ? sortedWebStoreIds[0]
+      : null;
+
+    Map<String, CatalogBuyerGroupAccessSnapshot> snapshotsByEcProductId = CatalogBuyerGroupAccessResolver.indexSnapshotsByEcProductId(
+      snapshotsByProductId,
+      singleWebStoreId
+    );
 
     for (Object itemObject : (List<Object>) addOrUpdateObject) {
       if (!(itemObject instanceof Map<String, Object>)) {
@@ -45,15 +55,37 @@ public with sharing class CatalogBuyerGroupPayloadDecorator {
         : CatalogBuyerGroupAccessResolver.createEmptySnapshot(
             null,
             ecProductId,
-            webStoreId
+            singleWebStoreId
           );
 
       item.put('sf_buyergroup_ids', snapshot.getSortedBuyerGroupIds());
       item.put('sf_buyergroup_names', snapshot.getSortedBuyerGroupNames());
-      item.put('sf_webstore_id', snapshot.webStoreId);
+      item.put('sf_webstore_ids', sortedWebStoreIds);
+      if (singleWebStoreId != null) {
+        item.put('sf_webstore_id', singleWebStoreId);
+      } else {
+        item.remove('sf_webstore_id');
+      }
     }
 
     return JSON.serialize(root);
+  }
+
+  /** Backward-compatible overload for callers passing a single web store ID. */
+  public static String decorateFullUpdatePayload(
+    String jsonPayload,
+    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId,
+    String webStoreId
+  ) {
+    Set<Id> webStoreIds = new Set<Id>();
+    if (String.isNotBlank(webStoreId)) {
+      webStoreIds.add((Id) webStoreId);
+    }
+    return decorateFullUpdatePayload(
+      jsonPayload,
+      snapshotsByProductId,
+      webStoreIds
+    );
   }
 
   private static String valueAsString(Object value) {

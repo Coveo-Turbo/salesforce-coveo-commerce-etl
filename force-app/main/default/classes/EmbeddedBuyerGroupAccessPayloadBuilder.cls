@@ -10,8 +10,7 @@ public with sharing class EmbeddedBuyerGroupAccessPayloadBuilder {
       );
     }
 
-    Map<String, CatalogBuyerGroupAccessSnapshot> snapshotsByEcProductId =
-      new Map<String, CatalogBuyerGroupAccessSnapshot>();
+    Map<String, CatalogBuyerGroupAccessSnapshot> snapshotsByEcProductId = new Map<String, CatalogBuyerGroupAccessSnapshot>();
     List<String> sortedEcProductIds = new List<String>();
 
     for (CatalogBuyerGroupAccessSnapshot snapshot : snapshots) {
@@ -48,10 +47,19 @@ public with sharing class EmbeddedBuyerGroupAccessPayloadBuilder {
       partialUpdate.add(
         buildFieldReplaceOperation(
           documentId,
-          'sf_webstore_id',
-          snapshot.webStoreId
+          'sf_webstore_ids',
+          snapshot.getSortedWebStoreIds()
         )
       );
+      if (snapshot.webStoreIds != null && snapshot.webStoreIds.size() == 1) {
+        partialUpdate.add(
+          buildFieldReplaceOperation(
+            documentId,
+            'sf_webstore_id',
+            snapshot.webStoreId
+          )
+        );
+      }
     }
 
     return JSON.serialize(

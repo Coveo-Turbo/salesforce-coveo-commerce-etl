@@ -50,8 +50,7 @@ private class EmbeddedBuyerGroupAccessExportBatchTest {
       CoveoOrgId__c = 'org-embedded-test',
       SourceId__c = 'product-source-embedded',
       WebStoreId__c = '0ZE000000000001AAA',
-      BuyerGroupAvailabilityMode__c =
-        CatalogBuyerGroupAvailabilityMode.EMBEDDED,
+      BuyerGroupAvailabilityMode__c = CatalogBuyerGroupAvailabilityMode.EMBEDDED,
       EnablePayloadLogging__c = true,
       BuilderType__c = builderType,
       BatchSize__c = 20
@@ -92,14 +91,13 @@ private class EmbeddedBuyerGroupAccessExportBatchTest {
     try {
       new EmbeddedBuyerGroupAccessExportBatch(
         new CatalogJobConfig__mdt(
-          BuyerGroupAvailabilityMode__c =
-            CatalogBuyerGroupAvailabilityMode.PAIRED_SOURCE,
+          BuyerGroupAvailabilityMode__c = CatalogBuyerGroupAvailabilityMode.PAIRED_SOURCE,
           WebStoreId__c = '0ZE000000000001AAA'
         )
       );
     } catch (CatalogJobConfigException ex) {
       modeFailureThrown = true;
-      System.assert(ex.getMessage().contains('Embedded or DualWrite'));
+      System.assert(ex.getMessage().contains('must be Embedded'));
     }
     System.assertEquals(true, modeFailureThrown);
 
@@ -107,13 +105,12 @@ private class EmbeddedBuyerGroupAccessExportBatchTest {
     try {
       new EmbeddedBuyerGroupAccessExportBatch(
         new CatalogJobConfig__mdt(
-          BuyerGroupAvailabilityMode__c =
-            CatalogBuyerGroupAvailabilityMode.EMBEDDED
+          BuyerGroupAvailabilityMode__c = CatalogBuyerGroupAvailabilityMode.EMBEDDED
         )
       );
     } catch (CatalogJobConfigException ex) {
       webStoreFailureThrown = true;
-      System.assert(ex.getMessage().contains('WebStoreId__c is required'));
+      System.assert(ex.getMessage().contains('At least one Web Store'));
     }
     System.assertEquals(true, webStoreFailureThrown);
   }
@@ -126,8 +123,9 @@ private class EmbeddedBuyerGroupAccessExportBatchTest {
     CatalogJobConfig__mdt config = createConfig(
       'CatalogJsonBuilderCreatedByIdStub'
     );
-    EmbeddedBuyerGroupAccessExportBatch batch =
-      new EmbeddedBuyerGroupAccessExportBatch(config);
+    EmbeddedBuyerGroupAccessExportBatch batch = new EmbeddedBuyerGroupAccessExportBatch(
+      config
+    );
     List<Product2> scope = collectProducts(batch.start(null));
 
     Test.setMock(
@@ -162,9 +160,9 @@ private class EmbeddedBuyerGroupAccessExportBatchTest {
     System.assertEquals(1, logs.size());
     System.assertEquals(1, logs[0].ScopeSize__c.intValue());
     System.assertEquals(
-      3,
+      4,
       logs[0].OperationCount__c.intValue(),
-      'Embedded access sync should emit three field replace operations per product'
+      'Embedded access sync should emit four field replace operations per product (buyergroup_ids, buyergroup_names, webstore_ids, webstore_id)'
     );
     System.assertEquals(true, logs[0].IsValid__c);
     System.assert(
@@ -172,9 +170,10 @@ private class EmbeddedBuyerGroupAccessExportBatchTest {
       'Embedded access syncs should upload partialUpdate payloads'
     );
     System.assert(
-      logs[0].Payload__c.contains(
-        '"documentId":"product://' + UserInfo.getUserId() + '"'
-      ),
+      logs[0]
+        .Payload__c.contains(
+          '"documentId":"product://' + UserInfo.getUserId() + '"'
+        ),
       'The batch should use the builder-driven ec_product_id when updating product access'
     );
     System.assert(
@@ -185,30 +184,39 @@ private class EmbeddedBuyerGroupAccessExportBatchTest {
 
   @IsTest
   static void testGetBatchSize_usesLargeMinimumAndCapsAtPlatformMaximum() {
-    CatalogJobConfig__mdt belowMinimum = createConfig('CatalogJsonBuilderDefault');
+    CatalogJobConfig__mdt belowMinimum = createConfig(
+      'CatalogJsonBuilderDefault'
+    );
     belowMinimum.BatchSize__c = 20;
-    EmbeddedBuyerGroupAccessExportBatch normalizedBatch =
-      new EmbeddedBuyerGroupAccessExportBatch(belowMinimum);
+    EmbeddedBuyerGroupAccessExportBatch normalizedBatch = new EmbeddedBuyerGroupAccessExportBatch(
+      belowMinimum
+    );
     System.assertEquals(
       EmbeddedBuyerGroupAccessExportBatch.DEFAULT_BATCH_SIZE,
       normalizedBatch.getBatchSize(),
       'Embedded access syncs should clamp small batch sizes upward to reduce Stream API burst throttling'
     );
 
-    CatalogJobConfig__mdt aboveMaximum = createConfig('CatalogJsonBuilderDefault');
+    CatalogJobConfig__mdt aboveMaximum = createConfig(
+      'CatalogJsonBuilderDefault'
+    );
     aboveMaximum.BatchSize__c = 2500;
-    EmbeddedBuyerGroupAccessExportBatch cappedBatch =
-      new EmbeddedBuyerGroupAccessExportBatch(aboveMaximum);
+    EmbeddedBuyerGroupAccessExportBatch cappedBatch = new EmbeddedBuyerGroupAccessExportBatch(
+      aboveMaximum
+    );
     System.assertEquals(
       EmbeddedBuyerGroupAccessExportBatch.MAX_BATCH_SIZE,
       cappedBatch.getBatchSize(),
       'Embedded access syncs should respect the platform executeBatch maximum scope'
     );
 
-    CatalogJobConfig__mdt defaultedConfig = createConfig('CatalogJsonBuilderDefault');
+    CatalogJobConfig__mdt defaultedConfig = createConfig(
+      'CatalogJsonBuilderDefault'
+    );
     defaultedConfig.BatchSize__c = null;
-    EmbeddedBuyerGroupAccessExportBatch defaultedBatch =
-      new EmbeddedBuyerGroupAccessExportBatch(defaultedConfig);
+    EmbeddedBuyerGroupAccessExportBatch defaultedBatch = new EmbeddedBuyerGroupAccessExportBatch(
+      defaultedConfig
+    );
     System.assertEquals(
       EmbeddedBuyerGroupAccessExportBatch.DEFAULT_BATCH_SIZE,
       defaultedBatch.getBatchSize(),

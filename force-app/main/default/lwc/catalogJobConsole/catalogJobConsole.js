@@ -27,7 +27,6 @@ const ASYNC_APEX_JOBS_SETUP_URL = "/lightning/setup/AsyncApexJobs/home";
 const BUYER_GROUP_MODE_DISABLED = "Disabled";
 const BUYER_GROUP_MODE_PAIRED = "PairedSource";
 const BUYER_GROUP_MODE_EMBEDDED = "Embedded";
-const BUYER_GROUP_MODE_DUAL = "DualWrite";
 const SYNC_MODE_FULL = "Full";
 const SYNC_MODE_DELTA = "Delta";
 const SCHEDULE_CADENCE_MINUTES = "Minutes";
@@ -47,7 +46,6 @@ function resolveBuyerGroupAvailabilityMode(mode, legacyEnabled = false) {
   switch (mode) {
     case BUYER_GROUP_MODE_PAIRED:
     case BUYER_GROUP_MODE_EMBEDDED:
-    case BUYER_GROUP_MODE_DUAL:
     case BUYER_GROUP_MODE_DISABLED:
       return mode;
     default:
@@ -63,18 +61,12 @@ function isBuyerGroupAccessEnabled(mode) {
 
 function usesPairedSource(mode) {
   const resolvedMode = resolveBuyerGroupAvailabilityMode(mode);
-  return (
-    resolvedMode === BUYER_GROUP_MODE_PAIRED ||
-    resolvedMode === BUYER_GROUP_MODE_DUAL
-  );
+  return resolvedMode === BUYER_GROUP_MODE_PAIRED;
 }
 
 function usesEmbeddedAccess(mode) {
   const resolvedMode = resolveBuyerGroupAvailabilityMode(mode);
-  return (
-    resolvedMode === BUYER_GROUP_MODE_EMBEDDED ||
-    resolvedMode === BUYER_GROUP_MODE_DUAL
-  );
+  return resolvedMode === BUYER_GROUP_MODE_EMBEDDED;
 }
 
 function formatBuyerGroupAvailabilityMode(mode) {
@@ -83,8 +75,6 @@ function formatBuyerGroupAvailabilityMode(mode) {
       return "Paired Source";
     case BUYER_GROUP_MODE_EMBEDDED:
       return "Embedded";
-    case BUYER_GROUP_MODE_DUAL:
-      return "Dual Write";
     default:
       return "Disabled";
   }

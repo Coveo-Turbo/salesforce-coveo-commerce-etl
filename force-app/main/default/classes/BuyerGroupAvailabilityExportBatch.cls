@@ -167,7 +167,7 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
   private void validateConfig() {
     if (!CatalogBuyerGroupAvailabilityMode.usesPairedSource(jobConfig)) {
       throw new CatalogJobConfigException(
-        'BuyerGroupAvailabilityMode__c must resolve to PairedSource or DualWrite to run BuyerGroupAvailabilityExportBatch.'
+        'BuyerGroupAvailabilityMode__c must resolve to PairedSource to run BuyerGroupAvailabilityExportBatch.'
       );
     }
 
