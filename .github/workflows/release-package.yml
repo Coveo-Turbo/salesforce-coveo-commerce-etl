@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PACKAGE_FILENAME: ${{ github.event.repository.name }}-v${{ inputs.version }}.zip
+      SF_CLI_VERSION: 2.113.6
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,7 +35,10 @@ jobs:
           node-version: "20"
 
       - name: Install Salesforce CLI
-        run: npm install -g @salesforce/cli
+        run: |
+          npm install --global "@salesforce/cli@${SF_CLI_VERSION}"
+          node --version
+          sf version
 
       - name: Validate SFDX project structure
         run: |
