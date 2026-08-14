@@ -342,7 +342,7 @@ These collect active config developer names and hand them to `CatalogSyncChainQu
 
 ### Phase 1: Multi-Pricebook Foundation (3 days)
 
-**Status: Complete.** Explicit scope is fail-closed; a configured scope that resolves no pricebooks exports no prices.
+**Status: Complete.** Explicit custom Pricebook scope is fail-closed while retaining the Standard Price Book default; a configured scope that resolves no custom Pricebooks exports only an available Standard entry.
 
 | #   | Task                                                                        | Files                                   |
 | --- | --------------------------------------------------------------------------- | --------------------------------------- |
@@ -418,16 +418,16 @@ If `PricebookIds__c` is also configured, its explicit Pricebook list takes prece
 
 ## Backward Compatibility Contract
 
-| Scenario                                                     | Behavior                                                                                                                                     |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PricebookIds__c` blank + `WebStoreIds__c` blank             | **No change.** All pricebook entries exported, keys remain raw IDs.                                                                          |
-| `PricebookIds__c` populated                                  | Only explicitly listed Pricebooks are included. Keys remain raw `Pricebook2` IDs. This pricing scope takes precedence over `WebStoreIds__c`. |
-| One `WebStoreIds__c` value, `PricebookIds__c` blank          | Auto-resolves that store's Pricebooks through `WebStorePricebook`; keys remain raw `Pricebook2` IDs.                                         |
-| Multiple `WebStoreIds__c` values, `PricebookIds__c` blank    | Exports the deduplicated union of all linked Pricebooks. A shared Pricebook appears once; keys remain raw IDs.                               |
-| Resolved Pricebook has a Product Selling Model               | Uses the flat raw `<Pricebook2Id>:<ProductSellingModelId>` key; the Web Store ID is not prefixed.                                            |
-| Configured Pricebook or Web Store scope resolves to no books | Exports no prices and fails closed; it never falls back to an unscoped all-Pricebook export.                                                 |
-| Existing scheduled jobs                                      | Continue working unchanged. Chained scheduling is opt-in.                                                                                    |
-| `WebStoreId__c` (singular, existing)                         | Continues to work for Buyer Group availability. `WebStoreIds__c` takes precedence when populated.                                            |
+| Scenario                                                            | Behavior                                                                                                                       |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `PricebookIds__c` blank + `WebStoreIds__c` blank                    | **No change.** All active entries are exported; Standard uses `""` and custom Pricebooks use raw IDs.                          |
+| `PricebookIds__c` populated                                         | Standard plus the explicitly listed custom Pricebooks are included. This pricing scope takes precedence over `WebStoreIds__c`. |
+| One `WebStoreIds__c` value, `PricebookIds__c` blank                 | Includes Standard and auto-resolves that store's custom Pricebooks through `WebStorePricebook`; custom keys remain raw IDs.    |
+| Multiple `WebStoreIds__c` values, `PricebookIds__c` blank           | Includes Standard and the deduplicated union of all linked custom Pricebooks. A shared Pricebook appears once.                 |
+| Resolved Pricebook has a Product Selling Model                      | Uses the flat raw `<Pricebook2Id>:<ProductSellingModelId>` key; the Web Store ID is not prefixed.                              |
+| Configured Pricebook or Web Store scope resolves to no custom books | Exports only the available Standard Price Book entry and never falls back to an unscoped all-custom-Pricebook export.          |
+| Existing scheduled jobs                                             | Continue working unchanged. Chained scheduling is opt-in.                                                                      |
+| `WebStoreId__c` (singular, existing)                                | Continues to work for Buyer Group availability. `WebStoreIds__c` takes precedence when populated.                              |
 
 ---
 

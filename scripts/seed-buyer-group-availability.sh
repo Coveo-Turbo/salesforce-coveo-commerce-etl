@@ -10,7 +10,7 @@ sf apex run \
 
 echo
 echo "Next steps:"
-echo "1) Copy the printed WebStoreId into CatalogJobConfig__mdt.WebStoreId__c"
+echo "1) Copy one or more printed store IDs into CatalogJobConfig__mdt.WebStoreIds__c"
 echo "2) Set CatalogJobConfig__mdt.EnableBuyerGroupAvailability__c = true"
 echo "3) Set CatalogJobConfig__mdt.AvailabilitySourceId__c to your Coveo Availability source id"
 echo "4) Run the availability export from the Catalog Job Console or BuyerGroupAvailabilityExportBatch"

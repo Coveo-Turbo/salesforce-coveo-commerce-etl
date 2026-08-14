@@ -341,7 +341,7 @@ The Shared Pricebook is emitted once, not once per store:
 }
 ```
 
-When both scope fields are blank, legacy behavior is preserved: all active prices are considered, the Standard Pricebook key remains `""`, and other pricebooks use raw Salesforce IDs. A configured scope that resolves to no pricebooks exports no prices; it never falls back to every pricebook.
+The Standard Price Book is always included as the default price source and uses the empty dictionary key `""`. Scoped configurations add the selected custom Pricebooks while retaining Standard; they never need or attempt a `WebStorePricebook` link for Standard. When both scope fields are blank, legacy behavior is preserved: all active prices are considered, Standard remains keyed by `""`, and other Pricebooks use raw Salesforce IDs. A configured scope that resolves to no custom Pricebooks exports only an available Standard Price Book entry; it never falls back to every custom Pricebook.
 
 ### 👥 Buyer Group Availability Export
 
@@ -436,7 +436,10 @@ bash scripts/seed-buyer-group-availability.sh <alias>
 
 This creates:
 
-- one demo `WebStore`
+- three demo Web Stores: Demo, US, and CA
+- US Retail, CA Retail, and shared Wholesale custom Pricebooks
+- Web Store-to-Pricebook links that exercise shared-Pricebook deduplication
+- active Standard and custom Pricebook entries for the simple demo products
 - three demo `BuyerGroup` records
 - three `CommerceEntitlementPolicy` records
 - store-to-buyer-group links
@@ -444,7 +447,7 @@ This creates:
 - entitlement links for every SKU in `Demo Catalog - Simple Products`
 - a limited subset of the first three simple-catalog SKUs for the limited group
 
-The script prints the created `WebStoreId` and Buyer Group ids. Use that `WebStoreId` in `CatalogJobConfig__mdt.WebStoreId__c`, set `EnableBuyerGroupAvailability__c = true`, and add your Coveo `AvailabilitySourceId__c`.
+The script prints all created store and Buyer Group IDs plus suggested `WebStoreIds__c` scenarios. Use one or more store IDs in `CatalogJobConfig__mdt.WebStoreIds__c`, set `EnableBuyerGroupAvailability__c = true`, and add your Coveo `AvailabilitySourceId__c`. Selecting US + CA resolves US Retail + CA Retail + the shared Wholesale Pricebook once, while Standard remains available under the default `ec_price[""]` key.
 
 ---
 

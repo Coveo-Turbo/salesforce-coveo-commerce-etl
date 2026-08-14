@@ -179,30 +179,64 @@ private class WebStorePricebookResolverTest {
       standardPricebookId,
       new Set<Id>{ targetPricebook.Id },
       new Map<Id, String>{
+        standardPricebookId => String.valueOf(standardPricebookId),
         targetPricebook.Id => String.valueOf(targetPricebook.Id)
       }
     );
 
-    System.assertEquals(1, prices.get(product.Id).size());
+    System.assertEquals(2, prices.get(product.Id).size());
+    System.assertEquals(
+      100,
+      prices.get(product.Id).get(''),
+      'Standard Price Book must always use the empty fallback key, even if a label is supplied.'
+    );
     System.assertEquals(
       90,
       prices.get(product.Id).get(String.valueOf(targetPricebook.Id))
     );
+    System.assertEquals(
+      false,
+      prices.get(product.Id).containsKey(String.valueOf(excludedPricebook.Id))
+    );
   }
 
   @IsTest
-  static void explicitEmptyFilterDoesNotFallBackToAllPrices() {
+  static void emptyConfiguredScopeStillIncludesOnlyStandardPricebook() {
+    Id standardPricebookId = Test.getStandardPricebookId();
     Product2 product = new Product2(Name = 'No Prices', IsActive = true);
     insert product;
+    insert new PricebookEntry(
+      Pricebook2Id = standardPricebookId,
+      Product2Id = product.Id,
+      UnitPrice = 100,
+      IsActive = true
+    );
+    Pricebook2 excludedPricebook = new Pricebook2(
+      Name = 'Excluded Custom Pricebook',
+      IsActive = true
+    );
+    insert excludedPricebook;
+    insert new PricebookEntry(
+      Pricebook2Id = excludedPricebook.Id,
+      Product2Id = product.Id,
+      UnitPrice = 125,
+      IsActive = true
+    );
 
     Map<Id, Map<String, Decimal>> prices = CatalogProductExportSupport.loadPricesByProduct(
       new List<Product2>{ product },
-      Test.getStandardPricebookId(),
+      standardPricebookId,
       new Set<Id>(),
       new Map<Id, String>()
     );
 
-    System.assertEquals(true, prices.isEmpty());
+    System.assertEquals(1, prices.get(product.Id).size());
+    System.assertEquals(100, prices.get(product.Id).get(''));
+    System.assertEquals(
+      false,
+      prices.get(product.Id).containsKey(String.valueOf(excludedPricebook.Id)),
+      'An empty configured scope must not fall back to every custom Pricebook.'
+    );
   }
 
   @IsTest

@@ -163,14 +163,17 @@ If you already have a scratch org with the normal commerce sample data loaded, r
 bash scripts/seed-buyer-group-availability.sh <alias>
 ```
 
-The seed script creates a minimal entitlement model on top of the existing demo products:
+The idempotent seed script creates a multi-store entitlement and pricing model on top of the existing demo products:
 
-- `Demo B2B Entitlement Store`
+- `Demo B2B Entitlement Store` → `Demo Price Book`
+- `US B2B Store` → `US Retail` (99.99) + `Wholesale` (74.99)
+- `CA B2B Store` → `CA Retail` (129.99) + shared `Wholesale` (74.99)
 - `Demo Buyer Group - All Products`
 - `Demo Buyer Group - Limited Products`
 - `Demo Buyer Group - Empty`
 - matching `CommerceEntitlementPolicy` records
-- `WebStoreBuyerGroup`, `CommerceEntitlementBuyerGroup`, and `CommerceEntitlementProduct` links
+- Standard Price Book entries required by Salesforce before custom Pricebook entries
+- `WebStorePricebook`, `WebStoreBuyerGroup`, `CommerceEntitlementBuyerGroup`, and `CommerceEntitlementProduct` links
 
 Expected demo visibility after seeding:
 
@@ -178,7 +181,7 @@ Expected demo visibility after seeding:
 - `Demo Buyer Group - Limited Products` can view the first three simple-catalog SKUs
 - `Demo Buyer Group - Empty` exports an empty `ec_available_items` array
 
-After the seed runs, copy the printed `WebStoreId` into your `CatalogJobConfig__mdt` record, set `EnableBuyerGroupAvailability__c = true`, and provide an `AvailabilitySourceId__c` before running `BuyerGroupAvailabilityExportBatch`.
+After the seed runs, copy one or more printed store IDs into `CatalogJobConfig__mdt.WebStoreIds__c`, set `EnableBuyerGroupAvailability__c = true`, and provide an `AvailabilitySourceId__c` before running `BuyerGroupAvailabilityExportBatch`. Selecting both US and CA exercises a deduplicated custom Pricebook union: US Retail + CA Retail + Wholesale once. The Standard Price Book remains the default `ec_price[""]` source and is not linked through `WebStorePricebook`.
 
 > **Note**: The batch size defaults to 50 but can be configured via the `BatchSize__c` field in the `CatalogJobConfig__mdt` metadata record. Use lower values (25-50) for large `AdditionalProductFields__c` payloads to avoid Apex heap size limits.
 

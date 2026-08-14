@@ -89,15 +89,26 @@ public with sharing class CatalogProductExportSupport {
   ) {
     Map<Id, Map<String, Decimal>> pricesByProduct = new Map<Id, Map<String, Decimal>>();
 
+    if (scope == null || scope.isEmpty()) {
+      return pricesByProduct;
+    }
+
+    // The Standard Price Book is the default price source for every export.
+    // Scoped configurations add custom Pricebooks without excluding Standard.
+    Set<Id> effectiveTargetPricebookIds = targetPricebookIds == null
+      ? null
+      : new Set<Id>(targetPricebookIds);
+    if (effectiveTargetPricebookIds != null && stdPricebookId != null) {
+      effectiveTargetPricebookIds.add(stdPricebookId);
+    }
     if (
-      scope == null ||
-      scope.isEmpty() ||
-      (targetPricebookIds != null && targetPricebookIds.isEmpty())
+      effectiveTargetPricebookIds != null &&
+      effectiveTargetPricebookIds.isEmpty()
     ) {
       return pricesByProduct;
     }
 
-    List<PricebookEntry> entries = targetPricebookIds == null
+    List<PricebookEntry> entries = effectiveTargetPricebookIds == null
       ? [
           SELECT Id, Product2Id, Pricebook2Id, UnitPrice, ProductSellingModelId
           FROM PricebookEntry
@@ -109,7 +120,7 @@ public with sharing class CatalogProductExportSupport {
           FROM PricebookEntry
           WHERE
             Product2Id IN :scope
-            AND Pricebook2Id IN :targetPricebookIds
+            AND Pricebook2Id IN :effectiveTargetPricebookIds
             AND IsActive = TRUE
             AND UnitPrice != NULL
           ORDER BY Product2Id, Pricebook2Id, ProductSellingModelId, Id
@@ -127,11 +138,11 @@ public with sharing class CatalogProductExportSupport {
         );
       }
 
-      String basePriceKey = labelsByPricebookId != null &&
-        labelsByPricebookId.containsKey(pricebookEntry.Pricebook2Id)
-        ? labelsByPricebookId.get(pricebookEntry.Pricebook2Id)
-        : (pricebookEntry.Pricebook2Id == stdPricebookId)
-            ? ''
+      String basePriceKey = pricebookEntry.Pricebook2Id == stdPricebookId
+        ? ''
+        : labelsByPricebookId != null &&
+            labelsByPricebookId.containsKey(pricebookEntry.Pricebook2Id)
+            ? labelsByPricebookId.get(pricebookEntry.Pricebook2Id)
             : String.valueOf(pricebookEntry.Pricebook2Id);
       Map<String, Decimal> productPrices = pricesByProduct.get(
         pricebookEntry.Product2Id
