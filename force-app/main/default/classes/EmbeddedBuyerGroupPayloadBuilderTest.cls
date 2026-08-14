@@ -2,25 +2,20 @@
 private class EmbeddedBuyerGroupPayloadBuilderTest {
   @IsTest
   static void testBuildPartialUpdateJson_createsThreeReplaceOperationsPerProduct() {
-    CatalogBuyerGroupAccessSnapshot firstSnapshot =
-      new CatalogBuyerGroupAccessSnapshot();
+    CatalogBuyerGroupAccessSnapshot firstSnapshot = new CatalogBuyerGroupAccessSnapshot();
     firstSnapshot.ecProductId = 'EC-401';
-    firstSnapshot.webStoreId = 'store-401';
+    firstSnapshot.webStoreId = String.valueOf(Id.valueOf('0ZE000000000401'));
     firstSnapshot.buyerGroupIds.add('BG-2');
     firstSnapshot.buyerGroupIds.add('BG-1');
     firstSnapshot.buyerGroupNames.add('Beta');
     firstSnapshot.buyerGroupNames.add('Alpha');
 
-    CatalogBuyerGroupAccessSnapshot secondSnapshot =
-      new CatalogBuyerGroupAccessSnapshot();
+    CatalogBuyerGroupAccessSnapshot secondSnapshot = new CatalogBuyerGroupAccessSnapshot();
     secondSnapshot.ecProductId = 'EC-402';
-    secondSnapshot.webStoreId = 'store-402';
+    secondSnapshot.webStoreId = String.valueOf(Id.valueOf('0ZE000000000402'));
 
     String payload = EmbeddedBuyerGroupAccessPayloadBuilder.buildPartialUpdateJson(
-      new List<CatalogBuyerGroupAccessSnapshot>{
-        secondSnapshot,
-        firstSnapshot
-      }
+      new List<CatalogBuyerGroupAccessSnapshot>{ secondSnapshot, firstSnapshot }
     );
 
     Map<String, Object> root = (Map<String, Object>) JSON.deserializeUntyped(

@@ -1,10 +1,6 @@
 @IsTest
 private class CatalogBuyerGroupAccessResolverTest {
-  private class NullFieldAccessBuilder
-    implements
-      ICatalogJsonBuilder,
-      ICatalogProductIdentityProvider,
-      ICatalogBuyerGroupAccessProvider {
+  private class NullFieldAccessBuilder implements ICatalogJsonBuilder, ICatalogProductIdentityProvider, ICatalogBuyerGroupAccessProvider {
     public List<String> getRequiredProductFieldsForIdentity() {
       return new List<String>{ 'ProductCode' };
     }
@@ -28,12 +24,10 @@ private class CatalogBuyerGroupAccessResolverTest {
       List<Product2> products,
       Map<Id, String> ecProductIdByProductId
     ) {
-      Map<Id, CatalogBuyerGroupAccessSnapshot> snapshots =
-        new Map<Id, CatalogBuyerGroupAccessSnapshot>();
+      Map<Id, CatalogBuyerGroupAccessSnapshot> snapshots = new Map<Id, CatalogBuyerGroupAccessSnapshot>();
 
       if (!products.isEmpty()) {
-        CatalogBuyerGroupAccessSnapshot snapshot =
-          new CatalogBuyerGroupAccessSnapshot();
+        CatalogBuyerGroupAccessSnapshot snapshot = new CatalogBuyerGroupAccessSnapshot();
         snapshot.productId = products[0].Id;
         snapshot.ecProductId = ecProductIdByProductId.get(products[0].Id);
         snapshot.webStoreId = null;
@@ -65,11 +59,7 @@ private class CatalogBuyerGroupAccessResolverTest {
     }
   }
 
-  private class CustomAccessBuilder
-    implements
-      ICatalogJsonBuilder,
-      ICatalogProductIdentityProvider,
-      ICatalogBuyerGroupAccessProvider {
+  private class CustomAccessBuilder implements ICatalogJsonBuilder, ICatalogProductIdentityProvider, ICatalogBuyerGroupAccessProvider {
     public List<String> getRequiredProductFieldsForIdentity() {
       return new List<String>{ 'StockKeepingUnit' };
     }
@@ -91,16 +81,14 @@ private class CatalogBuyerGroupAccessResolverTest {
       List<Product2> products,
       Map<Id, String> ecProductIdByProductId
     ) {
-      Map<Id, CatalogBuyerGroupAccessSnapshot> snapshots =
-        new Map<Id, CatalogBuyerGroupAccessSnapshot>();
+      Map<Id, CatalogBuyerGroupAccessSnapshot> snapshots = new Map<Id, CatalogBuyerGroupAccessSnapshot>();
 
       if (products.isEmpty()) {
         return snapshots;
       }
 
       Product2 firstProduct = products[0];
-      CatalogBuyerGroupAccessSnapshot snapshot =
-        new CatalogBuyerGroupAccessSnapshot();
+      CatalogBuyerGroupAccessSnapshot snapshot = new CatalogBuyerGroupAccessSnapshot();
       snapshot.productId = firstProduct.Id;
       snapshot.ecProductId = ecProductIdByProductId.get(firstProduct.Id);
       snapshot.webStoreId = 'custom-store';
@@ -146,6 +134,7 @@ private class CatalogBuyerGroupAccessResolverTest {
 
   @IsTest
   static void testResolveBuyerGroupAccess_normalizesMissingSnapshots() {
+    String webStoreId = String.valueOf(Id.valueOf('0ZE000000000001'));
     List<Product2> products = new List<Product2>{
       new Product2(
         Id = Id.valueOf('01t000000000201AAA'),
@@ -159,15 +148,14 @@ private class CatalogBuyerGroupAccessResolverTest {
       )
     };
     CatalogJobConfig__mdt config = new CatalogJobConfig__mdt(
-      WebStoreId__c = 'web-store-1'
+      WebStoreId__c = webStoreId
     );
 
-    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshots =
-      CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
-        config,
-        products,
-        new CustomAccessBuilder()
-      );
+    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshots = CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
+      config,
+      products,
+      new CustomAccessBuilder()
+    );
 
     System.assertEquals(2, snapshots.size());
     System.assertEquals(
@@ -188,38 +176,33 @@ private class CatalogBuyerGroupAccessResolverTest {
       snapshots.get(products[1].Id).buyerGroupIds.size(),
       'Products without provider output should normalize to empty memberships'
     );
-    System.assertEquals(
-      'web-store-1',
-      snapshots.get(products[1].Id).webStoreId
-    );
+    System.assertEquals(webStoreId, snapshots.get(products[1].Id).webStoreId);
   }
 
   @IsTest
   static void testIndexSnapshotsByEcProductId_mergesMemberships() {
-    CatalogBuyerGroupAccessSnapshot firstSnapshot =
-      new CatalogBuyerGroupAccessSnapshot();
+    String webStoreId = String.valueOf(Id.valueOf('0ZE000000000002'));
+    CatalogBuyerGroupAccessSnapshot firstSnapshot = new CatalogBuyerGroupAccessSnapshot();
     firstSnapshot.productId = Id.valueOf('01t000000000211AAA');
     firstSnapshot.ecProductId = 'EC-MERGED';
-    firstSnapshot.webStoreId = 'store-1';
+    firstSnapshot.webStoreId = webStoreId;
     firstSnapshot.buyerGroupIds.add('BG-2');
     firstSnapshot.buyerGroupNames.add('Beta');
 
-    CatalogBuyerGroupAccessSnapshot secondSnapshot =
-      new CatalogBuyerGroupAccessSnapshot();
+    CatalogBuyerGroupAccessSnapshot secondSnapshot = new CatalogBuyerGroupAccessSnapshot();
     secondSnapshot.productId = Id.valueOf('01t000000000212AAA');
     secondSnapshot.ecProductId = 'EC-MERGED';
-    secondSnapshot.webStoreId = 'store-1';
+    secondSnapshot.webStoreId = webStoreId;
     secondSnapshot.buyerGroupIds.add('BG-1');
     secondSnapshot.buyerGroupNames.add('Alpha');
 
-    Map<String, CatalogBuyerGroupAccessSnapshot> snapshotsByEcProductId =
-      CatalogBuyerGroupAccessResolver.indexSnapshotsByEcProductId(
-        new Map<Id, CatalogBuyerGroupAccessSnapshot>{
-          firstSnapshot.productId => firstSnapshot,
-          secondSnapshot.productId => secondSnapshot
-        },
-        'store-1'
-      );
+    Map<String, CatalogBuyerGroupAccessSnapshot> snapshotsByEcProductId = CatalogBuyerGroupAccessResolver.indexSnapshotsByEcProductId(
+      new Map<Id, CatalogBuyerGroupAccessSnapshot>{
+        firstSnapshot.productId => firstSnapshot,
+        secondSnapshot.productId => secondSnapshot
+      },
+      webStoreId
+    );
 
     System.assertEquals(1, snapshotsByEcProductId.size());
     System.assertEquals(
@@ -232,12 +215,11 @@ private class CatalogBuyerGroupAccessResolverTest {
 
   @IsTest
   static void testFallbackProvider_handlesEmptyScopeGracefully() {
-    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshots =
-      CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
-        new CatalogJobConfig__mdt(),
-        new List<Product2>(),
-        new CatalogJsonBuilderLegacyTestStub()
-      );
+    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshots = CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
+      new CatalogJobConfig__mdt(),
+      new List<Product2>(),
+      new CatalogJsonBuilderLegacyTestStub()
+    );
 
     System.assertEquals(0, snapshots.size());
   }
@@ -246,8 +228,9 @@ private class CatalogBuyerGroupAccessResolverTest {
   static void testGetProvider_returnsCustomAndFallbackProviders() {
     System.assertEquals(
       true,
-      CatalogBuyerGroupAccessResolver.getProvider(new CustomAccessBuilder()) instanceof
-      CustomAccessBuilder
+      CatalogBuyerGroupAccessResolver.getProvider(
+        new CustomAccessBuilder()
+      ) instanceof CustomAccessBuilder
     );
     System.assertEquals(
       true,
@@ -264,13 +247,15 @@ private class CatalogBuyerGroupAccessResolverTest {
     System.assertEquals(
       0,
       CatalogBuyerGroupAccessResolver.getRequiredProductFields(
-        new NullFieldAccessBuilder()
-      ).size()
+          new NullFieldAccessBuilder()
+        )
+        .size()
     );
   }
 
   @IsTest
   static void testResolveBuyerGroupAccess_normalizesNullSetsAndSkipsMissingEcIds() {
+    String webStoreId = String.valueOf(Id.valueOf('0ZE000000000003'));
     List<Product2> products = new List<Product2>{
       new Product2(
         Id = Id.valueOf('01t000000000221AAA'),
@@ -282,13 +267,12 @@ private class CatalogBuyerGroupAccessResolverTest {
       )
     };
 
-    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshots =
-      CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
-        new CatalogJobConfig__mdt(WebStoreId__c = 'fallback-store'),
-        products,
-        new Map<Id, String>{ products[0].Id => 'EC-221' },
-        new NullFieldAccessBuilder()
-      );
+    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshots = CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
+      new CatalogJobConfig__mdt(WebStoreId__c = webStoreId),
+      products,
+      new Map<Id, String>{ products[0].Id => 'EC-221' },
+      new NullFieldAccessBuilder()
+    );
 
     System.assertEquals(
       1,
@@ -306,7 +290,7 @@ private class CatalogBuyerGroupAccessResolverTest {
       'Null Buyer Group names should normalize to an empty set'
     );
     System.assertEquals(
-      'fallback-store',
+      webStoreId,
       snapshots.get(products[0].Id).webStoreId,
       'Blank snapshot store values should fall back to the job config store'
     );
@@ -314,35 +298,37 @@ private class CatalogBuyerGroupAccessResolverTest {
 
   @IsTest
   static void testIndexSnapshotsByEcProductId_handlesNullAndBlankSnapshots() {
+    String fallbackWebStoreId = String.valueOf(Id.valueOf('0ZE000000000004'));
+    String snapshotWebStoreId = String.valueOf(Id.valueOf('0ZE000000000005'));
     System.assertEquals(
       0,
-      CatalogBuyerGroupAccessResolver.indexSnapshotsByEcProductId(null, 'store-1')
+      CatalogBuyerGroupAccessResolver.indexSnapshotsByEcProductId(
+          null,
+          fallbackWebStoreId
+        )
         .size()
     );
 
-    CatalogBuyerGroupAccessSnapshot blankSnapshot =
-      new CatalogBuyerGroupAccessSnapshot();
+    CatalogBuyerGroupAccessSnapshot blankSnapshot = new CatalogBuyerGroupAccessSnapshot();
     blankSnapshot.productId = Id.valueOf('01t000000000231AAA');
     blankSnapshot.ecProductId = ' ';
 
-    CatalogBuyerGroupAccessSnapshot validSnapshot =
-      new CatalogBuyerGroupAccessSnapshot();
+    CatalogBuyerGroupAccessSnapshot validSnapshot = new CatalogBuyerGroupAccessSnapshot();
     validSnapshot.productId = Id.valueOf('01t000000000232AAA');
     validSnapshot.ecProductId = 'EC-232';
     validSnapshot.buyerGroupIds.add('BG-232');
 
-    Map<String, CatalogBuyerGroupAccessSnapshot> indexedSnapshots =
-      CatalogBuyerGroupAccessResolver.indexSnapshotsByEcProductId(
-        new Map<Id, CatalogBuyerGroupAccessSnapshot>{
-          blankSnapshot.productId => blankSnapshot,
-          validSnapshot.productId => validSnapshot
-        },
-        'store-232'
-      );
+    Map<String, CatalogBuyerGroupAccessSnapshot> indexedSnapshots = CatalogBuyerGroupAccessResolver.indexSnapshotsByEcProductId(
+      new Map<Id, CatalogBuyerGroupAccessSnapshot>{
+        blankSnapshot.productId => blankSnapshot,
+        validSnapshot.productId => validSnapshot
+      },
+      snapshotWebStoreId
+    );
 
     System.assertEquals(1, indexedSnapshots.size());
     System.assertEquals(
-      'store-232',
+      snapshotWebStoreId,
       indexedSnapshots.get('EC-232').webStoreId
     );
   }
