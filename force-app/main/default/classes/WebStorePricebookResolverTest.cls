@@ -288,4 +288,50 @@ private class WebStorePricebookResolverTest {
       'Final key allocation must not overwrite an existing case-insensitive collision'
     );
   }
+
+  @IsTest
+  static void standardPricebookWithSellingModelUsesFullPricebookId() {
+    Id stdPricebookId = Test.getStandardPricebookId();
+    Id sellingModelId = Id.valueOf('0jP000000000001');
+    Id pricebookEntryId = Id.valueOf('01u000000000001');
+
+    // When the Standard PB entry has a selling model, the basePriceKey passed to
+    // buildUniquePriceKey should be the full Standard PB ID so the resulting key
+    // is "01s...:0jP..." rather than the ambiguous ":0jP...".
+    String priceKey = CatalogProductExportSupport.buildUniquePriceKey(
+      new Map<String, Decimal>(),
+      String.valueOf(stdPricebookId),
+      sellingModelId,
+      stdPricebookId,
+      pricebookEntryId
+    );
+
+    System.assertEquals(
+      String.valueOf(stdPricebookId) + ':' + String.valueOf(sellingModelId),
+      priceKey,
+      'Standard Price Book entries with a selling model must use the PB ID prefix'
+    );
+  }
+
+  @IsTest
+  static void standardPricebookWithoutSellingModelUsesEmptyKey() {
+    Id stdPricebookId = Test.getStandardPricebookId();
+    Id pricebookEntryId = Id.valueOf('01u000000000001');
+
+    // When the Standard PB entry has NO selling model, the basePriceKey should be
+    // empty so the resulting key is "".
+    String priceKey = CatalogProductExportSupport.buildUniquePriceKey(
+      new Map<String, Decimal>(),
+      '',
+      null,
+      stdPricebookId,
+      pricebookEntryId
+    );
+
+    System.assertEquals(
+      '',
+      priceKey,
+      'Standard Price Book base entry (no selling model) must use the empty key'
+    );
+  }
 }

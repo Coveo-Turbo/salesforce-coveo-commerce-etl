@@ -138,12 +138,20 @@ public with sharing class CatalogProductExportSupport {
         );
       }
 
-      String basePriceKey = pricebookEntry.Pricebook2Id == stdPricebookId
-        ? ''
-        : labelsByPricebookId != null &&
+      String basePriceKey;
+      if (pricebookEntry.Pricebook2Id == stdPricebookId) {
+        // Standard Price Book base price (no selling model) uses the empty key "".
+        // Standard Price Book entries WITH a selling model use the actual PB ID
+        // so keys become "01s...:0jP..." instead of the ambiguous ":0jP...".
+        basePriceKey = pricebookEntry.ProductSellingModelId == null
+          ? ''
+          : String.valueOf(stdPricebookId);
+      } else {
+        basePriceKey = labelsByPricebookId != null &&
             labelsByPricebookId.containsKey(pricebookEntry.Pricebook2Id)
             ? labelsByPricebookId.get(pricebookEntry.Pricebook2Id)
             : String.valueOf(pricebookEntry.Pricebook2Id);
+      }
       Map<String, Decimal> productPrices = pricesByProduct.get(
         pricebookEntry.Product2Id
       );
