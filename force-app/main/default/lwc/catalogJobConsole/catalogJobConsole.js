@@ -723,8 +723,16 @@ export default class CatalogJobConsole extends NavigationMixin(
         value: this.selectedConfig.buyerGroupAvailabilityModeLabel
       },
       {
-        label: "Web Store",
-        value: this.selectedConfig.webStoreLabel
+        label: this.selectedConfig.webStoreIdsLabel !== "No shared stores"
+          ? "Shared Web Stores"
+          : "Web Store",
+        value: this.selectedConfig.webStoreIdsLabel !== "No shared stores"
+          ? this.selectedConfig.webStoreIdsLabel
+          : this.selectedConfig.webStoreLabel
+      },
+      {
+        label: "Pricebooks",
+        value: this.selectedConfig.pricebookIdsLabel
       },
       {
         label: "Scope",
