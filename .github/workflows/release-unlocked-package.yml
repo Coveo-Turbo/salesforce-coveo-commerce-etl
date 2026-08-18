@@ -3,17 +3,25 @@ name: Release Unlocked Package
 on:
   workflow_dispatch:
     inputs:
+      release_channel:
+        description: "Release channel"
+        required: true
+        type: choice
+        default: prerelease
+        options:
+          - prerelease
+          - stable
       version:
-        description: "Package version (e.g., 1.2.0)"
+        description: "Base package version (e.g., 1.4.0)"
         required: true
         type: string
-      release_notes:
-        description: "Release notes for this version"
+      prerelease_id:
+        description: "Prerelease identifier (required for prereleases, e.g., rc.1 or option-c-hybrid.1)"
         required: false
         type: string
         default: ""
-      installation_key:
-        description: "Installation key for the package (optional, leave empty for no key)"
+      release_notes:
+        description: "Release notes for this version"
         required: false
         type: string
         default: ""
@@ -26,17 +34,137 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: unlocked-package-release
+  cancel-in-progress: false
+
 jobs:
   create-package:
     name: Create and Release Unlocked Package
     runs-on: ubuntu-latest
+    environment: ${{ inputs.release_channel == 'stable' && 'package-production' || 'package-preview' }}
     env:
-      PACKAGE_FILENAME: ${{ github.event.repository.name }}-v${{ inputs.version }}.zip
+      BASE_VERSION: ${{ inputs.version }}
+      PRERELEASE_ID: ${{ inputs.prerelease_id }}
+      RELEASE_CHANNEL: ${{ inputs.release_channel }}
+      SF_CLI_VERSION: 2.113.6
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Validate release request
+        id: release-metadata
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          SEMVER_CORE_PATTERN='(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
+          PRERELEASE_PATTERN='[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*'
+
+          if [[ ! "$BASE_VERSION" =~ ^${SEMVER_CORE_PATTERN}$ ]]; then
+            echo "Error: version must be a valid X.Y.Z semantic version without leading zeroes."
+            exit 1
+          fi
+
+          case "$RELEASE_CHANNEL" in
+            stable)
+              if [ "$GITHUB_REF_TYPE" != "branch" ] || [ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]; then
+                echo "Error: stable releases must run from the default branch ($DEFAULT_BRANCH)."
+                exit 1
+              fi
+              if [ -n "$PRERELEASE_ID" ]; then
+                echo "Error: prerelease_id must be empty for stable releases."
+                exit 1
+              fi
+              RELEASE_VERSION="$BASE_VERSION"
+              RELEASE_NAME="Release v$BASE_VERSION"
+              RELEASE_NOTICE="This is a promoted Salesforce package version intended for supported installations."
+              PACKAGE_STATUS="Released"
+              PRIMARY_ORG_LABEL="Production / Developer Org"
+              PRERELEASE="false"
+              MAKE_LATEST="true"
+              ;;
+            prerelease)
+              if [[ ! "$PRERELEASE_ID" =~ ^${PRERELEASE_PATTERN}$ ]]; then
+                echo "Error: prerelease_id is required and must contain dot-separated alphanumeric or hyphenated identifiers."
+                exit 1
+              fi
+
+              IFS='.' read -ra PRERELEASE_PARTS <<< "$PRERELEASE_ID"
+              for PART in "${PRERELEASE_PARTS[@]}"; do
+                if [[ "$PART" =~ ^[0-9]+$ ]] && [ "${#PART}" -gt 1 ] && [[ "$PART" == 0* ]]; then
+                  echo "Error: numeric prerelease identifiers must not contain leading zeroes."
+                  exit 1
+                fi
+              done
+
+              RELEASE_VERSION="$BASE_VERSION-$PRERELEASE_ID"
+              RELEASE_NAME="Prerelease v$RELEASE_VERSION"
+              RELEASE_NOTICE="This is an unpromoted Salesforce beta package for non-production validation. It does not replace the latest stable release."
+              PACKAGE_STATUS="Beta"
+              PRIMARY_ORG_LABEL="Developer Org (non-production)"
+              PRERELEASE="true"
+              MAKE_LATEST="false"
+              ;;
+            *)
+              echo "Error: unsupported release channel '$RELEASE_CHANNEL'."
+              exit 1
+              ;;
+          esac
+
+          TAG="v$RELEASE_VERSION"
+          PACKAGE_FILENAME="$REPOSITORY_NAME-$TAG.zip"
+          PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
+          PACKAGE_ALIAS="$PACKAGE_NAME@$RELEASE_VERSION"
+
+          if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+            echo "Error: tag $TAG already exists. Release tags are immutable."
+            exit 1
+          fi
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Error: GitHub release $TAG already exists."
+            exit 1
+          fi
+
+          if jq -e --arg alias "$PACKAGE_ALIAS" '.packageAliases[$alias] != null' sfdx-project.json >/dev/null; then
+            echo "Error: package alias $PACKAGE_ALIAS already exists in sfdx-project.json."
+            exit 1
+          fi
+
+          if [ "$RELEASE_CHANNEL" = "stable" ]; then
+            CURRENT_STABLE=$(
+              for CANDIDATE in $(git tag --list 'v*'); do
+                if [[ "$CANDIDATE" =~ ^v${SEMVER_CORE_PATTERN}$ ]]; then
+                  echo "${CANDIDATE#v}"
+                fi
+              done | sort -V | tail -n 1
+            )
+
+            if [ -n "$CURRENT_STABLE" ]; then
+              GREATEST=$(printf '%s\n%s\n' "$CURRENT_STABLE" "$BASE_VERSION" | sort -V | tail -n 1)
+              if [ "$GREATEST" != "$BASE_VERSION" ] || [ "$CURRENT_STABLE" = "$BASE_VERSION" ]; then
+                echo "Error: stable version $BASE_VERSION must be greater than current stable version $CURRENT_STABLE."
+                exit 1
+              fi
+            fi
+          fi
+
+          echo "release_version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "release_name=$RELEASE_NAME" >> "$GITHUB_OUTPUT"
+          echo "release_notice=$RELEASE_NOTICE" >> "$GITHUB_OUTPUT"
+          echo "package_status=$PACKAGE_STATUS" >> "$GITHUB_OUTPUT"
+          echo "primary_org_label=$PRIMARY_ORG_LABEL" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "package_filename=$PACKAGE_FILENAME" >> "$GITHUB_OUTPUT"
+          echo "package_alias=$PACKAGE_ALIAS" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "make_latest=$MAKE_LATEST" >> "$GITHUB_OUTPUT"
+
+          echo "Validated $RELEASE_CHANNEL release $TAG from $GITHUB_REF_NAME at $GITHUB_SHA."
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -44,7 +172,10 @@ jobs:
           node-version: "20"
 
       - name: Install Salesforce CLI
-        run: npm install -g @salesforce/cli
+        run: |
+          npm install --global "@salesforce/cli@${SF_CLI_VERSION}"
+          node --version
+          sf version
 
       - name: Authenticate to DevHub
         run: |
@@ -59,7 +190,7 @@ jobs:
           PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
           echo "Package name: $PACKAGE_NAME"
           echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
-          
+
           # Check if package already exists in sfdx-project.json packageAliases
           PACKAGE_ID=$(jq -r --arg name "$PACKAGE_NAME" '.packageAliases[$name] // empty' sfdx-project.json)
           if [ -n "$PACKAGE_ID" ]; then
@@ -77,7 +208,7 @@ jobs:
           # Read package info from sfdx-project.json
           PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
           PACKAGE_DESC=$(jq -r '.packageDirectories[0].versionDescription // "Salesforce Coveo Commerce ETL"' sfdx-project.json)
-          
+
           echo "Creating new unlocked package: $PACKAGE_NAME"
           sf package create \
             --name "$PACKAGE_NAME" \
@@ -93,8 +224,8 @@ jobs:
       - name: Update version number in sfdx-project.json
         run: |
           # Update version number
-          jq --arg version "${{ inputs.version }}.NEXT" \
-             --arg versionName "ver ${{ inputs.version }}" \
+          jq --arg version "${BASE_VERSION}.NEXT" \
+             --arg versionName "ver $BASE_VERSION" \
              '.packageDirectories[0].versionNumber = $version | .packageDirectories[0].versionName = $versionName' \
              sfdx-project.json > sfdx-project.json.tmp
           mv sfdx-project.json.tmp sfdx-project.json
@@ -102,17 +233,19 @@ jobs:
       - name: Create package version
         id: create-version
         env:
-          INSTALLATION_KEY: ${{ inputs.installation_key }}
+          INSTALLATION_KEY: ${{ secrets.PACKAGE_INSTALLATION_KEY }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           if [ "$DRY_RUN" = "true" ]; then
-            echo "Creating dry-run package version ${{ inputs.version }} with code coverage..."
+            echo "Creating dry-run package version $BASE_VERSION with code coverage..."
+          elif [ "$RELEASE_CHANNEL" = "prerelease" ]; then
+            echo "Creating beta package version $BASE_VERSION with code coverage..."
           else
             # This workflow creates public install instructions, so the package
             # version must always be release-ready and promotable.
-            echo "Creating released package version ${{ inputs.version }} with code coverage..."
+            echo "Creating release candidate package version $BASE_VERSION with code coverage..."
           fi
-          
+
           # Read package name from sfdx-project.json
           PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
           echo "Package name: $PACKAGE_NAME"
@@ -221,7 +354,7 @@ jobs:
             echo "$RESULT"
             exit 1
           fi
-          
+
           echo "Package Version ID: $PACKAGE_VERSION_ID"
           echo "package_version_id=$PACKAGE_VERSION_ID" >> $GITHUB_OUTPUT
 
@@ -239,7 +372,7 @@ jobs:
           echo "Skipping package promotion, alias updates, README/package.json changes, and GitHub release creation."
 
       - name: Promote package version
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.release_channel == 'stable' }}
         run: |
           echo "Promoting package version to released..."
           sf package version promote \
@@ -248,19 +381,21 @@ jobs:
             --no-prompt
 
       - name: Update sfdx-project.json with version alias
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.release_channel == 'stable' }}
+        env:
+          PACKAGE_ALIAS: ${{ steps.release-metadata.outputs.package_alias }}
+          PACKAGE_VERSION_ID: ${{ steps.get-version-id.outputs.package_version_id }}
         run: |
-          # Read package name from sfdx-project.json
-          PACKAGE_NAME=$(jq -r '.packageDirectories[0].package' sfdx-project.json)
-          
           # Add version alias to packageAliases
-          jq --arg alias "${PACKAGE_NAME}@${{ inputs.version }}" \
-             --arg id "${{ steps.get-version-id.outputs.package_version_id }}" \
+          jq --arg alias "$PACKAGE_ALIAS" \
+             --arg id "$PACKAGE_VERSION_ID" \
              '.packageAliases[$alias] = $id' \
              sfdx-project.json > sfdx-project.json.tmp
           mv sfdx-project.json.tmp sfdx-project.json
 
       - name: Create metadata deployment package
+        env:
+          PACKAGE_FILENAME: ${{ steps.release-metadata.outputs.package_filename }}
         run: |
           echo "Creating deployment package..."
           mkdir -p release
@@ -272,15 +407,15 @@ jobs:
 
           # Create ZIP artifact
           cd release/metadata
-          zip -r "../${{ env.PACKAGE_FILENAME }}" .
+          zip -r "../$PACKAGE_FILENAME" .
           cd ../..
 
-          echo "Package created: release/${{ env.PACKAGE_FILENAME }}"
+          echo "Package created: release/$PACKAGE_FILENAME"
 
       - name: Update README with installation instructions
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.release_channel == 'stable' }}
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ env.BASE_VERSION }}
           REPO_URL: https://github.com/${{ github.repository }}
           PACKAGE_ID: ${{ steps.get-version-id.outputs.package_version_id }}
         run: |
@@ -288,12 +423,14 @@ jobs:
           ./scripts/update-readme-install.sh
 
       - name: Update package.json version
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.release_channel == 'stable' }}
         run: |
-          npm version ${{ inputs.version }} --no-git-tag-version --allow-same-version
+          npm version "$BASE_VERSION" --no-git-tag-version --allow-same-version
 
       - name: Commit and push changes
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.release_channel == 'stable' }}
+        env:
+          PACKAGE_VERSION_ID: ${{ steps.get-version-id.outputs.package_version_id }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -303,28 +440,41 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "chore: release unlocked package v${{ inputs.version }} (${{ steps.get-version-id.outputs.package_version_id }})"
+            git commit -m "chore: release unlocked package v$BASE_VERSION ($PACKAGE_VERSION_ID)"
             git push
           fi
+
+      - name: Resolve release commit
+        if: ${{ !inputs.dry_run }}
+        id: release-commit
+        run: echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         if: ${{ !inputs.dry_run }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ inputs.version }}
-          name: Release v${{ inputs.version }}
+          tag_name: ${{ steps.release-metadata.outputs.tag }}
+          name: ${{ steps.release-metadata.outputs.release_name }}
+          target_commitish: ${{ steps.release-commit.outputs.commit_sha }}
           body: |
-            ## Salesforce Coveo Commerce ETL v${{ inputs.version }}
+            ## Salesforce Coveo Commerce ETL v${{ steps.release-metadata.outputs.release_version }}
+
+            > ${{ steps.release-metadata.outputs.release_notice }}
 
             ${{ inputs.release_notes }}
 
-            ### Unlocked Package Installation (Recommended)
+            ### Build Provenance
 
             **Package Version ID:** `${{ steps.get-version-id.outputs.package_version_id }}`
+            **Salesforce Package Status:** `${{ steps.release-metadata.outputs.package_status }}`
+            **Source Branch:** `${{ github.ref_name }}`
+            **Source Commit:** `${{ steps.release-commit.outputs.commit_sha }}`
+
+            ### Unlocked Package Installation
 
             #### Install via Package Links
 
-            * **Production / Developer Org:**
+            * **${{ steps.release-metadata.outputs.primary_org_label }}:**
               [Install Package](https://login.salesforce.com/packaging/installPackage.apexp?p0=${{ steps.get-version-id.outputs.package_version_id }})
 
             * **Sandbox:**
@@ -348,7 +498,7 @@ jobs:
 
             ```bash
             # Download and extract
-            curl -L -o coveo-etl.zip "https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version }}/${{ env.PACKAGE_FILENAME }}"
+            curl -L -o coveo-etl.zip "https://github.com/${{ github.repository }}/releases/download/${{ steps.release-metadata.outputs.tag }}/${{ steps.release-metadata.outputs.package_filename }}"
             unzip coveo-etl.zip -d coveo-etl
 
             # Deploy to your org
@@ -360,7 +510,8 @@ jobs:
 
             See the [README](https://github.com/${{ github.repository }}#-installation) for detailed setup instructions.
           files: |
-            release/${{ env.PACKAGE_FILENAME }}
+            release/${{ steps.release-metadata.outputs.package_filename }}
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.release-metadata.outputs.prerelease }}
+          make_latest: ${{ steps.release-metadata.outputs.make_latest }}
           generate_release_notes: true
