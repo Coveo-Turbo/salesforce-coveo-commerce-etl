@@ -4,8 +4,8 @@
       "path": "force-app",
       "default": true,
       "package": "salesforce-coveo-commerce-etl",
-      "versionName": "ver 1.3.3",
-      "versionNumber": "1.3.3.NEXT",
+      "versionName": "ver 1.4.0",
+      "versionNumber": "1.4.0.NEXT",
       "versionDescription": "Salesforce Coveo Commerce ETL - Export enriched commerce catalog data to Coveo using the Stream API"
     }
   ],
@@ -49,6 +49,8 @@
     "salesforce-coveo-commerce-etl@1.3.2-1": "04tak000000Uc4fAAC",
     "salesforce-coveo-commerce-etl@1.3.2": "04tak000000Uc4fAAC",
     "salesforce-coveo-commerce-etl@1.3.3-1": "04tak000000UmOzAAK",
-    "salesforce-coveo-commerce-etl@1.3.3": "04tak000000UmOzAAK"
+    "salesforce-coveo-commerce-etl@1.3.3": "04tak000000UmOzAAK",
+    "salesforce-coveo-commerce-etl@1.4.0-4": "04tak000000cKH3AAM",
+    "salesforce-coveo-commerce-etl@1.4.0": "04tak000000cKH3AAM"
   }
 }
