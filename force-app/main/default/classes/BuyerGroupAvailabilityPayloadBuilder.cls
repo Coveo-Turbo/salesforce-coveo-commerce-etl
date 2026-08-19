@@ -37,4 +37,47 @@ public with sharing class BuyerGroupAvailabilityPayloadBuilder {
       new Map<String, Object>{ 'addOrUpdate' => addOrUpdate }
     );
   }
+
+  public static String buildFullUpdateNdjson(
+    List<SObject> buyerGroups,
+    Map<Id, Set<String>> itemIdsByBuyerGroup,
+    Map<Id, Set<String>> webStoreIdsByBuyerGroup
+  ) {
+    List<Object> addOrUpdate = new List<Object>();
+
+    for (SObject buyerGroup : buyerGroups) {
+      Id buyerGroupId = (Id) buyerGroup.get('Id');
+      String buyerGroupName = SafeFieldUtil.safeGetString(buyerGroup, 'Name');
+      Set<String> itemIds = itemIdsByBuyerGroup.get(buyerGroupId);
+      Set<String> webStoreIds = webStoreIdsByBuyerGroup.get(buyerGroupId);
+      List<String> sortedItemIds = itemIds == null
+        ? new List<String>()
+        : new List<String>(itemIds);
+      List<String> sortedWebStoreIds = webStoreIds == null
+        ? new List<String>()
+        : new List<String>(webStoreIds);
+      sortedItemIds.sort();
+      sortedWebStoreIds.sort();
+
+      Map<String, Object> item = new Map<String, Object>{
+        'objecttype' => 'Availability',
+        'documentId' => 'availability://' + String.valueOf(buyerGroupId),
+        'ec_availability_id' => String.valueOf(buyerGroupId),
+        'ec_available_items' => sortedItemIds,
+        'sf_webstore_ids' => sortedWebStoreIds
+      };
+      if (sortedWebStoreIds.size() == 1) {
+        item.put('sf_webstore_id', sortedWebStoreIds[0]);
+      }
+      if (String.isNotBlank(buyerGroupName)) {
+        item.put('ec_name', buyerGroupName);
+        item.put('sf_buyergroup_name', buyerGroupName);
+      }
+      addOrUpdate.add(item);
+    }
+
+    return JSON.serialize(
+      new Map<String, Object>{ 'addOrUpdate' => addOrUpdate }
+    );
+  }
 }

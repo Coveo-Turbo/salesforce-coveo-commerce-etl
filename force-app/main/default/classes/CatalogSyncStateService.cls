@@ -93,12 +93,27 @@ public with sharing class CatalogSyncStateService {
       ),
       'locale',
       normalizeText(jobConfig == null ? null : jobConfig.Locale__c),
+      'pricebookIds',
+      canonicalizeIdCsv(
+        jobConfig == null ? null : jobConfig.PricebookIds__c,
+        'PricebookIds__c'
+      ),
+      'webStoreIds',
+      canonicalizeIdCsv(
+        jobConfig == null ? null : jobConfig.WebStoreIds__c,
+        'WebStoreIds__c'
+      ),
       'buyerGroupAvailabilityMode',
       CatalogBuyerGroupAvailabilityMode.resolve(jobConfig),
       'embeddedWebStoreId',
       (jobConfig != null &&
         CatalogBuyerGroupAvailabilityMode.usesEmbedded(jobConfig))
-        ? normalizeText(jobConfig.WebStoreId__c)
+        ? canonicalizeIdCsv(
+            jobConfig.WebStoreIds__c != null
+              ? jobConfig.WebStoreIds__c
+              : jobConfig.WebStoreId__c,
+            'WebStoreIds__c'
+          )
         : ''
     };
 
@@ -559,6 +574,8 @@ public with sharing class CatalogSyncStateService {
         SourceId__c,
         AvailabilitySourceId__c,
         WebStoreId__c,
+        WebStoreIds__c,
+        PricebookIds__c,
         Locale__c,
         IsActive__c,
         ProductFilter__c,
@@ -1060,6 +1077,34 @@ public with sharing class CatalogSyncStateService {
 
     normalizedValues.sort();
     return String.join(normalizedValues, ',');
+  }
+
+  private static String canonicalizeIdCsv(String csvValue, String fieldName) {
+    if (String.isBlank(csvValue)) {
+      return '';
+    }
+
+    Set<Id> recordIds = new Set<Id>();
+    for (String rawValue : csvValue.split('[,;\\n\\r]+')) {
+      String value = rawValue == null ? null : rawValue.trim();
+      if (String.isBlank(value)) {
+        continue;
+      }
+      try {
+        recordIds.add((Id) value);
+      } catch (Exception e) {
+        throw new CatalogJobConfigException(
+          fieldName + ' contains an invalid Salesforce ID: ' + value
+        );
+      }
+    }
+
+    List<String> normalizedIds = new List<String>();
+    for (Id recordId : recordIds) {
+      normalizedIds.add(String.valueOf(recordId));
+    }
+    normalizedIds.sort();
+    return String.join(normalizedIds, ',');
   }
 
   private static String normalizeText(String value) {

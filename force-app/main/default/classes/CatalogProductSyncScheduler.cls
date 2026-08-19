@@ -96,8 +96,9 @@ global with sharing class CatalogProductSyncScheduler implements Schedulable {
     }
 
     if (scheduledMode == CatalogSyncMode.DELTA) {
-      CatalogSyncStateService.DeltaReadiness readiness =
-        CatalogSyncStateService.evaluateDeltaReadiness(config);
+      CatalogSyncStateService.DeltaReadiness readiness = CatalogSyncStateService.evaluateDeltaReadiness(
+        config
+      );
       if (readiness.isReady != true) {
         lastSkippedConfigDeveloperName = jobConfigDeveloperName;
         lastSkippedSyncMode = scheduledMode;
@@ -412,6 +413,8 @@ global with sharing class CatalogProductSyncScheduler implements Schedulable {
         SourceId__c,
         AvailabilitySourceId__c,
         WebStoreId__c,
+        WebStoreIds__c,
+        PricebookIds__c,
         Locale__c,
         IsActive__c,
         ProductFilter__c,

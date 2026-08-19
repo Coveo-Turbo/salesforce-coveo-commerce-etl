@@ -694,6 +694,32 @@
                   </div>
 
                   <div class="slds-m-top_medium">
+                    <lightning-dual-listbox
+                      name="pricebookIds"
+                      label="Explicit Pricebooks"
+                      source-label="Available active pricebooks"
+                      selected-label="Pricebooks to export"
+                      options={pricebookOptions}
+                      value={draft.pricebookIds}
+                      onchange={handlePricebookIdsChange}
+                      field-level-help="Optional. Explicit selections take precedence over Web Store pricebook resolution. Leave both lists empty to preserve legacy all-pricebook behavior."
+                    ></lightning-dual-listbox>
+                  </div>
+
+                  <div class="slds-m-top_medium">
+                    <lightning-dual-listbox
+                      name="webStoreIds"
+                      label="Shared Catalog Web Stores"
+                      source-label="Available web stores"
+                      selected-label="Stores sharing this catalog"
+                      options={webStoreOptions}
+                      value={draft.webStoreIds}
+                      onchange={handleWebStoreIdsChange}
+                      field-level-help="When explicit pricebooks are blank, the export resolves pricebooks linked to these stores through WebStorePricebook. Paired Buyer Group availability also unions these stores."
+                    ></lightning-dual-listbox>
+                  </div>
+
+                  <div class="slds-m-top_medium">
                     <lightning-textarea
                       label="Product Filter"
                       value={draft.productFilter}
@@ -736,13 +762,14 @@
                     ></lightning-combobox>
 
                     <lightning-combobox
-                      label="Web Store"
+                      label={singularWebStoreLabel}
                       value={draft.webStoreId}
                       data-field="webStoreId"
                       options={webStoreOptions}
                       onchange={handleDraftInputChange}
                       placeholder="Select a store"
                       disabled={areAvailabilityFieldsDisabled}
+                      field-level-help={singularWebStoreHelp}
                     ></lightning-combobox>
 
                     <lightning-input
@@ -754,6 +781,9 @@
                       disabled={isAvailabilitySourceDisabled}
                     ></lightning-input>
                   </div>
+                  <p class="editor-section__meta slds-m-top_small">
+                    {draftBuyerGroupStoreGuidance}
+                  </p>
                 </section>
 
                 <div class="workspace-card__actions">
@@ -855,9 +885,17 @@
                       </span>
                     </div>
                     <div class="review-summary__row">
-                      <span class="review-summary__label">Web Store</span>
+                      <span class="review-summary__label">
+                        Buyer Group Store Scope
+                      </span>
                       <span class="review-summary__value">
                         {draftSummaryWebStoreText}
+                      </span>
+                    </div>
+                    <div class="review-summary__row">
+                      <span class="review-summary__label">Pricebooks</span>
+                      <span class="review-summary__value">
+                        {draft.pricebookIds.length} selected
                       </span>
                     </div>
                     <div class="review-summary__row">
@@ -1153,6 +1191,59 @@
                           disabled={isScheduleSaveDisabled}
                         ></lightning-button>
                       </div>
+
+                      <section class="detail-section slds-m-top_large">
+                        <div class="editor-section__header">
+                          <p class="section-label">Shared Chain Schedule</p>
+                          <p class="editor-section__meta">
+                            Group active {selectedConfigRow.syncMode} configs
+                            under one native schedule. Minute cadences use
+                            shared shards instead of one shard set per config.
+                          </p>
+                        </div>
+
+                        <div class="schedule-form-grid slds-m-top_medium">
+                          <lightning-input
+                            label="Chain Name"
+                            value={chainNameValue}
+                            data-field="chainName"
+                            onchange={handleChainDraftChange}
+                          ></lightning-input>
+                          <lightning-input
+                            type="toggle"
+                            label="Include Buyer Group Access"
+                            checked={chainIncludeAvailability}
+                            data-field="includeAvailability"
+                            onchange={handleChainDraftChange}
+                          ></lightning-input>
+                        </div>
+
+                        <div class="slds-m-top_medium">
+                          <lightning-dual-listbox
+                            name="chainConfigs"
+                            label="Chain Members"
+                            source-label="Active same-mode configs"
+                            selected-label="Scheduled in this chain"
+                            options={chainConfigOptions}
+                            value={chainConfigDeveloperNames}
+                            onchange={handleChainConfigsChange}
+                          ></lightning-dual-listbox>
+                        </div>
+
+                        <div class="workspace-card__actions">
+                          <lightning-button
+                            label="Remove Chain Schedule"
+                            onclick={handleClearChainSchedule}
+                            disabled={isChainScheduleClearDisabled}
+                          ></lightning-button>
+                          <lightning-button
+                            label="Schedule Chain"
+                            variant="brand"
+                            onclick={handleSaveChainSchedule}
+                            disabled={isChainScheduleSaveDisabled}
+                          ></lightning-button>
+                        </div>
+                      </section>
 
                       <template if:true={hasRelatedScheduleConfigs}>
                         <div class="slds-m-top_medium">

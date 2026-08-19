@@ -28,7 +28,7 @@ private class CatalogBuyerGroupAvailabilityModeTest {
   }
 
   @IsTest
-  static void testModeFlags_coverPairedEmbeddedAndDualWrite() {
+  static void testModeFlags_coverPairedAndEmbedded() {
     System.assertEquals(
       true,
       CatalogBuyerGroupAvailabilityMode.usesPairedSource(
@@ -51,18 +51,6 @@ private class CatalogBuyerGroupAvailabilityModeTest {
       true,
       CatalogBuyerGroupAvailabilityMode.usesEmbedded(
         CatalogBuyerGroupAvailabilityMode.EMBEDDED
-      )
-    );
-    System.assertEquals(
-      true,
-      CatalogBuyerGroupAvailabilityMode.usesPairedSource(
-        CatalogBuyerGroupAvailabilityMode.DUAL_WRITE
-      )
-    );
-    System.assertEquals(
-      true,
-      CatalogBuyerGroupAvailabilityMode.usesEmbedded(
-        CatalogBuyerGroupAvailabilityMode.DUAL_WRITE
       )
     );
   }
@@ -70,8 +58,8 @@ private class CatalogBuyerGroupAvailabilityModeTest {
   @IsTest
   static void testDraftResolution_supportsAliasesAndLabels() {
     System.assertEquals(
-      CatalogBuyerGroupAvailabilityMode.DUAL_WRITE,
-      CatalogBuyerGroupAvailabilityMode.resolveDraftMode('dual')
+      CatalogBuyerGroupAvailabilityMode.PAIRED_SOURCE,
+      CatalogBuyerGroupAvailabilityMode.resolveDraftMode('paired')
     );
     System.assertEquals(
       true,
@@ -103,12 +91,6 @@ private class CatalogBuyerGroupAvailabilityModeTest {
       'Paired Availability Source',
       CatalogBuyerGroupAvailabilityMode.getLabel(
         CatalogBuyerGroupAvailabilityMode.PAIRED_SOURCE
-      )
-    );
-    System.assertEquals(
-      'Dual Write',
-      CatalogBuyerGroupAvailabilityMode.getLabel(
-        CatalogBuyerGroupAvailabilityMode.DUAL_WRITE
       )
     );
     System.assertEquals(

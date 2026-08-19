@@ -8,10 +8,12 @@ import getCatalogJobConfigs from "@salesforce/apex/CoveoCommerceSetupController.
 import getActiveBuilderMapping from "@salesforce/apex/CoveoCommerceSetupController.getActiveBuilderMapping";
 import getBuilderClassOptions from "@salesforce/apex/CoveoCommerceSetupController.getBuilderClassOptions";
 import getSetupWorkspaceOptions from "@salesforce/apex/CoveoCommerceSetupController.getSetupWorkspaceOptions";
-import previewCatalogJobDraft from "@salesforce/apex/CoveoCommerceSetupController.previewCatalogJobDraft";
+import previewMultiStoreCatalogJobDraft from "@salesforce/apex/CoveoCommerceSetupController.previewMultiStoreCatalogJobDraft";
 import saveCatalogJobSchedule from "@salesforce/apex/CoveoCommerceSetupController.saveCatalogJobSchedule";
+import saveCatalogChainSchedule from "@salesforce/apex/CoveoCommerceSetupController.saveCatalogChainSchedule";
 import testNamedCredentialConnection from "@salesforce/apex/CoveoCommerceSetupController.testNamedCredentialConnection";
 import clearCatalogJobSchedule from "@salesforce/apex/CoveoCommerceSetupController.clearCatalogJobSchedule";
+import clearCatalogChainSchedule from "@salesforce/apex/CoveoCommerceSetupController.clearCatalogChainSchedule";
 import validateBuilderClass from "@salesforce/apex/CoveoCommerceSetupController.validateBuilderClass";
 
 const TRUNCATE_LENGTH = 50;
@@ -20,7 +22,6 @@ const CONFIG_REFRESH_INTERVAL_MS = 15000;
 const BUYER_GROUP_MODE_DISABLED = "Disabled";
 const BUYER_GROUP_MODE_PAIRED = "PairedSource";
 const BUYER_GROUP_MODE_EMBEDDED = "Embedded";
-const BUYER_GROUP_MODE_DUAL = "DualWrite";
 const SYNC_MODE_FULL = "Full";
 const SYNC_MODE_DELTA = "Delta";
 const SYNC_MODE_OPTIONS = Object.freeze([
@@ -53,8 +54,7 @@ const SCHEDULE_DAY_LABELS = Object.freeze(
 const BUYER_GROUP_MODE_OPTIONS = Object.freeze([
   { label: "Disabled", value: BUYER_GROUP_MODE_DISABLED },
   { label: "Paired Source", value: BUYER_GROUP_MODE_PAIRED },
-  { label: "Embedded", value: BUYER_GROUP_MODE_EMBEDDED },
-  { label: "Dual Write", value: BUYER_GROUP_MODE_DUAL }
+  { label: "Embedded", value: BUYER_GROUP_MODE_EMBEDDED }
 ]);
 
 const DEFAULT_DRAFT = Object.freeze({
@@ -68,6 +68,8 @@ const DEFAULT_DRAFT = Object.freeze({
   locale: "en-US",
   catalogId: "",
   webStoreId: "",
+  webStoreIds: [],
+  pricebookIds: [],
   builderType: "",
   buyerGroupAvailabilityMode: BUYER_GROUP_MODE_DISABLED,
   productFilter: "",
@@ -103,7 +105,6 @@ function resolveBuyerGroupAvailabilityMode(mode, legacyEnabled = false) {
   switch (mode) {
     case BUYER_GROUP_MODE_PAIRED:
     case BUYER_GROUP_MODE_EMBEDDED:
-    case BUYER_GROUP_MODE_DUAL:
     case BUYER_GROUP_MODE_DISABLED:
       return mode;
     default:
@@ -119,18 +120,12 @@ function isBuyerGroupAccessEnabled(mode) {
 
 function usesPairedSource(mode) {
   const resolvedMode = resolveBuyerGroupAvailabilityMode(mode);
-  return (
-    resolvedMode === BUYER_GROUP_MODE_PAIRED ||
-    resolvedMode === BUYER_GROUP_MODE_DUAL
-  );
+  return resolvedMode === BUYER_GROUP_MODE_PAIRED;
 }
 
 function usesEmbeddedAccess(mode) {
   const resolvedMode = resolveBuyerGroupAvailabilityMode(mode);
-  return (
-    resolvedMode === BUYER_GROUP_MODE_EMBEDDED ||
-    resolvedMode === BUYER_GROUP_MODE_DUAL
-  );
+  return resolvedMode === BUYER_GROUP_MODE_EMBEDDED;
 }
 
 function formatBuyerGroupAvailabilityMode(mode) {
@@ -139,8 +134,6 @@ function formatBuyerGroupAvailabilityMode(mode) {
       return "Paired Source";
     case BUYER_GROUP_MODE_EMBEDDED:
       return "Embedded";
-    case BUYER_GROUP_MODE_DUAL:
-      return "Dual Write";
     default:
       return "Disabled";
   }
@@ -183,6 +176,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
 
   @track workspaceOptions = {
     webStores: [],
+    pricebooks: [],
     productCatalogs: [],
     builderTypeOptions: [],
     productFieldOptions: []
@@ -194,6 +188,13 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   @track scheduleDraft = null;
   @track isSavingSchedule = false;
   @track isClearingSchedule = false;
+  @track chainDraft = {
+    chainName: "Shared Catalog",
+    configDeveloperNames: [],
+    includeAvailability: false
+  };
+  @track isSavingChainSchedule = false;
+  @track isClearingChainSchedule = false;
   @track detailAccordionOpenSections = ["summary"];
 
   namedCredentialSetupUrl = "/lightning/setup/NamedCredential/home";
@@ -270,6 +271,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       this.workspaceOptions = {
         webStores: data.webStores || [],
         productCatalogs: data.productCatalogs || [],
+        pricebooks: data.pricebooks || [],
         builderTypeOptions: data.builderTypeOptions || [],
         productFieldOptions: data.productFieldOptions || []
       };
@@ -278,6 +280,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       this.workspaceOptions = {
         webStores: [],
         productCatalogs: [],
+        pricebooks: [],
         builderTypeOptions: [],
         productFieldOptions: []
       };
@@ -581,6 +584,13 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     }));
   }
 
+  get pricebookOptions() {
+    return (this.workspaceOptions.pricebooks || []).map((option) => ({
+      label: option.label,
+      value: option.value
+    }));
+  }
+
   get productFieldOptions() {
     return (this.workspaceOptions.productFieldOptions || []).map((option) => ({
       label: option.label,
@@ -602,6 +612,41 @@ export default class CoveoCommerceSetup extends NavigationMixin(
 
   get scheduleDayOptions() {
     return SCHEDULE_DAY_OPTIONS;
+  }
+
+  get chainConfigOptions() {
+    const selectedMode = this.selectedConfigRow?.syncMode;
+    return (this.catalogConfigs || [])
+      .filter((config) => config.isActive && config.syncMode === selectedMode)
+      .map((config) => ({
+        label: `${config.label} (${config.developerName})`,
+        value: config.developerName
+      }));
+  }
+
+  get chainNameValue() {
+    return this.chainDraft?.chainName || "Shared Catalog";
+  }
+
+  get chainConfigDeveloperNames() {
+    return this.chainDraft?.configDeveloperNames || [];
+  }
+
+  get chainIncludeAvailability() {
+    return this.chainDraft?.includeAvailability === true;
+  }
+
+  get isChainScheduleSaveDisabled() {
+    return (
+      this.isSavingChainSchedule ||
+      !this.selectedConfigRow ||
+      !this.chainNameValue.trim() ||
+      !this.chainConfigDeveloperNames.length
+    );
+  }
+
+  get isChainScheduleClearDisabled() {
+    return this.isClearingChainSchedule || !this.chainNameValue.trim();
   }
 
   get hasWorkspaceOptions() {
@@ -630,6 +675,52 @@ export default class CoveoCommerceSetup extends NavigationMixin(
 
   get draftUsesEmbeddedAccess() {
     return usesEmbeddedAccess(this.draft.buyerGroupAvailabilityMode);
+  }
+
+  get isSingularWebStoreRequired() {
+    return false;
+  }
+
+  get singularWebStoreLabel() {
+    const mode = resolveBuyerGroupAvailabilityMode(
+      this.draft.buyerGroupAvailabilityMode
+    );
+
+    if (mode === BUYER_GROUP_MODE_PAIRED) {
+      return "Legacy Web Store Fallback";
+    }
+    if (mode === BUYER_GROUP_MODE_EMBEDDED) {
+      return "Web Store (legacy fallback)";
+    }
+    return "Web Store";
+  }
+
+  get singularWebStoreHelp() {
+    const mode = resolveBuyerGroupAvailabilityMode(
+      this.draft.buyerGroupAvailabilityMode
+    );
+
+    if (mode === BUYER_GROUP_MODE_PAIRED) {
+      return "Optional backward-compatible fallback. It is used only when Shared Catalog Web Stores is empty; otherwise the plural store selection takes precedence.";
+    }
+    if (mode === BUYER_GROUP_MODE_EMBEDDED) {
+      return "Optional backward-compatible fallback. Embedded access now resolves Buyer Groups from Shared Catalog Web Stores. Use this field only when the plural selection is empty.";
+    }
+    return "Select a Buyer Group Availability Mode to configure its Web Store scope.";
+  }
+
+  get draftBuyerGroupStoreGuidance() {
+    const mode = resolveBuyerGroupAvailabilityMode(
+      this.draft.buyerGroupAvailabilityMode
+    );
+
+    if (mode === BUYER_GROUP_MODE_PAIRED) {
+      return "Paired Source prefers Shared Catalog Web Stores and unions Buyer Groups across them. Use the singular field only for an existing legacy configuration.";
+    }
+    if (mode === BUYER_GROUP_MODE_EMBEDDED) {
+      return "Embedded access unions Buyer Groups across Shared Catalog Web Stores. The singular Web Store field is a backward-compatible fallback when no shared stores are selected.";
+    }
+    return "Web Store selections are not required while Buyer Group access is disabled.";
   }
 
   get selectedBuyerGroupModeLabel() {
@@ -709,6 +800,8 @@ export default class CoveoCommerceSetup extends NavigationMixin(
         this.draft.availabilitySourceId ||
         this.draft.catalogId ||
         this.draft.webStoreId ||
+        (this.draft.webStoreIds || []).length > 0 ||
+        (this.draft.pricebookIds || []).length > 0 ||
         this.draft.builderType ||
         this.draft.productFilter ||
         this.draftBuyerGroupAccessEnabled ||
@@ -801,6 +894,8 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       }`,
       `Locale__c: ${this.draft.locale || "(Required)"}`,
       `CatalogId__c: ${this.draft.catalogId || ""}`,
+      `PricebookIds__c: ${(this.draft.pricebookIds || []).join(",")}`,
+      `WebStoreIds__c: ${(this.draft.webStoreIds || []).join(",")}`,
       `BuilderType__c: ${this.draft.builderType || ""}`,
       `ProductFilter__c: ${this.draft.productFilter || ""}`,
       `AdditionalProductFields__c: ${(
@@ -846,7 +941,34 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     if (!this.draftBuyerGroupAccessEnabled) {
       return "Not required";
     }
-    return this.selectedWebStoreLabel;
+
+    const mode = resolveBuyerGroupAvailabilityMode(
+      this.draft.buyerGroupAvailabilityMode
+    );
+    const sharedStores = this.draft.webStoreIds || [];
+    const sharedStoreText = `${sharedStores.length} shared store${
+      sharedStores.length === 1 ? "" : "s"
+    }`;
+
+    if (mode === BUYER_GROUP_MODE_PAIRED) {
+      if (sharedStores.length) {
+        return `${sharedStoreText} (paired union)`;
+      }
+      return this.draft.webStoreId
+        ? `${this.selectedWebStoreLabel} (legacy fallback)`
+        : "Select shared stores or a legacy fallback";
+    }
+
+    if (mode === BUYER_GROUP_MODE_EMBEDDED) {
+      if (sharedStores.length) {
+        return `${sharedStoreText} (embedded union)`;
+      }
+      return this.draft.webStoreId
+        ? `${this.selectedWebStoreLabel} (legacy fallback)`
+        : "Select shared stores or a legacy fallback";
+    }
+
+    return "Not required";
   }
 
   get selectedConfigTitle() {
@@ -955,6 +1077,15 @@ export default class CoveoCommerceSetup extends NavigationMixin(
         value: this.selectedConfigRow.sourceId || "(None)"
       },
       {
+        label: "Pricebooks",
+        value:
+          this.selectedConfigRow.pricebookDisplay || "All active pricebooks"
+      },
+      {
+        label: "Shared Web Stores",
+        value: this.selectedConfigRow.webStoreIdsDisplay || "Not configured"
+      },
+      {
         label: "Scope Summary",
         value: this.selectedConfigRow.scopeSummary || "No scope summary"
       },
@@ -984,6 +1115,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       {
         label: "Web Store",
         value: this.selectedConfigRow.webStoreDisplay || "Not required"
+      },
+      {
+        label: "Multi-store Scope",
+        value: this.selectedConfigRow.webStoreIdsDisplay || "Not configured"
       },
       {
         label: "Availability Source Id",
@@ -1467,6 +1602,93 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     }
   }
 
+  handleChainDraftChange(event) {
+    const fieldName = event.target.dataset.field;
+    if (!fieldName) {
+      return;
+    }
+    this.chainDraft = {
+      ...this.chainDraft,
+      [fieldName]:
+        event.target.type === "checkbox" || event.target.type === "toggle"
+          ? event.target.checked
+          : (event.detail?.value ?? event.target.value ?? "")
+    };
+  }
+
+  handleChainConfigsChange(event) {
+    this.chainDraft = {
+      ...this.chainDraft,
+      configDeveloperNames: event.detail.value || []
+    };
+  }
+
+  async handleSaveChainSchedule() {
+    const validationMessage = this.validateScheduleDraft();
+    if (validationMessage) {
+      this.showToast("Schedule needs attention", validationMessage, "warning");
+      return;
+    }
+    if (this.isChainScheduleSaveDisabled) {
+      return;
+    }
+
+    this.isSavingChainSchedule = true;
+    try {
+      const result = await saveCatalogChainSchedule({
+        chainName: this.chainNameValue,
+        configDeveloperNames: this.chainConfigDeveloperNames,
+        syncMode: this.selectedConfigRow.syncMode,
+        includeAvailability: this.chainIncludeAvailability,
+        cadenceType: this.selectedScheduleCadenceType,
+        intervalMinutes: this.parseInteger(this.scheduleDraft?.intervalMinutes),
+        intervalHours: this.parseInteger(this.scheduleDraft?.intervalHours),
+        dayOfWeek: this.scheduleDraft?.dayOfWeek,
+        hourOfDay: this.parseInteger(this.scheduleDraft?.hourOfDay),
+        minuteOfHour: this.parseInteger(this.scheduleDraft?.minuteOfHour)
+      });
+      this.showToast(
+        "Chain schedule saved",
+        `${result.jobName} now covers ${this.chainConfigDeveloperNames.length} configs.`,
+        "success"
+      );
+    } catch (error) {
+      this.showToast(
+        "Unable to save chain schedule",
+        this.reduceError(error),
+        "error"
+      );
+    } finally {
+      this.isSavingChainSchedule = false;
+    }
+  }
+
+  async handleClearChainSchedule() {
+    if (this.isChainScheduleClearDisabled || !this.selectedConfigRow) {
+      return;
+    }
+    this.isClearingChainSchedule = true;
+    try {
+      await clearCatalogChainSchedule({
+        chainName: this.chainNameValue,
+        syncMode: this.selectedConfigRow.syncMode
+      });
+      this.showToast(
+        "Chain schedule removed",
+        `Removed ${this.chainNameValue}.`,
+        "success"
+      );
+    } catch (error) {
+      this.showToast(
+        "Unable to remove chain schedule",
+        this.reduceError(error),
+        "error"
+      );
+    } finally {
+      this.isClearingChainSchedule = false;
+    }
+  }
+
   handleDraftInputChange(event) {
     const fieldName = event.target.dataset.field;
     if (!fieldName) {
@@ -1518,6 +1740,22 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     this.draft = {
       ...this.draft,
       additionalProductFields: event.detail.value || []
+    };
+    this.schedulePreviewRefresh();
+  }
+
+  handlePricebookIdsChange(event) {
+    this.draft = {
+      ...this.draft,
+      pricebookIds: event.detail.value || []
+    };
+    this.schedulePreviewRefresh();
+  }
+
+  handleWebStoreIdsChange(event) {
+    this.draft = {
+      ...this.draft,
+      webStoreIds: event.detail.value || []
     };
     this.schedulePreviewRefresh();
   }
@@ -1580,7 +1818,7 @@ export default class CoveoCommerceSetup extends NavigationMixin(
   refreshDraftPreview() {
     this.isLoadingDraftPreview = true;
 
-    previewCatalogJobDraft({
+    previewMultiStoreCatalogJobDraft({
       label: this.draft.label,
       developerName: this.draft.developerName,
       coveoOrgId: this.draft.coveoOrgId,
@@ -1591,6 +1829,8 @@ export default class CoveoCommerceSetup extends NavigationMixin(
         this.draft.baselineFullConfigDeveloperName,
       catalogId: this.draft.catalogId,
       webStoreId: this.draft.webStoreId,
+      webStoreIds: this.draft.webStoreIds,
+      pricebookIds: this.draft.pricebookIds,
       locale: this.draft.locale,
       builderType: this.draft.builderType,
       buyerGroupAvailabilityMode: this.draft.buyerGroupAvailabilityMode,
@@ -1628,6 +1868,8 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       locale: config.locale || "en-US",
       catalogId: config.catalogId || "",
       webStoreId: config.webStoreId || "",
+      webStoreIds: this.parseAdditionalFields(config.webStoreIds),
+      pricebookIds: this.parseAdditionalFields(config.pricebookIds),
       builderType:
         config.builderType && config.builderType !== "(Global Default)"
           ? config.builderType
@@ -1780,6 +2022,18 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     const webStoreLabel = config.webStoreId
       ? this.getOptionLabel(this.webStoreOptions, config.webStoreId)
       : "";
+    const webStoreIdList = this.parseAdditionalFields(config.webStoreIds);
+    const pricebookIdList = this.parseAdditionalFields(config.pricebookIds);
+    const webStoreIdsDisplay = this.formatNamedIdList(
+      this.webStoreOptions,
+      webStoreIdList,
+      "Not configured"
+    );
+    const pricebookDisplay = this.formatNamedIdList(
+      this.pricebookOptions,
+      pricebookIdList,
+      "All active pricebooks"
+    );
     const catalogDisplay = config.catalogId
       ? this.formatNamedValue(catalogLabel, config.catalogId)
       : "All active products";
@@ -2024,6 +2278,10 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       inventorySupportSummary: inventorySupportParts.join(" • "),
       catalogLabel: catalogLabel || config.catalogId || "All active products",
       webStoreLabel: webStoreLabel || config.webStoreId || "Not selected",
+      webStoreIdList,
+      pricebookIdList,
+      webStoreIdsDisplay,
+      pricebookDisplay,
       catalogDisplay,
       webStoreDisplay,
       metadataSummary: this.buildConfigMetadataSummary({
@@ -2066,6 +2324,15 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     });
 
     this.selectedConfigRow = nextSelectedConfig;
+    if (
+      nextSelectedConfig &&
+      previousSelectedConfigId !== nextSelectedConfig.id
+    ) {
+      this.chainDraft = {
+        ...this.chainDraft,
+        configDeveloperNames: [nextSelectedConfig.developerName]
+      };
+    }
 
     if (
       nextSelectedConfig &&
@@ -2115,6 +2382,15 @@ export default class CoveoCommerceSetup extends NavigationMixin(
     return `${label} (${id})`;
   }
 
+  formatNamedIdList(options, ids, fallbackValue) {
+    if (!ids?.length) {
+      return fallbackValue;
+    }
+    return ids
+      .map((id) => this.formatNamedValue(this.getOptionLabel(options, id), id))
+      .join(", ");
+  }
+
   buildConfigMetadataSummary(config) {
     return [
       `DeveloperName: ${config.developerName || ""}`,
@@ -2127,6 +2403,8 @@ export default class CoveoCommerceSetup extends NavigationMixin(
       }`,
       `CatalogId__c: ${config.catalogId || ""}`,
       `WebStoreId__c: ${config.webStoreId || ""}`,
+      `WebStoreIds__c: ${config.webStoreIds || ""}`,
+      `PricebookIds__c: ${config.pricebookIds || ""}`,
       `Locale__c: ${config.locale || ""}`,
       `BuilderType__c: ${
         config.builderType === "(Global Default)"

@@ -18,10 +18,14 @@ public with sharing class CatalogBuyerGroupAccessResolver {
   public static List<String> getRequiredProductFields(
     CatalogJobConfig__mdt jobConfig
   ) {
-    return getRequiredProductFields(CatalogProductIdentityResolver.getBuilder(jobConfig));
+    return getRequiredProductFields(
+      CatalogProductIdentityResolver.getBuilder(jobConfig)
+    );
   }
 
-  public static List<String> getRequiredProductFields(ICatalogJsonBuilder builder) {
+  public static List<String> getRequiredProductFields(
+    ICatalogJsonBuilder builder
+  ) {
     List<String> fields = new List<String>();
     List<String> providerFields = getProvider(builder)
       .getRequiredProductFieldsForBuyerGroupAccess();
@@ -66,15 +70,15 @@ public with sharing class CatalogBuyerGroupAccessResolver {
     Map<Id, String> ecProductIdByProductId,
     ICatalogJsonBuilder builder
   ) {
+    Set<Id> effectiveWebStoreIds = jobConfig == null
+      ? new Set<Id>()
+      : WebStorePricebookResolver.resolveEffectiveWebStoreIds(jobConfig);
     return normalizeSnapshots(
       products,
       ecProductIdByProductId,
-      getProvider(builder).resolveBuyerGroupAccess(
-        jobConfig,
-        products,
-        ecProductIdByProductId
-      ),
-      jobConfig == null ? null : jobConfig.WebStoreId__c
+      getProvider(builder)
+        .resolveBuyerGroupAccess(jobConfig, products, ecProductIdByProductId),
+      effectiveWebStoreIds
     );
   }
 
@@ -82,14 +86,15 @@ public with sharing class CatalogBuyerGroupAccessResolver {
     Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId,
     String webStoreId
   ) {
-    Map<String, CatalogBuyerGroupAccessSnapshot> snapshotsByEcProductId =
-      new Map<String, CatalogBuyerGroupAccessSnapshot>();
+    Map<String, CatalogBuyerGroupAccessSnapshot> snapshotsByEcProductId = new Map<String, CatalogBuyerGroupAccessSnapshot>();
 
     if (snapshotsByProductId == null) {
       return snapshotsByEcProductId;
     }
 
-    for (CatalogBuyerGroupAccessSnapshot snapshot : snapshotsByProductId.values()) {
+    for (
+      CatalogBuyerGroupAccessSnapshot snapshot : snapshotsByProductId.values()
+    ) {
       if (snapshot == null || String.isBlank(snapshot.ecProductId)) {
         continue;
       }
@@ -97,17 +102,25 @@ public with sharing class CatalogBuyerGroupAccessResolver {
       if (!snapshotsByEcProductId.containsKey(snapshot.ecProductId)) {
         snapshotsByEcProductId.put(
           snapshot.ecProductId,
-          createEmptySnapshot(snapshot.productId, snapshot.ecProductId, webStoreId)
+          createEmptySnapshot(
+            snapshot.productId,
+            snapshot.ecProductId,
+            webStoreId
+          )
         );
       }
 
-      CatalogBuyerGroupAccessSnapshot mergedSnapshot =
-        snapshotsByEcProductId.get(snapshot.ecProductId);
+      CatalogBuyerGroupAccessSnapshot mergedSnapshot = snapshotsByEcProductId.get(
+        snapshot.ecProductId
+      );
       if (snapshot.buyerGroupIds != null) {
         mergedSnapshot.buyerGroupIds.addAll(snapshot.buyerGroupIds);
       }
       if (snapshot.buyerGroupNames != null) {
         mergedSnapshot.buyerGroupNames.addAll(snapshot.buyerGroupNames);
+      }
+      if (snapshot.webStoreIds != null) {
+        mergedSnapshot.webStoreIds.addAll(snapshot.webStoreIds);
       }
       if (String.isNotBlank(snapshot.webStoreId)) {
         mergedSnapshot.webStoreId = snapshot.webStoreId;
@@ -126,6 +139,29 @@ public with sharing class CatalogBuyerGroupAccessResolver {
     snapshot.productId = productId;
     snapshot.ecProductId = ecProductId;
     snapshot.webStoreId = webStoreId;
+    if (String.isNotBlank(webStoreId)) {
+      snapshot.webStoreIds.add(webStoreId);
+    }
+    return snapshot;
+  }
+
+  public static CatalogBuyerGroupAccessSnapshot createEmptySnapshot(
+    Id productId,
+    String ecProductId,
+    Set<Id> webStoreIds
+  ) {
+    CatalogBuyerGroupAccessSnapshot snapshot = new CatalogBuyerGroupAccessSnapshot();
+    snapshot.productId = productId;
+    snapshot.ecProductId = ecProductId;
+    if (webStoreIds != null) {
+      for (Id webStoreId : webStoreIds) {
+        snapshot.webStoreIds.add(String.valueOf(webStoreId));
+      }
+    }
+    if (!snapshot.webStoreIds.isEmpty()) {
+      List<String> sorted = snapshot.getSortedWebStoreIds();
+      snapshot.webStoreId = sorted[0];
+    }
     return snapshot;
   }
 
@@ -134,10 +170,9 @@ public with sharing class CatalogBuyerGroupAccessResolver {
     List<Product2> products,
     Map<Id, String> ecProductIdByProductId,
     Map<Id, CatalogBuyerGroupAccessSnapshot> providerSnapshots,
-    String webStoreId
+    Set<Id> webStoreIds
   ) {
-    Map<Id, CatalogBuyerGroupAccessSnapshot> normalizedSnapshots =
-      new Map<Id, CatalogBuyerGroupAccessSnapshot>();
+    Map<Id, CatalogBuyerGroupAccessSnapshot> normalizedSnapshots = new Map<Id, CatalogBuyerGroupAccessSnapshot>();
 
     if (products == null || products.isEmpty()) {
       return normalizedSnapshots;
@@ -157,19 +192,29 @@ public with sharing class CatalogBuyerGroupAccessResolver {
         continue;
       }
 
-      CatalogBuyerGroupAccessSnapshot snapshot = providerSnapshots.get(product.Id);
+      CatalogBuyerGroupAccessSnapshot snapshot = providerSnapshots.get(
+        product.Id
+      );
       if (snapshot == null) {
         snapshot = createEmptySnapshot(
           product.Id,
           ecProductIdByProductId.get(product.Id),
-          webStoreId
+          webStoreIds
         );
       }
 
       snapshot.productId = product.Id;
       snapshot.ecProductId = ecProductIdByProductId.get(product.Id);
-      if (String.isBlank(snapshot.webStoreId)) {
-        snapshot.webStoreId = webStoreId;
+      if (webStoreIds != null) {
+        for (Id webStoreId : webStoreIds) {
+          snapshot.webStoreIds.add(String.valueOf(webStoreId));
+        }
+      }
+      if (
+        String.isBlank(snapshot.webStoreId) && !snapshot.webStoreIds.isEmpty()
+      ) {
+        List<String> sorted = snapshot.getSortedWebStoreIds();
+        snapshot.webStoreId = sorted[0];
       }
       if (snapshot.buyerGroupIds == null) {
         snapshot.buyerGroupIds = new Set<String>();

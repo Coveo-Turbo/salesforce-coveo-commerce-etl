@@ -4,6 +4,8 @@
  * CatalogJobConfig__mdt records, and managing CatalogJsonBuilderMapping__mdt.
  */
 public with sharing class CoveoCommerceSetupController {
+  @TestVisible
+  private static Map<String, CatalogJobConfig__mdt> testChainConfigsByDeveloperName;
   private static final String NAMED_CREDENTIAL_NAME = 'Coveo_Push';
   private static final String EXTERNAL_CREDENTIAL_NAME = 'CoveoPushAuthCred';
   private static final String API_KEY_PARAMETER_NAME = 'API_KEY';
@@ -113,6 +115,8 @@ public with sharing class CoveoCommerceSetupController {
         AvailabilitySourceId__c,
         BuyerGroupAvailabilityMode__c,
         WebStoreId__c,
+        WebStoreIds__c,
+        PricebookIds__c,
         Locale__c,
         IsActive__c,
         ProductFilter__c,
@@ -151,6 +155,8 @@ public with sharing class CoveoCommerceSetupController {
         CatalogBuyerGroupAvailabilityMode.resolve(cfg)
       );
       configMap.put('webStoreId', cfg.WebStoreId__c);
+      configMap.put('webStoreIds', cfg.WebStoreIds__c);
+      configMap.put('pricebookIds', cfg.PricebookIds__c);
       configMap.put('locale', cfg.Locale__c);
       configMap.put('isActive', cfg.IsActive__c);
       configMap.put('productFilter', cfg.ProductFilter__c);
@@ -331,6 +337,74 @@ public with sharing class CoveoCommerceSetupController {
     return buildScheduleResult(jobConfigDeveloperName.trim());
   }
 
+  @AuraEnabled
+  public static Map<String, Object> saveCatalogChainSchedule(
+    String chainName,
+    List<String> configDeveloperNames,
+    String syncMode,
+    Boolean includeAvailability,
+    String cadenceType,
+    Integer intervalMinutes,
+    Integer intervalHours,
+    String dayOfWeek,
+    Integer hourOfDay,
+    Integer minuteOfHour
+  ) {
+    if (String.isBlank(chainName)) {
+      throw new CatalogJobConfigException('A chain name is required.');
+    }
+    if (configDeveloperNames == null || configDeveloperNames.isEmpty()) {
+      throw new CatalogJobConfigException(
+        'Select at least one Catalog Job Config for the chain.'
+      );
+    }
+
+    String resolvedSyncMode = CatalogSyncMode.resolve(syncMode);
+    validateChainConfigs(configDeveloperNames, resolvedSyncMode);
+    String cronExpression = buildScheduleCronExpression(
+      cadenceType,
+      intervalMinutes,
+      intervalHours,
+      dayOfWeek,
+      hourOfDay,
+      minuteOfHour
+    );
+    String firstJobId = CatalogChainedSyncScheduler.upsertChainedSync(
+      chainName.trim(),
+      configDeveloperNames,
+      resolvedSyncMode,
+      true,
+      includeAvailability,
+      cronExpression
+    );
+
+    return new Map<String, Object>{
+      'chainName' => chainName.trim(),
+      'syncMode' => resolvedSyncMode,
+      'configDeveloperNames' => configDeveloperNames,
+      'includeAvailability' => includeAvailability == true,
+      'cronExpression' => cronExpression,
+      'firstScheduledJobId' => firstJobId,
+      'jobName' => CatalogChainedSyncScheduler.buildScheduledJobName(
+        chainName.trim(),
+        resolvedSyncMode
+      )
+    };
+  }
+
+  @AuraEnabled
+  public static void clearCatalogChainSchedule(
+    String chainName,
+    String syncMode
+  ) {
+    if (String.isBlank(chainName)) {
+      throw new CatalogJobConfigException('A chain name is required.');
+    }
+    CatalogChainedSyncScheduler.clearChainedSchedule(
+      CatalogChainedSyncScheduler.buildScheduledJobName(chainName, syncMode)
+    );
+  }
+
   /**
    * Gets selector data used by the guided catalog job setup workspace.
    */
@@ -350,6 +424,14 @@ public with sharing class CoveoCommerceSetupController {
       loadNamedRecordOptions(
         'ProductCatalog',
         'SELECT Id, Name FROM ProductCatalog ORDER BY Name LIMIT ' +
+        OPTION_QUERY_LIMIT
+      )
+    );
+    result.put(
+      'pricebooks',
+      loadNamedRecordOptions(
+        'Pricebook2',
+        'SELECT Id, Name FROM Pricebook2 WHERE IsActive = TRUE ORDER BY Name LIMIT ' +
         OPTION_QUERY_LIMIT
       )
     );
@@ -432,7 +514,7 @@ public with sharing class CoveoCommerceSetupController {
     }
     if (!modeSupported) {
       validationMessages.add(
-        'Buyer Group Availability Mode must be Disabled, PairedSource, Embedded, or DualWrite.'
+        'Buyer Group Availability Mode must be Disabled, PairedSource, or Embedded.'
       );
     }
     if (
@@ -450,7 +532,7 @@ public with sharing class CoveoCommerceSetupController {
     }
     if (availabilityEnabled && String.isBlank(webStoreId)) {
       validationMessages.add(
-        'Web Store is required when Buyer Group availability is enabled.'
+        'At least one Web Store is required when Buyer Group availability is enabled.'
       );
     }
 
@@ -557,6 +639,92 @@ public with sharing class CoveoCommerceSetupController {
     result.put('validationMessages', validationMessages);
     result.put('warningMessages', warningMessages);
     result.put('isReady', validationMessages.isEmpty());
+    return result;
+  }
+
+  @AuraEnabled
+  public static Map<String, Object> previewMultiStoreCatalogJobDraft(
+    String label,
+    String developerName,
+    String coveoOrgId,
+    String sourceId,
+    String availabilitySourceId,
+    String syncMode,
+    String baselineFullConfigDeveloperName,
+    String catalogId,
+    String webStoreId,
+    List<String> webStoreIds,
+    List<String> pricebookIds,
+    String locale,
+    String builderType,
+    String buyerGroupAvailabilityMode,
+    String productFilter,
+    List<String> additionalProductFields
+  ) {
+    String resolvedAvailabilityMode = CatalogBuyerGroupAvailabilityMode.resolveDraftMode(
+      buyerGroupAvailabilityMode
+    );
+    Boolean usesEmbedded = CatalogBuyerGroupAvailabilityMode.usesEmbedded(
+      resolvedAvailabilityMode
+    );
+    Boolean usesPairedSource = CatalogBuyerGroupAvailabilityMode.usesPairedSource(
+      resolvedAvailabilityMode
+    );
+    String effectivePreviewWebStoreId = webStoreId;
+    if (
+      String.isBlank(effectivePreviewWebStoreId) &&
+      webStoreIds != null &&
+      !webStoreIds.isEmpty()
+    ) {
+      effectivePreviewWebStoreId = webStoreIds[0];
+    }
+
+    Map<String, Object> result = previewCatalogJobDraft(
+      label,
+      developerName,
+      coveoOrgId,
+      sourceId,
+      availabilitySourceId,
+      syncMode,
+      baselineFullConfigDeveloperName,
+      catalogId,
+      effectivePreviewWebStoreId,
+      locale,
+      builderType,
+      buyerGroupAvailabilityMode,
+      productFilter,
+      additionalProductFields
+    );
+    Integer webStoreCount = webStoreIds == null ? 0 : webStoreIds.size();
+    Integer pricebookCount = pricebookIds == null ? 0 : pricebookIds.size();
+    result.put('webStoreCount', webStoreCount);
+    result.put('pricebookCount', pricebookCount);
+
+    if (usesPairedSource && webStoreCount > 0) {
+      Integer buyerGroupCount = getBuyerGroupCountForWebStores(webStoreIds);
+      result.put('buyerGroupCount', buyerGroupCount);
+      List<String> warnings = (List<String>) result.get('warningMessages');
+      for (Integer index = warnings.size() - 1; index >= 0; index--) {
+        if (
+          warnings[index] ==
+          'The selected Web Store currently has no linked Buyer Groups.'
+        ) {
+          warnings.remove(index);
+        }
+      }
+      if (buyerGroupCount == 0) {
+        warnings.add(
+          'The selected Shared Catalog Web Stores currently have no linked Buyer Groups.'
+        );
+      }
+    }
+
+    if (webStoreCount > 0 && pricebookCount > 0) {
+      List<String> warnings = (List<String>) result.get('warningMessages');
+      warnings.add(
+        'Explicit Pricebook IDs take precedence over Web Store pricebook resolution.'
+      );
+    }
     return result;
   }
 
@@ -785,6 +953,28 @@ public with sharing class CoveoCommerceSetupController {
     );
   }
 
+  private static Integer getBuyerGroupCountForWebStores(
+    List<String> webStoreIds
+  ) {
+    if (
+      webStoreIds == null ||
+      webStoreIds.isEmpty() ||
+      !Schema.getGlobalDescribe().containsKey('WebStoreBuyerGroup')
+    ) {
+      return 0;
+    }
+
+    Set<Id> normalizedWebStoreIds = WebStorePricebookResolver.resolveEffectiveWebStoreIds(
+      new CatalogJobConfig__mdt(WebStoreIds__c = String.join(webStoreIds, ','))
+    );
+    AggregateResult result = (AggregateResult) Database.query(
+      'SELECT COUNT_DISTINCT(BuyerGroupId) buyerGroupCount ' +
+        'FROM WebStoreBuyerGroup ' +
+        'WHERE WebStoreId IN :normalizedWebStoreIds AND BuyerGroupId != NULL'
+    )[0];
+    return Integer.valueOf(String.valueOf(result.get('buyerGroupCount')));
+  }
+
   private static List<String> findEmbeddedSourceConflicts(
     String developerName,
     String sourceId,
@@ -802,6 +992,8 @@ public with sharing class CoveoCommerceSetupController {
         MasterLabel,
         SourceId__c,
         WebStoreId__c,
+        WebStoreIds__c,
+        PricebookIds__c,
         IsActive__c,
         EnableBuyerGroupAvailability__c,
         BuyerGroupAvailabilityMode__c
@@ -992,5 +1184,83 @@ public with sharing class CoveoCommerceSetupController {
       'scheduleHourOfDay' => snapshot == null ? null : snapshot.hourOfDay,
       'scheduleMinuteOfHour' => snapshot == null ? null : snapshot.minuteOfHour
     };
+  }
+
+  private static String buildScheduleCronExpression(
+    String cadenceType,
+    Integer intervalMinutes,
+    Integer intervalHours,
+    String dayOfWeek,
+    Integer hourOfDay,
+    Integer minuteOfHour
+  ) {
+    String normalizedCadenceType = String.isBlank(cadenceType)
+      ? null
+      : cadenceType.trim();
+    if (normalizedCadenceType == SCHEDULE_CADENCE_MINUTES) {
+      return CatalogProductSyncScheduler.buildMinuteCronExpression(
+        intervalMinutes,
+        minuteOfHour
+      );
+    }
+    if (normalizedCadenceType == SCHEDULE_CADENCE_HOURLY) {
+      return CatalogProductSyncScheduler.buildHourlyCronExpression(
+        intervalHours,
+        minuteOfHour
+      );
+    }
+    if (normalizedCadenceType == SCHEDULE_CADENCE_WEEKLY) {
+      return CatalogProductSyncScheduler.buildWeeklyCronExpression(
+        dayOfWeek,
+        hourOfDay,
+        minuteOfHour
+      );
+    }
+    throw new CatalogJobConfigException(
+      'Supported schedule cadences are Minutes, Hourly, and Weekly.'
+    );
+  }
+
+  private static void validateChainConfigs(
+    List<String> configDeveloperNames,
+    String expectedSyncMode
+  ) {
+    Set<String> normalizedNames = new Set<String>(
+      CatalogSyncChainQueueable.normalizeConfigDeveloperNames(
+        configDeveloperNames
+      )
+    );
+    Map<String, CatalogJobConfig__mdt> configsByName = Test.isRunningTest() &&
+      testChainConfigsByDeveloperName != null
+      ? testChainConfigsByDeveloperName
+      : new Map<String, CatalogJobConfig__mdt>();
+    if (!(Test.isRunningTest() && testChainConfigsByDeveloperName != null)) {
+      for (CatalogJobConfig__mdt config : [
+        SELECT DeveloperName, IsActive__c, SyncMode__c
+        FROM CatalogJobConfig__mdt
+        WHERE DeveloperName IN :normalizedNames
+      ]) {
+        configsByName.put(config.DeveloperName, config);
+      }
+    }
+
+    for (String developerName : normalizedNames) {
+      CatalogJobConfig__mdt config = configsByName.get(developerName);
+      if (config == null) {
+        throw new CatalogJobConfigException(
+          'Catalog Job Config "' + developerName + '" was not found.'
+        );
+      }
+      if (config.IsActive__c != true) {
+        throw new CatalogJobConfigException(
+          'Catalog Job Config "' + developerName + '" must be active.'
+        );
+      }
+      if (CatalogSyncMode.resolve(config) != expectedSyncMode) {
+        throw new CatalogJobConfigException(
+          'All chained configs must use SyncMode__c = ' + expectedSyncMode + '.'
+        );
+      }
+    }
   }
 }

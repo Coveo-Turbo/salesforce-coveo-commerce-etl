@@ -84,6 +84,59 @@ private class CatalogSyncStateServiceTest {
   }
 
   @IsTest
+  static void testBuildResolvedTargetKey_canonicalizesAndScopesStorePricebooks() {
+    CatalogJobConfig__mdt firstConfig = createConfig('FIRST', 'Full', null);
+    firstConfig.PricebookIds__c = '01s000000000001AAA,01s000000000002AAA';
+    firstConfig.WebStoreIds__c = '0ZE000000000001AAA,0ZE000000000002AAA';
+
+    CatalogJobConfig__mdt reorderedConfig = createConfig(
+      'SECOND',
+      'Full',
+      null
+    );
+    reorderedConfig.PricebookIds__c = '01s000000000002AAA, 01s000000000001AAA';
+    reorderedConfig.WebStoreIds__c = '0ZE000000000002AAA, 0ZE000000000001AAA';
+
+    System.assertEquals(
+      CatalogSyncStateService.buildResolvedTargetKey(firstConfig),
+      CatalogSyncStateService.buildResolvedTargetKey(reorderedConfig)
+    );
+
+    reorderedConfig.PricebookIds__c = '01s000000000003AAA';
+    System.assertNotEquals(
+      CatalogSyncStateService.buildResolvedTargetKey(firstConfig),
+      CatalogSyncStateService.buildResolvedTargetKey(reorderedConfig)
+    );
+  }
+
+  @IsTest
+  static void testBuildResolvedTargetKey_normalizesIdDelimitersAndIdLength() {
+    Id firstPricebookId = Id.valueOf('01s000000000001');
+    Id secondPricebookId = Id.valueOf('01s000000000002');
+    Id firstStoreId = Id.valueOf('0ZE000000000001');
+    Id secondStoreId = Id.valueOf('0ZE000000000002');
+    CatalogJobConfig__mdt firstConfig = createConfig('FIRST', 'Full', null);
+    firstConfig.PricebookIds__c =
+      String.valueOf(firstPricebookId) +
+      ';\n' +
+      String.valueOf(secondPricebookId);
+    firstConfig.WebStoreIds__c =
+      String.valueOf(firstStoreId) +
+      '\r\n' +
+      String.valueOf(secondStoreId);
+
+    CatalogJobConfig__mdt secondConfig = createConfig('SECOND', 'Full', null);
+    secondConfig.PricebookIds__c = '01s000000000002,01s000000000001';
+    secondConfig.WebStoreIds__c = '0ZE000000000002;0ZE000000000001';
+
+    System.assertEquals(
+      CatalogSyncStateService.buildResolvedTargetKey(firstConfig),
+      CatalogSyncStateService.buildResolvedTargetKey(secondConfig),
+      'Target keys should use the same delimiter and ID normalization as runtime resolution'
+    );
+  }
+
+  @IsTest
   static void testRecordSuccessfulFullSync_createsState() {
     CatalogJobConfig__mdt config = createConfig('FULL_CONFIG', 'Full', null);
     Datetime cutoff = System.now();

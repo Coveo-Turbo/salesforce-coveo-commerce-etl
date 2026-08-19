@@ -1,6 +1,8 @@
 global with sharing class EmbeddedBuyerGroupAccessExportBatch implements Database.Batchable<SObject>, Database.AllowsCallouts {
-  @TestVisible private static final Integer DEFAULT_BATCH_SIZE = 1000;
-  @TestVisible private static final Integer MAX_BATCH_SIZE = 2000;
+  @TestVisible
+  private static final Integer DEFAULT_BATCH_SIZE = 1000;
+  @TestVisible
+  private static final Integer MAX_BATCH_SIZE = 2000;
 
   private final CatalogJobConfig__mdt jobConfig;
 
@@ -29,6 +31,8 @@ global with sharing class EmbeddedBuyerGroupAccessExportBatch implements Databas
         SourceId__c,
         AvailabilitySourceId__c,
         WebStoreId__c,
+        WebStoreIds__c,
+        PricebookIds__c,
         Locale__c,
         IsActive__c,
         ProductFilter__c,
@@ -85,19 +89,22 @@ global with sharing class EmbeddedBuyerGroupAccessExportBatch implements Databas
       }
     }
 
-    return CatalogJobScopeUtil.buildProductQueryLocator(jobConfig, fields, null);
+    return CatalogJobScopeUtil.buildProductQueryLocator(
+      jobConfig,
+      fields,
+      null
+    );
   }
 
   global void execute(Database.BatchableContext bc, List<Product2> scope) {
     ICatalogJsonBuilder builder = CatalogProductIdentityResolver.getBuilder(
       jobConfig
     );
-    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId =
-      CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
-        jobConfig,
-        scope,
-        builder
-      );
+    Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId = CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
+      jobConfig,
+      scope,
+      builder
+    );
 
     String jsonPayload = EmbeddedBuyerGroupAccessPayloadBuilder.buildPartialUpdateJson(
       new List<CatalogBuyerGroupAccessSnapshot>(snapshotsByProductId.values())
@@ -141,13 +148,16 @@ global with sharing class EmbeddedBuyerGroupAccessExportBatch implements Databas
   private void validateConfig() {
     if (!CatalogBuyerGroupAvailabilityMode.usesEmbedded(jobConfig)) {
       throw new CatalogJobConfigException(
-        'BuyerGroupAvailabilityMode__c must be Embedded or DualWrite to run EmbeddedBuyerGroupAccessExportBatch.'
+        'BuyerGroupAvailabilityMode__c must be Embedded to run EmbeddedBuyerGroupAccessExportBatch.'
       );
     }
 
-    if (String.isBlank(jobConfig.WebStoreId__c)) {
+    Set<Id> effectiveWebStoreIds = WebStorePricebookResolver.resolveEffectiveWebStoreIds(
+      jobConfig
+    );
+    if (effectiveWebStoreIds.isEmpty()) {
       throw new CatalogJobConfigException(
-        'WebStoreId__c is required when embedded Buyer Group access is enabled.'
+        'At least one Web Store (WebStoreIds__c or WebStoreId__c) is required when embedded Buyer Group access is enabled.'
       );
     }
   }

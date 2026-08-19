@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>WebStoreIds__c</fullName>
+    <description>Comma-separated WebStore IDs used to resolve associated pricebooks and multi-store Buyer Group availability. Pricebook IDs take precedence for price resolution.</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Web Store IDs</label>
+    <length>32768</length>
+    <required>false</required>
+    <type>LongTextArea</type>
+    <visibleLines>3</visibleLines>
+</CustomField>

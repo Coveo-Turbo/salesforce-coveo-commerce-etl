@@ -8,7 +8,9 @@ public with sharing class CatalogProductExportSupport {
     public String responseBody { get; set; }
   }
 
-  public static List<String> parseExtraFieldNames(String additionalProductFields) {
+  public static List<String> parseExtraFieldNames(
+    String additionalProductFields
+  ) {
     List<String> fieldNames = new List<String>();
 
     if (String.isBlank(additionalProductFields)) {
@@ -68,38 +70,138 @@ public with sharing class CatalogProductExportSupport {
     List<Product2> scope,
     Id stdPricebookId
   ) {
-    Map<Id, Map<String, Decimal>> pricesByProduct =
-      new Map<Id, Map<String, Decimal>>();
+    return loadPricesByProduct(scope, stdPricebookId, null, null);
+  }
+
+  public static Map<Id, Map<String, Decimal>> loadPricesByProduct(
+    List<Product2> scope,
+    Id stdPricebookId,
+    Set<Id> targetPricebookIds
+  ) {
+    return loadPricesByProduct(scope, stdPricebookId, targetPricebookIds, null);
+  }
+
+  public static Map<Id, Map<String, Decimal>> loadPricesByProduct(
+    List<Product2> scope,
+    Id stdPricebookId,
+    Set<Id> targetPricebookIds,
+    Map<Id, String> labelsByPricebookId
+  ) {
+    Map<Id, Map<String, Decimal>> pricesByProduct = new Map<Id, Map<String, Decimal>>();
 
     if (scope == null || scope.isEmpty()) {
       return pricesByProduct;
     }
 
-    for (PricebookEntry pricebookEntry : [
-      SELECT Id, Product2Id, Pricebook2Id, UnitPrice, ProductSellingModelId
-      FROM PricebookEntry
-      WHERE Product2Id IN :scope AND IsActive = TRUE AND UnitPrice != NULL
-    ]) {
+    // The Standard Price Book is the default price source for every export.
+    // Scoped configurations add custom Pricebooks without excluding Standard.
+    Set<Id> effectiveTargetPricebookIds = targetPricebookIds == null
+      ? null
+      : new Set<Id>(targetPricebookIds);
+    if (effectiveTargetPricebookIds != null && stdPricebookId != null) {
+      effectiveTargetPricebookIds.add(stdPricebookId);
+    }
+    if (
+      effectiveTargetPricebookIds != null &&
+      effectiveTargetPricebookIds.isEmpty()
+    ) {
+      return pricesByProduct;
+    }
+
+    List<PricebookEntry> entries = effectiveTargetPricebookIds == null
+      ? [
+          SELECT Id, Product2Id, Pricebook2Id, UnitPrice, ProductSellingModelId
+          FROM PricebookEntry
+          WHERE Product2Id IN :scope AND IsActive = TRUE AND UnitPrice != NULL
+          ORDER BY Product2Id, Pricebook2Id, ProductSellingModelId, Id
+        ]
+      : [
+          SELECT Id, Product2Id, Pricebook2Id, UnitPrice, ProductSellingModelId
+          FROM PricebookEntry
+          WHERE
+            Product2Id IN :scope
+            AND Pricebook2Id IN :effectiveTargetPricebookIds
+            AND IsActive = TRUE
+            AND UnitPrice != NULL
+          ORDER BY Product2Id, Pricebook2Id, ProductSellingModelId, Id
+        ];
+
+    for (PricebookEntry pricebookEntry : entries) {
       if (pricebookEntry.Product2Id == null) {
         continue;
       }
 
       if (!pricesByProduct.containsKey(pricebookEntry.Product2Id)) {
-        pricesByProduct.put(pricebookEntry.Product2Id, new Map<String, Decimal>());
+        pricesByProduct.put(
+          pricebookEntry.Product2Id,
+          new Map<String, Decimal>()
+        );
       }
 
-      String priceKey = (pricebookEntry.ProductSellingModelId != null)
-        ? String.valueOf(pricebookEntry.Pricebook2Id) + ':' + String.valueOf(pricebookEntry.ProductSellingModelId)
-        : (pricebookEntry.Pricebook2Id == stdPricebookId)
+      String basePriceKey;
+      if (pricebookEntry.Pricebook2Id == stdPricebookId) {
+        // Standard Price Book base price (no selling model) uses the empty key "".
+        // Standard Price Book entries WITH a selling model use the actual PB ID
+        // so keys become "01s...:0jP..." instead of the ambiguous ":0jP...".
+        basePriceKey = pricebookEntry.ProductSellingModelId == null
           ? ''
-          : String.valueOf(pricebookEntry.Pricebook2Id);
-      pricesByProduct.get(pricebookEntry.Product2Id).put(
-        priceKey,
-        pricebookEntry.UnitPrice
+          : String.valueOf(stdPricebookId);
+      } else {
+        basePriceKey = labelsByPricebookId != null &&
+            labelsByPricebookId.containsKey(pricebookEntry.Pricebook2Id)
+            ? labelsByPricebookId.get(pricebookEntry.Pricebook2Id)
+            : String.valueOf(pricebookEntry.Pricebook2Id);
+      }
+      Map<String, Decimal> productPrices = pricesByProduct.get(
+        pricebookEntry.Product2Id
       );
+      String priceKey = buildUniquePriceKey(
+        productPrices,
+        basePriceKey,
+        pricebookEntry.ProductSellingModelId,
+        pricebookEntry.Pricebook2Id,
+        pricebookEntry.Id
+      );
+      productPrices.put(priceKey, pricebookEntry.UnitPrice);
     }
 
     return pricesByProduct;
+  }
+
+  @TestVisible
+  private static String buildUniquePriceKey(
+    Map<String, Decimal> existingPrices,
+    String basePriceKey,
+    Id productSellingModelId,
+    Id pricebookId,
+    Id pricebookEntryId
+  ) {
+    Set<String> normalizedExistingKeys = new Set<String>();
+    for (String existingKey : existingPrices.keySet()) {
+      normalizedExistingKeys.add(existingKey.toLowerCase());
+    }
+
+    String sellingModelSuffix = productSellingModelId == null
+      ? ''
+      : ':' + String.valueOf(productSellingModelId);
+    String candidate = basePriceKey + sellingModelSuffix;
+    Integer collisionAttempt = 0;
+    while (normalizedExistingKeys.contains(candidate.toLowerCase())) {
+      collisionAttempt++;
+      String disambiguator = collisionAttempt == 1
+        ? String.valueOf(pricebookId)
+        : String.valueOf(pricebookId) +
+          ':' +
+          String.valueOf(pricebookEntryId) +
+          (collisionAttempt > 2 ? ':' + collisionAttempt : '');
+      candidate =
+        basePriceKey +
+        ' [' +
+        disambiguator +
+        ']' +
+        sellingModelSuffix;
+    }
+    return candidate;
   }
 
   public static String buildFullUpdatePayload(
@@ -118,18 +220,19 @@ public with sharing class CatalogProductExportSupport {
     );
 
     if (CatalogBuyerGroupAvailabilityMode.usesEmbedded(jobConfig)) {
-      Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId =
-        CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
-          jobConfig,
-          scope,
-          builder
-        );
-      ndjsonPayload =
-        CatalogBuyerGroupPayloadDecorator.decorateFullUpdatePayload(
-          ndjsonPayload,
-          snapshotsByProductId,
-          jobConfig.WebStoreId__c
-        );
+      Map<Id, CatalogBuyerGroupAccessSnapshot> snapshotsByProductId = CatalogBuyerGroupAccessResolver.resolveBuyerGroupAccess(
+        jobConfig,
+        scope,
+        builder
+      );
+      Set<Id> effectiveWebStoreIds = WebStorePricebookResolver.resolveEffectiveWebStoreIds(
+        jobConfig
+      );
+      ndjsonPayload = CatalogBuyerGroupPayloadDecorator.decorateFullUpdatePayload(
+        ndjsonPayload,
+        snapshotsByProductId,
+        effectiveWebStoreIds
+      );
     }
 
     return ndjsonPayload;
@@ -161,7 +264,9 @@ public with sharing class CatalogProductExportSupport {
       response.containsKey('orderingId') &&
       response.get('orderingId') != null
     ) {
-      result.orderingId = Long.valueOf(String.valueOf(response.get('orderingId')));
+      result.orderingId = Long.valueOf(
+        String.valueOf(response.get('orderingId'))
+      );
     }
 
     return result;

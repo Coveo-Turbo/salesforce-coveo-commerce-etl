@@ -27,7 +27,6 @@ const ASYNC_APEX_JOBS_SETUP_URL = "/lightning/setup/AsyncApexJobs/home";
 const BUYER_GROUP_MODE_DISABLED = "Disabled";
 const BUYER_GROUP_MODE_PAIRED = "PairedSource";
 const BUYER_GROUP_MODE_EMBEDDED = "Embedded";
-const BUYER_GROUP_MODE_DUAL = "DualWrite";
 const SYNC_MODE_FULL = "Full";
 const SYNC_MODE_DELTA = "Delta";
 const SCHEDULE_CADENCE_MINUTES = "Minutes";
@@ -47,7 +46,6 @@ function resolveBuyerGroupAvailabilityMode(mode, legacyEnabled = false) {
   switch (mode) {
     case BUYER_GROUP_MODE_PAIRED:
     case BUYER_GROUP_MODE_EMBEDDED:
-    case BUYER_GROUP_MODE_DUAL:
     case BUYER_GROUP_MODE_DISABLED:
       return mode;
     default:
@@ -63,18 +61,12 @@ function isBuyerGroupAccessEnabled(mode) {
 
 function usesPairedSource(mode) {
   const resolvedMode = resolveBuyerGroupAvailabilityMode(mode);
-  return (
-    resolvedMode === BUYER_GROUP_MODE_PAIRED ||
-    resolvedMode === BUYER_GROUP_MODE_DUAL
-  );
+  return resolvedMode === BUYER_GROUP_MODE_PAIRED;
 }
 
 function usesEmbeddedAccess(mode) {
   const resolvedMode = resolveBuyerGroupAvailabilityMode(mode);
-  return (
-    resolvedMode === BUYER_GROUP_MODE_EMBEDDED ||
-    resolvedMode === BUYER_GROUP_MODE_DUAL
-  );
+  return resolvedMode === BUYER_GROUP_MODE_EMBEDDED;
 }
 
 function formatBuyerGroupAvailabilityMode(mode) {
@@ -83,8 +75,6 @@ function formatBuyerGroupAvailabilityMode(mode) {
       return "Paired Source";
     case BUYER_GROUP_MODE_EMBEDDED:
       return "Embedded";
-    case BUYER_GROUP_MODE_DUAL:
-      return "Dual Write";
     default:
       return "Disabled";
   }
@@ -264,7 +254,8 @@ export default class CatalogJobConsole extends NavigationMixin(
     (this.selectedConfig.recentProductRuns || [])
       .filter(
         (recentRun) =>
-          (recentRun.configDeveloperName || this.selectedConfig.developerName) ===
+          (recentRun.configDeveloperName ||
+            this.selectedConfig.developerName) ===
           this.selectedConfig.developerName
       )
       .forEach((recentRun) => {
@@ -403,6 +394,14 @@ export default class CatalogJobConsole extends NavigationMixin(
       {
         label: "Web Store",
         value: this.selectedConfig.webStoreLabel
+      },
+      {
+        label: "Shared Web Stores",
+        value: this.selectedConfig.webStoreIdsLabel
+      },
+      {
+        label: "Pricebooks",
+        value: this.selectedConfig.pricebookIdsLabel
       },
       {
         label: "Filter",
@@ -724,8 +723,16 @@ export default class CatalogJobConsole extends NavigationMixin(
         value: this.selectedConfig.buyerGroupAvailabilityModeLabel
       },
       {
-        label: "Web Store",
-        value: this.selectedConfig.webStoreLabel
+        label: this.selectedConfig.webStoreIdsLabel !== "No shared stores"
+          ? "Shared Web Stores"
+          : "Web Store",
+        value: this.selectedConfig.webStoreIdsLabel !== "No shared stores"
+          ? this.selectedConfig.webStoreIdsLabel
+          : this.selectedConfig.webStoreLabel
+      },
+      {
+        label: "Pricebooks",
+        value: this.selectedConfig.pricebookIdsLabel
       },
       {
         label: "Scope",
@@ -1524,6 +1531,16 @@ export default class CatalogJobConsole extends NavigationMixin(
       webStoreLabel: buyerGroupAccessEnabled
         ? this.normalizeText(config.WebStoreId__c, "Web store missing")
         : "Not required",
+      webStoreIdsLabel: this.describeIdScope(
+        config.WebStoreIds__c,
+        "No shared stores"
+      ),
+      pricebookIdsLabel: this.describeIdScope(
+        config.PricebookIds__c,
+        config.WebStoreIds__c
+          ? "Resolved from shared stores"
+          : "All active pricebooks"
+      ),
       scopeSummary: filterText,
       extraFieldsSummary: extraFields.length
         ? `${extraFields.length} extra field${extraFields.length === 1 ? "" : "s"}`
@@ -2202,7 +2219,9 @@ export default class CatalogJobConsole extends NavigationMixin(
 
     return (
       this.runSessions.find((run) => run.runKey === runKey) ||
-      this.selectedConfigMatchedRunSessions.find((run) => run.runKey === runKey) ||
+      this.selectedConfigMatchedRunSessions.find(
+        (run) => run.runKey === runKey
+      ) ||
       null
     );
   }
@@ -2220,6 +2239,13 @@ export default class CatalogJobConsole extends NavigationMixin(
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean);
+  }
+
+  describeIdScope(value, fallback) {
+    const values = this.splitCsv(value);
+    return values.length
+      ? `${values.length} configured: ${values.join(", ")}`
+      : fallback;
   }
 
   normalizeText(value, fallback) {

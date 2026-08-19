@@ -1,8 +1,11 @@
 global with sharing class DeltaProductCatalogExportBatch implements Database.Batchable<SObject>, Database.Stateful, Database.AllowsCallouts {
-  @TestVisible private static CatalogJobConfig__mdt testJobConfigOverride;
+  @TestVisible
+  private static CatalogJobConfig__mdt testJobConfigOverride;
   private final CatalogJobConfig__mdt jobConfig;
   private final List<String> extraFieldNames = new List<String>();
   private final Id stdPricebookId;
+  private final Set<Id> targetPricebookIds;
+  private final Map<Id, String> labelsByPricebookId;
 
   public Datetime baselineTimestamp;
   public Datetime runCutoff;
@@ -57,6 +60,11 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
 
     this.jobConfig = jobConfig;
     this.stdPricebookId = stdPricebookId;
+    WebStorePricebookResolver.PricebookResolution pricebookResolution = WebStorePricebookResolver.resolve(
+      jobConfig
+    );
+    this.targetPricebookIds = pricebookResolution.pricebookIds;
+    this.labelsByPricebookId = pricebookResolution.labelsByPricebookId;
     this.baselineTimestamp = baselineTimestamp;
     this.runCutoff = runCutoff;
     extraFieldNames.addAll(
@@ -84,6 +92,8 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
         CoveoOrgId__c,
         SourceId__c,
         WebStoreId__c,
+        WebStoreIds__c,
+        PricebookIds__c,
         Locale__c,
         IsActive__c,
         ProductFilter__c,
@@ -120,8 +130,9 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
 
   global Database.QueryLocator start(Database.BatchableContext bc) {
     if (baselineTimestamp == null) {
-      CatalogSyncStateService.DeltaReadiness readiness =
-        CatalogSyncStateService.requireDeltaReadiness(jobConfig);
+      CatalogSyncStateService.DeltaReadiness readiness = CatalogSyncStateService.requireDeltaReadiness(
+        jobConfig
+      );
       baselineTimestamp = readiness.stateRecord.LastSuccessfulSyncAt__c;
     }
 
@@ -144,8 +155,12 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
   }
 
   global void execute(Database.BatchableContext bc, List<Product2> scope) {
-    Map<Id, Map<String, Decimal>> pricesByProduct =
-      CatalogProductExportSupport.loadPricesByProduct(scope, stdPricebookId);
+    Map<Id, Map<String, Decimal>> pricesByProduct = CatalogProductExportSupport.loadPricesByProduct(
+      scope,
+      stdPricebookId,
+      targetPricebookIds,
+      labelsByPricebookId
+    );
 
     String ndjsonPayload = CatalogProductExportSupport.buildFullUpdatePayload(
       jobConfig,

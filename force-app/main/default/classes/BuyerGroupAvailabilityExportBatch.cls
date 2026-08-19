@@ -1,5 +1,6 @@
 global with sharing class BuyerGroupAvailabilityExportBatch implements Database.Batchable<SObject>, Database.Stateful, Database.AllowsCallouts {
   private final CatalogJobConfig__mdt jobConfig;
+  private Map<Id, Set<String>> webStoreIdsByBuyerGroup = new Map<Id, Set<String>>();
 
   public Long firstOrderingId;
 
@@ -17,7 +18,9 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
     validateConfig();
   }
 
-  private static CatalogJobConfig__mdt loadJobConfig(String jobConfigDeveloperName) {
+  private static CatalogJobConfig__mdt loadJobConfig(
+    String jobConfigDeveloperName
+  ) {
     List<CatalogJobConfig__mdt> configs = [
       SELECT
         DeveloperName,
@@ -26,6 +29,8 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
         SourceId__c,
         AvailabilitySourceId__c,
         WebStoreId__c,
+        WebStoreIds__c,
+        PricebookIds__c,
         Locale__c,
         IsActive__c,
         ProductFilter__c,
@@ -58,14 +63,15 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
   }
 
   global Database.QueryLocator start(Database.BatchableContext bc) {
-    Set<Id> buyerGroupIds = getBuyerGroupIdsForWebStore(
-      jobConfig.WebStoreId__c
+    Set<Id> webStoreIds = WebStorePricebookResolver.resolveEffectiveWebStoreIds(
+      jobConfig
     );
+    webStoreIdsByBuyerGroup = getBuyerGroupIdsForWebStores(webStoreIds);
+    Set<Id> buyerGroupIds = webStoreIdsByBuyerGroup.keySet();
 
     if (buyerGroupIds.isEmpty()) {
       throw new CatalogJobConfigException(
-        'No BuyerGroup records found for WebStoreId__c ' +
-        jobConfig.WebStoreId__c
+        'No BuyerGroup records found for the configured Web Store IDs.'
       );
     }
 
@@ -89,11 +95,17 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
       visiblePolicyIdsByBuyerGroup
     );
 
-    String ndjsonPayload = BuyerGroupAvailabilityPayloadBuilder.buildFullUpdateNdjson(
-      scope,
-      exportedItemIdsByBuyerGroup,
-      jobConfig.WebStoreId__c
-    );
+    String ndjsonPayload = String.isBlank(jobConfig.WebStoreIds__c)
+      ? BuyerGroupAvailabilityPayloadBuilder.buildFullUpdateNdjson(
+          scope,
+          exportedItemIdsByBuyerGroup,
+          jobConfig.WebStoreId__c
+        )
+      : BuyerGroupAvailabilityPayloadBuilder.buildFullUpdateNdjson(
+          scope,
+          exportedItemIdsByBuyerGroup,
+          webStoreIdsByBuyerGroup
+        );
 
     CoveoPayloadValidator.Result vr = CoveoPayloadValidator.validate(
       ndjsonPayload
@@ -155,7 +167,7 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
   private void validateConfig() {
     if (!CatalogBuyerGroupAvailabilityMode.usesPairedSource(jobConfig)) {
       throw new CatalogJobConfigException(
-        'BuyerGroupAvailabilityMode__c must resolve to PairedSource or DualWrite to run BuyerGroupAvailabilityExportBatch.'
+        'BuyerGroupAvailabilityMode__c must resolve to PairedSource to run BuyerGroupAvailabilityExportBatch.'
       );
     }
 
@@ -165,26 +177,40 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
       );
     }
 
-    if (String.isBlank(jobConfig.WebStoreId__c)) {
+    if (
+      String.isBlank(jobConfig.WebStoreIds__c) &&
+      String.isBlank(jobConfig.WebStoreId__c)
+    ) {
       throw new CatalogJobConfigException(
-        'WebStoreId__c is required when Buyer Group availability export is enabled.'
+        'WebStoreIds__c or WebStoreId__c is required when Buyer Group availability export is enabled.'
       );
     }
   }
 
-  private static Set<Id> getBuyerGroupIdsForWebStore(String webStoreId) {
-    Set<Id> buyerGroupIds = new Set<Id>();
-
-    String query =
-      'SELECT BuyerGroupId FROM WebStoreBuyerGroup WHERE WebStoreId = \'' +
-      String.escapeSingleQuotes(webStoreId) +
-      '\' AND BuyerGroupId != NULL';
-
-    for (SObject link : Database.query(query)) {
-      buyerGroupIds.add((Id) link.get('BuyerGroupId'));
+  @TestVisible
+  private static Map<Id, Set<String>> getBuyerGroupIdsForWebStores(
+    Set<Id> webStoreIds
+  ) {
+    Map<Id, Set<String>> webStoreIdsByBuyerGroup = new Map<Id, Set<String>>();
+    if (webStoreIds == null || webStoreIds.isEmpty()) {
+      return webStoreIdsByBuyerGroup;
     }
 
-    return buyerGroupIds;
+    for (
+      SObject link : Database.query(
+        'SELECT BuyerGroupId, WebStoreId FROM WebStoreBuyerGroup ' +
+        'WHERE WebStoreId IN :webStoreIds AND BuyerGroupId != NULL'
+      )
+    ) {
+      Id buyerGroupId = (Id) link.get('BuyerGroupId');
+      if (!webStoreIdsByBuyerGroup.containsKey(buyerGroupId)) {
+        webStoreIdsByBuyerGroup.put(buyerGroupId, new Set<String>());
+      }
+      webStoreIdsByBuyerGroup.get(buyerGroupId)
+        .add(String.valueOf(link.get('WebStoreId')));
+    }
+
+    return webStoreIdsByBuyerGroup;
   }
 
   private static String buildIdInClause(Set<Id> recordIds) {
@@ -307,8 +333,10 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
       productIds,
       CatalogProductIdentityResolver.getRequiredProductFields(builder)
     );
-    Map<Id, String> exportedItemIdByProductId =
-      CatalogProductIdentityResolver.resolveEcProductIds(builder, exportedProducts);
+    Map<Id, String> exportedItemIdByProductId = CatalogProductIdentityResolver.resolveEcProductIds(
+      builder,
+      exportedProducts
+    );
 
     for (Id buyerGroupId : rawProductIdsByBuyerGroup.keySet()) {
       Set<String> exportedIds = new Set<String>();

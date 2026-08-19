@@ -16,6 +16,8 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   private final CatalogJobConfig__mdt jobConfig;
   private final List<String> extraFieldNames = new List<String>();
   private final Id stdPricebookId;
+  private final Set<Id> targetPricebookIds;
+  private final Map<Id, String> labelsByPricebookId;
 
   // Track the first orderingId from the initial batch to use in deleteOlderThan
   // Using Database.Stateful only for this field to preserve ordering across batches
@@ -43,6 +45,11 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
 
     this.jobConfig = jobConfig;
     this.stdPricebookId = stdPricebookId;
+    WebStorePricebookResolver.PricebookResolution pricebookResolution = WebStorePricebookResolver.resolve(
+      jobConfig
+    );
+    this.targetPricebookIds = pricebookResolution.pricebookIds;
+    this.labelsByPricebookId = pricebookResolution.labelsByPricebookId;
     populateExtraFieldNames(jobConfig.AdditionalProductFields__c);
   }
 
@@ -53,21 +60,23 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
       SELECT
         DeveloperName,
         Label,
-      CoveoOrgId__c,
-      SourceId__c,
-      WebStoreId__c,
-      Locale__c,
-      IsActive__c,
-      ProductFilter__c,
-      AdditionalProductFields__c,
-      BuilderType__c,
+        CoveoOrgId__c,
+        SourceId__c,
+        WebStoreId__c,
+        WebStoreIds__c,
+        PricebookIds__c,
+        Locale__c,
+        IsActive__c,
+        ProductFilter__c,
+        AdditionalProductFields__c,
+        BuilderType__c,
         CatalogId__c,
         BatchSize__c,
-      EnablePayloadLogging__c,
-      EnableBuyerGroupAvailability__c,
-      BuyerGroupAvailabilityMode__c,
-      SyncMode__c,
-      BaselineFullConfigDeveloperName__c
+        EnablePayloadLogging__c,
+        EnableBuyerGroupAvailability__c,
+        BuyerGroupAvailabilityMode__c,
+        SyncMode__c,
+        BaselineFullConfigDeveloperName__c
       FROM CatalogJobConfig__mdt
       WHERE DeveloperName = :jobConfigDeveloperName
       LIMIT 1
@@ -135,8 +144,12 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   }
 
   global void execute(Database.BatchableContext bc, List<Product2> scope) {
-    Map<Id, Map<String, Decimal>> pricesByProduct =
-      CatalogProductExportSupport.loadPricesByProduct(scope, stdPricebookId);
+    Map<Id, Map<String, Decimal>> pricesByProduct = CatalogProductExportSupport.loadPricesByProduct(
+      scope,
+      stdPricebookId,
+      targetPricebookIds,
+      labelsByPricebookId
+    );
 
     String ndjsonPayload = CatalogProductExportSupport.buildFullUpdatePayload(
       jobConfig,
@@ -156,8 +169,10 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
     );
     System.debug('Coveo payload validation: ' + JSON.serialize(vr));
 
-    CatalogProductExportSupport.StreamResult streamResult =
-      CatalogProductExportSupport.streamPayload(jobConfig, ndjsonPayload);
+    CatalogProductExportSupport.StreamResult streamResult = CatalogProductExportSupport.streamPayload(
+      jobConfig,
+      ndjsonPayload
+    );
 
     System.debug(
       LoggingLevel.DEBUG,

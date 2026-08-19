@@ -21,6 +21,7 @@ It includes:
 
 - A flexible **Catalog Export Batch** implementation
 - Support for **multiple Coveo catalog sources** (one per locale or market)
+- **Multi-pricebook shared catalogs** with explicit pricebook or Web Store resolution
 - Trusted **Full** and **Delta** product sync modes with resolved-target baselines
 - Dynamic **Product2 filtering** (SOQL WHERE clause per catalog)
 - Dynamic **field enrichment** via Product2 fields configured in CMDT
@@ -29,6 +30,7 @@ It includes:
 - Optional **Buyer Group availability exports** to a paired Coveo Availability source
 - Full **delete-older-than** cleanup via Stream API
 - Native Salesforce **scheduling controls** for full and delta sync jobs
+- Optional **chained scheduling** so multiple configs share scheduled Apex slots
 - A modern **LWC setup workspace and run center** for drafting, scheduling, and monitoring jobs
 - SafeFieldUtil for fault-tolerant dynamic field access
 - Scratch-org scripts + seeded sample data
@@ -59,8 +61,6 @@ To verify, check in **Setup → Object Manager** that the following objects exis
 - **ProductCatalog**
 
 If these objects are missing, the org is **not Commerce-enabled**.
-
-
 
 
 
@@ -177,6 +177,8 @@ Use Custom Metadata (`CatalogJobConfig__mdt`) to define multiple catalogs:
 - Builder Type (`BuilderType__c`) - Determines how product grouping/variants are handled
 - (Optional) paired Availability source (`AvailabilitySourceId__c`) for Buyer Group visibility
 - (Optional) Web Store ID (`WebStoreId__c`) used to resolve Buyer Groups
+- (Optional) explicit Pricebook IDs (`PricebookIds__c`) for a scoped price export with legacy raw keys
+- (Optional) Shared Catalog Web Store IDs (`WebStoreIds__c`) for automatic pricebook resolution and multi-store Buyer Group availability
 - (Optional) `EnableBuyerGroupAvailability__c` flag to turn on the availability export
 
 ### 🔎 Per-Catalog Product Filtering
@@ -289,9 +291,59 @@ The setup workspace can create or replace native Salesforce scheduled jobs for e
 - Hourly delta syncs to keep the catalog current between baseline runs
 - Visible cadence, next run, last run, and schedule state without manual Apex
 
+Multiple active configs with the same sync mode can also be grouped into an opt-in **chained schedule**. One native scheduled job launches a queueable chain, and each queueable transaction launches one config. This reduces scheduled Apex slot usage without changing or removing existing per-config schedules.
+
+Minute-based chain cadences are sharded into at most four shared jobs per hour. Hourly and weekly chain cadences use one native scheduled job. Chaining is launch-sequential: it does not wait for one config's batch to finish before launching the next config.
+
+### 💲 Shared Catalog Pricebook Scope
+
+A catalog config can scope prices in either of two ways:
+
+1. `PricebookIds__c`: an explicit CSV of `Pricebook2` IDs.
+2. `WebStoreIds__c`: a CSV of `WebStore` IDs whose pricebooks are resolved through `WebStorePricebook`.
+
+Explicit pricebooks take precedence when both fields are populated. Both explicit and Web Store-resolved scopes preserve the legacy raw price-key contract so existing consumers do not need different lookup logic based on how the scope was configured.
+
+For pricing, `WebStoreIds__c` is a **pricebook selector**, not part of the price identity. The resolver:
+
+1. Finds every `Pricebook2` linked to each configured store through `WebStorePricebook`.
+2. Builds the set union of those Pricebook IDs.
+3. Removes duplicates when multiple stores share the same Pricebook.
+4. Exports only prices from that resolved set.
+
+The Web Store ID is not added to `ec_price` keys. A `WebStorePricebook` association does not create a store-specific price: the price still belongs to its Pricebook Entry and optional Product Selling Model. All scoped exports therefore use the existing raw key formats:
+
+- `<Pricebook2Id>`
+- `<Pricebook2Id>:<ProductSellingModelId>`
+
+For example, suppose Store A uses the Shared and US Pricebooks, while Store B uses the same Shared Pricebook and a CA Pricebook:
+
+```txt
+Store A -> 01s_SHARED, 01s_US
+Store B -> 01s_SHARED, 01s_CA
+Union   -> 01s_SHARED, 01s_US, 01s_CA
+```
+
+The Shared Pricebook is emitted once, not once per store:
+
+```json
+{
+  "ec_price": {
+    "01s_SHARED": 99.99,
+    "01s_SHARED:0jP_MONTHLY": 8.99,
+    "01s_US": 104.99,
+    "01s_US:0jP_MONTHLY": 9.49,
+    "01s_CA": 139.99,
+    "01s_CA:0jP_MONTHLY": 12.49
+  }
+}
+```
+
+The Standard Price Book is always included as the default price source and uses the empty dictionary key `""`. Scoped configurations add the selected custom Pricebooks while retaining Standard; they never need or attempt a `WebStorePricebook` link for Standard. When both scope fields are blank, legacy behavior is preserved: all active prices are considered, Standard remains keyed by `""`, and other Pricebooks use raw Salesforce IDs. A configured scope that resolves to no custom Pricebooks exports only an available Standard Price Book entry; it never falls back to every custom Pricebook.
+
 ### 👥 Buyer Group Availability Export
 
-When `EnableBuyerGroupAvailability__c` is turned on, the package can export a second Stream payload to a paired Availability source. Each Salesforce Buyer Group becomes one `Availability` item, and its `ec_available_items` list contains the entitled product identifiers for the configured `WebStoreId__c`.
+When `EnableBuyerGroupAvailability__c` is turned on, the package can export a second Stream payload to a paired Availability source. Each Salesforce Buyer Group becomes one `Availability` item, and its `ec_available_items` list contains the entitled product identifiers for the configured store scope. Use `WebStoreIds__c` to union Buyer Groups across multiple stores; when it is blank, the existing singular `WebStoreId__c` remains the fallback.
 
 Buyer Groups with no entitled products are still exported with an empty `ec_available_items` array so a full refresh can safely clear stale availability state from Coveo.
 
@@ -382,7 +434,10 @@ bash scripts/seed-buyer-group-availability.sh <alias>
 
 This creates:
 
-- one demo `WebStore`
+- three demo Web Stores: Demo, US, and CA
+- US Retail, CA Retail, and shared Wholesale custom Pricebooks
+- Web Store-to-Pricebook links that exercise shared-Pricebook deduplication
+- active Standard and custom Pricebook entries for the simple demo products
 - three demo `BuyerGroup` records
 - three `CommerceEntitlementPolicy` records
 - store-to-buyer-group links
@@ -390,7 +445,7 @@ This creates:
 - entitlement links for every SKU in `Demo Catalog - Simple Products`
 - a limited subset of the first three simple-catalog SKUs for the limited group
 
-The script prints the created `WebStoreId` and Buyer Group ids. Use that `WebStoreId` in `CatalogJobConfig__mdt.WebStoreId__c`, set `EnableBuyerGroupAvailability__c = true`, and add your Coveo `AvailabilitySourceId__c`.
+The script prints all created store and Buyer Group IDs plus suggested `WebStoreIds__c` scenarios. Use one or more store IDs in `CatalogJobConfig__mdt.WebStoreIds__c`, set `EnableBuyerGroupAvailability__c = true`, and add your Coveo `AvailabilitySourceId__c`. Selecting US + CA resolves US Retail + CA Retail + the shared Wholesale Pricebook once, while Standard remains available under the default `ec_price[""]` key.
 
 ---
 
@@ -430,6 +485,7 @@ The setup page now provides a complete job workspace around `CatalogJobConfig__m
 2. Build or revise a guided draft with `Sync Type`, baseline full config, catalog, filters, and Buyer Group access mode
 3. Review live preflight details, sync readiness, and last successful sync timestamps before saving
 4. Configure native Salesforce scheduling for the selected job without using Apex manually
+5. Optionally group same-mode active configs into a shared chained schedule
 
 ### Step 3 – Advanced Builder Settings
 
@@ -461,6 +517,8 @@ Each selected config exposes a scheduling panel for creating or replacing the na
 
 ![Scheduling panel](docs/images/setup-scheduling-panel.png)
 
+The scheduling panel also supports named chains. Select active configs that all use the same `SyncMode__c`, choose whether to include paired Buyer Group availability, and use **Schedule Chain**. Chain membership is stored in the scheduled Apex instance; current membership is not reconstructed in the UI after a page reload.
+
 #### Deployment and upgrade note
 
 Salesforce blocks Apex deployments by default when the target class has scheduled, batch, queueable, or future jobs pending or in progress. In practice, that means updates to `CatalogProductSyncScheduler.cls` can fail if catalog schedules are still active. The safest rollout pattern is:
@@ -474,6 +532,8 @@ This project ships as an unlocked package and also supports source-based metadat
 If your org enables **Deployment Settings → Allow deployments of components when corresponding Apex jobs are pending or in progress**, Salesforce can bypass this block. Use that setting carefully, because Salesforce notes that enabling it can sometimes cause Apex jobs to fail due to unsupported changes.
 
 Minute-based cadences such as every 15 minutes are implemented as multiple native Salesforce scheduled jobs behind the scenes. For example, a 15-minute delta schedule creates four native scheduled jobs, so all of them must be removed or allowed through Deployment Settings before a scheduler class update can succeed.
+
+The same deployment caution applies to chained schedules. Remove the named chain schedule before deploying changes to `CatalogChainedSyncScheduler.cls`, then recreate it afterward.
 
 ---
 
@@ -496,6 +556,8 @@ For each catalog, create something like:
 | BaselineFullConfigDeveloperName\_\_c | `EN_US_Catalog`              |
 | AvailabilitySourceId\_\_c            | `mycoveoorg123-en-us-avail`  |
 | WebStoreId\_\_c                      | `0ZE5g000000AbCDEAZ`         |
+| WebStoreIds\_\_c                     | `0ZE...A,0ZE...B`            |
+| PricebookIds\_\_c                    | `01s...A,01s...B`            |
 | Locale\_\_c                          | `en-US`                      |
 | IsActive\_\_c                        | ✔                           |
 | EnableBuyerGroupAvailability\_\_c    | ✔                           |
@@ -507,6 +569,28 @@ Recommended pattern:
 - Create one weekly `Full` config per resolved catalog target.
 - Create one hourly `Delta` config that points to the full config through `BaselineFullConfigDeveloperName__c`.
 - Run the first full sync successfully before expecting the paired delta job to become launchable.
+- For a shared catalog, populate either `PricebookIds__c` or `WebStoreIds__c`; explicit pricebooks win when both are set.
+- Changing either pricebook/store scope changes the resolved target key and requires a new successful full baseline before delta runs resume.
+
+### Pricebook resolution examples
+
+Explicit scope:
+
+```txt
+PricebookIds__c: 01s000000000001AAA,01s000000000002AAA
+WebStoreIds__c:  (blank)
+```
+
+Web Store-resolved scope with multi-store availability:
+
+```txt
+PricebookIds__c: (blank)
+WebStoreIds__c:  0ZE000000000001AAA,0ZE000000000002AAA
+```
+
+This resolves the deduplicated union of Pricebooks associated with both stores. It does not produce separate copies of a shared price or prefix price keys with a Web Store ID. If `PricebookIds__c` is also populated, its explicit list takes precedence for pricing; `WebStoreIds__c` can still define the multi-store Buyer Group availability scope.
+
+If `WebStorePricebook` is unavailable or incompatible in an org while `WebStoreIds__c` is explicitly configured, the job fails with a configuration error rather than exporting unscoped prices.
 
 ---
 
@@ -537,6 +621,31 @@ CatalogJobRunner.runAllActive();
 ```apex
 CatalogJobRunner.runAllActiveAvailability();
 ```
+
+## Run active configs through a queueable chain
+
+```apex
+CatalogJobRunner.runAllActiveChained();
+CatalogJobRunner.runAllActiveAvailabilityChained();
+
+// Full products plus paired Buyer Group availability.
+CatalogJobRunner.runAllActiveChained('Full', true);
+```
+
+To schedule an explicit config group from Apex:
+
+```apex
+CatalogChainedSyncScheduler.upsertChainedSync(
+  'Weekly Shared Catalogs',
+  new List<String>{ 'EN_US_Catalog', 'FR_CA_Catalog' },
+  'Full',
+  true,
+  true,
+  '0 0 3 ? * SUN'
+);
+```
+
+Existing per-config schedules are unchanged. Chain scheduling is opt-in; avoid scheduling the same config both individually and in a chain unless duplicate launches are intentional.
 
 ## From LWC Console
 
@@ -589,6 +698,16 @@ Each export produces a **Stream API** payload:
   ]
 }
 ```
+
+For a Buyer Group linked through multiple configured stores, the payload uses a sorted plural field and omits the ambiguous singular field:
+
+```json
+{
+  "sf_webstore_ids": ["0ZE5g000000AbCDEAZ", "0ZE5g000000XyZAAU"]
+}
+```
+
+When exactly one configured store applies, multi-store payloads include both `sf_webstore_ids` and backward-compatible `sf_webstore_id`.
 
 ### Availability Payload
 
@@ -827,7 +946,7 @@ public class MyCustomBuilder implements ICatalogJsonBuilder, ICatalogProductIden
 
 You can further extend this starter kit by adding:
 
-- Per-locale pricebooks
+- Persistent chain-definition metadata and chain membership/progress history
 - Field mapping UI (CMDT → ec\_\* target mapping)
 - Apex Scheduler for nightly runs
 - Custom variant attribute mappings
