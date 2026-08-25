@@ -301,18 +301,19 @@ Minute-based chain cadences are sharded into at most four shared jobs per hour. 
 A catalog config can scope prices in either of two ways:
 
 1. `PricebookIds__c`: an explicit CSV of `Pricebook2` IDs.
-2. `WebStoreIds__c`: a CSV of `WebStore` IDs whose pricebooks are resolved through `WebStorePricebook`.
+2. `WebStoreIds__c`: a CSV of `WebStore` IDs whose pricebooks are resolved through direct `WebStorePricebook` links and Buyer Groups associated through `WebStoreBuyerGroup` → `BuyerGroupPricebook`.
 
 Explicit pricebooks take precedence when both fields are populated. Both explicit and Web Store-resolved scopes preserve the legacy raw price-key contract so existing consumers do not need different lookup logic based on how the scope was configured.
 
 For pricing, `WebStoreIds__c` is a **pricebook selector**, not part of the price identity. The resolver:
 
-1. Finds every `Pricebook2` linked to each configured store through `WebStorePricebook`.
-2. Builds the set union of those Pricebook IDs.
-3. Removes duplicates when multiple stores share the same Pricebook.
-4. Exports only prices from that resolved set.
+1. Finds every active direct `WebStorePricebook` linked to each configured store.
+2. Finds each store's Buyer Groups through `WebStoreBuyerGroup`, then includes their active `BuyerGroupPricebook` records.
+3. Excludes a Buyer Group's `StrikethroughPricebookId` from the Buyer Group path when that field is available. A separately configured active direct store link remains authoritative.
+4. Builds the set union of those Pricebook IDs and removes duplicates when stores or Buyer Groups share the same Pricebook.
+5. Exports only prices from that resolved set.
 
-The Web Store ID is not added to `ec_price` keys. A `WebStorePricebook` association does not create a store-specific price: the price still belongs to its Pricebook Entry and optional Product Selling Model. All scoped exports therefore use the existing raw key formats:
+The Web Store ID and Buyer Group ID are not added to `ec_price` keys. A store or Buyer Group association does not create a context-specific price: the price still belongs to its Pricebook Entry and optional Product Selling Model. All scoped exports therefore use the existing raw key formats:
 
 - `<Pricebook2Id>`
 - `<Pricebook2Id>:<ProductSellingModelId>`
@@ -340,7 +341,7 @@ The Shared Pricebook is emitted once, not once per store:
 }
 ```
 
-The Standard Price Book is always included as the default price source and uses the empty dictionary key `""`. Scoped configurations add the selected custom Pricebooks while retaining Standard; they never need or attempt a `WebStorePricebook` link for Standard. When both scope fields are blank, legacy behavior is preserved: all active prices are considered, Standard remains keyed by `""`, and other Pricebooks use raw Salesforce IDs. A configured scope that resolves to no custom Pricebooks exports only an available Standard Price Book entry; it never falls back to every custom Pricebook.
+The Standard Price Book is always included as the default price source and uses the empty dictionary key `""`. Scoped configurations add the selected custom Pricebooks while retaining Standard; they never need a direct or Buyer Group association for Standard. When both scope fields are blank, legacy behavior is preserved: all active prices are considered, Standard remains keyed by `""`, and other Pricebooks use raw Salesforce IDs. A configured scope that resolves to no custom Pricebooks exports only an available Standard Price Book entry; it never falls back to every custom Pricebook. Use `PricebookIds__c` for a required Pricebook that is intentionally not reachable from the configured stores; the explicit list takes precedence for pricing while `WebStoreIds__c` can continue to define Buyer Group availability scope.
 
 ### 👥 Buyer Group Availability Export
 
@@ -589,9 +590,9 @@ PricebookIds__c: (blank)
 WebStoreIds__c:  0ZE000000000001AAA,0ZE000000000002AAA
 ```
 
-This resolves the deduplicated union of Pricebooks associated with both stores. It does not produce separate copies of a shared price or prefix price keys with a Web Store ID. If `PricebookIds__c` is also populated, its explicit list takes precedence for pricing; `WebStoreIds__c` can still define the multi-store Buyer Group availability scope.
+This resolves the deduplicated union of active direct and active Buyer Group Pricebooks associated with both stores. Buyer Group strikethrough Pricebooks are excluded from the Buyer Group path. The resolver does not produce separate copies of a shared price or prefix price keys with a Web Store or Buyer Group ID. If `PricebookIds__c` is also populated, its explicit list takes precedence for pricing; `WebStoreIds__c` can still define the multi-store Buyer Group availability scope.
 
-If `WebStorePricebook` is unavailable or incompatible in an org while `WebStoreIds__c` is explicitly configured, the job fails with a configuration error rather than exporting unscoped prices.
+If `WebStorePricebook`, `WebStoreBuyerGroup`, or `BuyerGroupPricebook` is unavailable or incompatible in an org while `WebStoreIds__c` is explicitly configured, the job fails with a configuration error rather than exporting unscoped prices.
 
 ---
 
