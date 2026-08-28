@@ -1,6 +1,8 @@
 public with sharing class WebStorePricebookResolver {
   @TestVisible
   private static Map<Id, String> testPricebooksByWebStoreIds;
+  @TestVisible
+  private static Map<Id, Id> testStrikethroughPricebookIdByBuyerGroupId;
 
   public class PricebookResolution {
     public Set<Id> pricebookIds { get; private set; }
@@ -129,40 +131,89 @@ public with sharing class WebStorePricebookResolver {
     }
 
     Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
-    if (!globalDescribe.containsKey('WebStorePricebook')) {
-      throw new CatalogJobConfigException(
-        'WebStoreIds__c requires the B2B Commerce WebStorePricebook object.'
-      );
-    }
-
-    Map<String, Schema.SObjectField> junctionFields = globalDescribe
-      .get('WebStorePricebook')
-      .getDescribe()
-      .fields.getMap();
-    if (
-      !junctionFields.containsKey('WebStoreId') ||
-      !junctionFields.containsKey('Pricebook2Id')
-    ) {
-      throw new CatalogJobConfigException(
-        'WebStorePricebook does not expose the required WebStoreId and Pricebook2Id fields.'
-      );
-    }
+    requireFields(
+      globalDescribe,
+      'WebStorePricebook',
+      new Set<String>{ 'WebStoreId', 'Pricebook2Id', 'IsActive' }
+    );
+    requireFields(
+      globalDescribe,
+      'WebStoreBuyerGroup',
+      new Set<String>{ 'WebStoreId', 'BuyerGroupId' }
+    );
+    requireFields(
+      globalDescribe,
+      'BuyerGroupPricebook',
+      new Set<String>{ 'BuyerGroupId', 'Pricebook2Id', 'IsActive' }
+    );
 
     Map<Id, Set<Id>> storeIdsByPricebookId = new Map<Id, Set<Id>>();
-    Set<Id> matchedWebStoreIds = new Set<Id>();
     for (
       SObject junction : Database.query(
         'SELECT WebStoreId, Pricebook2Id FROM WebStorePricebook ' +
-        'WHERE WebStoreId IN :webStoreIds AND Pricebook2Id != NULL'
+        'WHERE WebStoreId IN :webStoreIds AND Pricebook2Id != NULL ' +
+        'AND IsActive = TRUE'
       )
     ) {
       Id webStoreId = (Id) junction.get('WebStoreId');
       Id pricebookId = (Id) junction.get('Pricebook2Id');
-      if (!storeIdsByPricebookId.containsKey(pricebookId)) {
-        storeIdsByPricebookId.put(pricebookId, new Set<Id>());
+      addPricebookStoreScope(
+        storeIdsByPricebookId,
+        pricebookId,
+        new Set<Id>{ webStoreId }
+      );
+    }
+
+    Map<Id, Set<Id>> storeIdsByBuyerGroupId = new Map<Id, Set<Id>>();
+    for (
+      SObject junction : Database.query(
+        'SELECT WebStoreId, BuyerGroupId FROM WebStoreBuyerGroup ' +
+        'WHERE WebStoreId IN :webStoreIds AND BuyerGroupId != NULL'
+      )
+    ) {
+      Id webStoreId = (Id) junction.get('WebStoreId');
+      Id buyerGroupId = (Id) junction.get('BuyerGroupId');
+      if (!storeIdsByBuyerGroupId.containsKey(buyerGroupId)) {
+        storeIdsByBuyerGroupId.put(buyerGroupId, new Set<Id>());
       }
-      storeIdsByPricebookId.get(pricebookId).add(webStoreId);
-      matchedWebStoreIds.add(webStoreId);
+      storeIdsByBuyerGroupId.get(buyerGroupId).add(webStoreId);
+    }
+
+    Set<Id> buyerGroupIds = storeIdsByBuyerGroupId.keySet();
+    if (!buyerGroupIds.isEmpty()) {
+      Map<Id, Id> strikethroughPricebookIdByBuyerGroupId = resolveStrikethroughPricebookIds(
+        globalDescribe,
+        buyerGroupIds
+      );
+      for (
+        SObject junction : Database.query(
+          'SELECT BuyerGroupId, Pricebook2Id FROM BuyerGroupPricebook ' +
+          'WHERE BuyerGroupId IN :buyerGroupIds AND Pricebook2Id != NULL ' +
+          'AND IsActive = TRUE'
+        )
+      ) {
+        Id buyerGroupId = (Id) junction.get('BuyerGroupId');
+        Id pricebookId = (Id) junction.get('Pricebook2Id');
+        if (
+          isStrikethroughPricebook(
+            buyerGroupId,
+            pricebookId,
+            strikethroughPricebookIdByBuyerGroupId
+          )
+        ) {
+          continue;
+        }
+        addPricebookStoreScope(
+          storeIdsByPricebookId,
+          pricebookId,
+          storeIdsByBuyerGroupId.get(buyerGroupId)
+        );
+      }
+    }
+
+    Set<Id> matchedWebStoreIds = new Set<Id>();
+    for (Set<Id> pricebookStoreIds : storeIdsByPricebookId.values()) {
+      matchedWebStoreIds.addAll(pricebookStoreIds);
     }
 
     Map<Id, String> storeNamesById = new Map<Id, String>();
@@ -195,6 +246,102 @@ public with sharing class WebStorePricebookResolver {
     }
 
     return labelsByPricebookId;
+  }
+
+  private static void requireFields(
+    Map<String, Schema.SObjectType> globalDescribe,
+    String objectName,
+    Set<String> requiredFieldNames
+  ) {
+    if (!globalDescribe.containsKey(objectName)) {
+      throw new CatalogJobConfigException(
+        'WebStoreIds__c requires the B2B Commerce ' + objectName + ' object.'
+      );
+    }
+
+    Map<String, Schema.SObjectField> fieldsByName = globalDescribe
+      .get(objectName)
+      .getDescribe()
+      .fields.getMap();
+    for (String fieldName : requiredFieldNames) {
+      if (!fieldsByName.containsKey(fieldName)) {
+        throw new CatalogJobConfigException(
+          objectName + ' does not expose the required ' + fieldName + ' field.'
+        );
+      }
+    }
+  }
+
+  private static void addPricebookStoreScope(
+    Map<Id, Set<Id>> storeIdsByPricebookId,
+    Id pricebookId,
+    Set<Id> webStoreIds
+  ) {
+    if (
+      pricebookId == null ||
+      webStoreIds == null ||
+      webStoreIds.isEmpty()
+    ) {
+      return;
+    }
+    if (!storeIdsByPricebookId.containsKey(pricebookId)) {
+      storeIdsByPricebookId.put(pricebookId, new Set<Id>());
+    }
+    storeIdsByPricebookId.get(pricebookId).addAll(webStoreIds);
+  }
+
+  private static Map<Id, Id> resolveStrikethroughPricebookIds(
+    Map<String, Schema.SObjectType> globalDescribe,
+    Set<Id> buyerGroupIds
+  ) {
+    Map<Id, Id> pricebookIdByBuyerGroupId = new Map<Id, Id>();
+    if (
+      Test.isRunningTest() &&
+      testStrikethroughPricebookIdByBuyerGroupId != null
+    ) {
+      pricebookIdByBuyerGroupId.putAll(
+        testStrikethroughPricebookIdByBuyerGroupId
+      );
+      return pricebookIdByBuyerGroupId;
+    }
+    if (
+      buyerGroupIds == null ||
+      buyerGroupIds.isEmpty() ||
+      !globalDescribe.containsKey('BuyerGroup')
+    ) {
+      return pricebookIdByBuyerGroupId;
+    }
+
+    Map<String, Schema.SObjectField> buyerGroupFields = globalDescribe
+      .get('BuyerGroup')
+      .getDescribe()
+      .fields.getMap();
+    if (!buyerGroupFields.containsKey('StrikethroughPricebookId')) {
+      return pricebookIdByBuyerGroupId;
+    }
+
+    for (
+      SObject buyerGroup : Database.query(
+        'SELECT Id, StrikethroughPricebookId FROM BuyerGroup ' +
+        'WHERE Id IN :buyerGroupIds AND StrikethroughPricebookId != NULL'
+      )
+    ) {
+      pricebookIdByBuyerGroupId.put(
+        (Id) buyerGroup.get('Id'),
+        (Id) buyerGroup.get('StrikethroughPricebookId')
+      );
+    }
+    return pricebookIdByBuyerGroupId;
+  }
+
+  @TestVisible
+  private static Boolean isStrikethroughPricebook(
+    Id buyerGroupId,
+    Id pricebookId,
+    Map<Id, Id> strikethroughPricebookIdByBuyerGroupId
+  ) {
+    return strikethroughPricebookIdByBuyerGroupId != null &&
+      strikethroughPricebookIdByBuyerGroupId.get(buyerGroupId) == pricebookId;
   }
 
   private static Map<Id, String> resolvePricebookNames(Set<Id> pricebookIds) {

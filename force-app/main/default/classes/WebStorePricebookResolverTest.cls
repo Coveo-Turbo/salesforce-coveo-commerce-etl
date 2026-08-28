@@ -1,5 +1,84 @@
 @IsTest
 private class WebStorePricebookResolverTest {
+  private static Boolean hasBuyerGroupPricebookSchema() {
+    Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
+    return globalDescribe.containsKey('WebStore') &&
+      globalDescribe.containsKey('BuyerGroup') &&
+      globalDescribe.containsKey('WebStorePricebook') &&
+      globalDescribe.containsKey('WebStoreBuyerGroup') &&
+      globalDescribe.containsKey('BuyerGroupPricebook');
+  }
+
+  private static SObject createWebStore(String name) {
+    SObject store = Schema.getGlobalDescribe().get('WebStore').newSObject();
+    store.put('Name', name);
+    store.put('OptionsAutoFacetingEnabled', false);
+    store.put('OptionsCartAsyncProcessingEnabled', false);
+    store.put('OptionsCartCalculateEnabled', false);
+    store.put('OptionsCartToOrderAutoCustomFieldMapping', false);
+    store.put('OptionsCommerceEinsteinActivitiesTracked', false);
+    store.put('OptionsCommerceEinsteinDeployed', false);
+    store.put('OptionsDuplicateCartItemsEnabled', false);
+    store.put('OptionsGuestBrowsingEnabled', false);
+    store.put('OptionsGuestCartEnabled', false);
+    store.put('OptionsGuestCheckoutEnabled', false);
+    store.put('OptionsPreserveGuestCartEnabled', false);
+    store.put('OptionsSkipAdditionalEntitlementCheckForSearch', false);
+    store.put('OptionsSkuDetectionEnabled', false);
+    store.put('OptionsSplitShipmentEnabled', false);
+    insert store;
+    return store;
+  }
+
+  private static SObject createBuyerGroup(String name) {
+    SObject buyerGroup = Schema.getGlobalDescribe()
+      .get('BuyerGroup')
+      .newSObject();
+    buyerGroup.put('Name', name);
+    insert buyerGroup;
+    return buyerGroup;
+  }
+
+  private static void linkWebStorePricebook(
+    Id webStoreId,
+    Id pricebookId,
+    Boolean isActive
+  ) {
+    SObject link = Schema.getGlobalDescribe()
+      .get('WebStorePricebook')
+      .newSObject();
+    link.put('WebStoreId', webStoreId);
+    link.put('Pricebook2Id', pricebookId);
+    link.put('IsActive', isActive);
+    insert link;
+  }
+
+  private static void linkWebStoreBuyerGroup(
+    Id webStoreId,
+    Id buyerGroupId
+  ) {
+    SObject link = Schema.getGlobalDescribe()
+      .get('WebStoreBuyerGroup')
+      .newSObject();
+    link.put('WebStoreId', webStoreId);
+    link.put('BuyerGroupId', buyerGroupId);
+    insert link;
+  }
+
+  private static void linkBuyerGroupPricebook(
+    Id buyerGroupId,
+    Id pricebookId,
+    Boolean isActive
+  ) {
+    SObject link = Schema.getGlobalDescribe()
+      .get('BuyerGroupPricebook')
+      .newSObject();
+    link.put('BuyerGroupId', buyerGroupId);
+    link.put('Pricebook2Id', pricebookId);
+    link.put('IsActive', isActive);
+    insert link;
+  }
+
   @IsTest
   static void resolvesExplicitPricebooksWithRawIdLabels() {
     Pricebook2 firstPricebook = new Pricebook2(
@@ -75,6 +154,155 @@ private class WebStorePricebookResolverTest {
         sellingModelId,
         pricebook.Id,
         Id.valueOf('01u000000000001')
+      )
+    );
+  }
+
+  @IsTest
+  static void resolvesActiveDirectAndBuyerGroupPricebooks() {
+    if (!hasBuyerGroupPricebookSchema()) {
+      return;
+    }
+
+    SObject store = createWebStore('Resolver Store');
+    SObject secondStore = createWebStore('Resolver Store Two');
+    SObject buyerGroup = createBuyerGroup('Resolver Buyer Group');
+    SObject excludedStrikethroughGroup = createBuyerGroup(
+      'Excluded Strikethrough Group'
+    );
+    Pricebook2 activeDirectPricebook = new Pricebook2(
+      Name = 'Active Direct',
+      IsActive = true
+    );
+    Pricebook2 inactiveDirectPricebook = new Pricebook2(
+      Name = 'Inactive Direct',
+      IsActive = true
+    );
+    Pricebook2 activeBuyerGroupPricebook = new Pricebook2(
+      Name = 'Active Buyer Group',
+      IsActive = true
+    );
+    Pricebook2 inactiveBuyerGroupPricebook = new Pricebook2(
+      Name = 'Inactive Buyer Group',
+      IsActive = true
+    );
+    Pricebook2 excludedStrikethroughPricebook = new Pricebook2(
+      Name = 'Excluded Strikethrough',
+      IsActive = true
+    );
+    insert new List<Pricebook2>{
+      activeDirectPricebook,
+      inactiveDirectPricebook,
+      activeBuyerGroupPricebook,
+      inactiveBuyerGroupPricebook,
+      excludedStrikethroughPricebook
+    };
+
+    linkWebStorePricebook(
+      (Id) store.get('Id'),
+      activeDirectPricebook.Id,
+      true
+    );
+    linkWebStorePricebook(
+      (Id) store.get('Id'),
+      inactiveDirectPricebook.Id,
+      false
+    );
+    linkWebStoreBuyerGroup(
+      (Id) store.get('Id'),
+      (Id) buyerGroup.get('Id')
+    );
+    linkWebStoreBuyerGroup(
+      (Id) secondStore.get('Id'),
+      (Id) buyerGroup.get('Id')
+    );
+    linkWebStoreBuyerGroup(
+      (Id) store.get('Id'),
+      (Id) excludedStrikethroughGroup.get('Id')
+    );
+    linkBuyerGroupPricebook(
+      (Id) buyerGroup.get('Id'),
+      activeBuyerGroupPricebook.Id,
+      true
+    );
+    linkBuyerGroupPricebook(
+      (Id) buyerGroup.get('Id'),
+      inactiveBuyerGroupPricebook.Id,
+      false
+    );
+    // The same active direct Pricebook is also the shared Buyer's
+    // strikethrough Pricebook. The direct store link must remain authoritative.
+    linkBuyerGroupPricebook(
+      (Id) buyerGroup.get('Id'),
+      activeDirectPricebook.Id,
+      true
+    );
+    linkBuyerGroupPricebook(
+      (Id) excludedStrikethroughGroup.get('Id'),
+      excludedStrikethroughPricebook.Id,
+      true
+    );
+    WebStorePricebookResolver.testStrikethroughPricebookIdByBuyerGroupId = new Map<Id, Id>{
+      (Id) buyerGroup.get('Id') => activeDirectPricebook.Id,
+      (Id) excludedStrikethroughGroup.get('Id') => excludedStrikethroughPricebook.Id
+    };
+
+    WebStorePricebookResolver.PricebookResolution resolution = WebStorePricebookResolver.resolve(
+      new CatalogJobConfig__mdt(
+        WebStoreIds__c = String.valueOf(store.get('Id')) +
+          ',' +
+          String.valueOf(secondStore.get('Id'))
+      )
+    );
+
+    System.assertEquals(
+      new Set<Id>{ activeDirectPricebook.Id, activeBuyerGroupPricebook.Id },
+      resolution.pricebookIds,
+      'The Web Store scope should deduplicate active direct and shared Buyer Group pricebooks.'
+    );
+    System.assertEquals(
+      false,
+      resolution.pricebookIds.contains(inactiveDirectPricebook.Id)
+    );
+    System.assertEquals(
+      false,
+      resolution.pricebookIds.contains(inactiveBuyerGroupPricebook.Id)
+    );
+    System.assertEquals(
+      false,
+      resolution.pricebookIds.contains(excludedStrikethroughPricebook.Id),
+      'A Buyer Group strikethrough Pricebook must be excluded when it has no active direct store link.'
+    );
+    System.assertEquals(
+      true,
+      resolution.pricebookIds.contains(activeDirectPricebook.Id),
+      'An active direct link must remain authoritative even when another path identifies the Pricebook as strikethrough.'
+    );
+  }
+
+  @IsTest
+  static void excludesBuyerGroupStrikethroughPricebook() {
+    Id buyerGroupId = Id.valueOf('0ZI000000000001');
+    Id regularPricebookId = Id.valueOf('01s000000000001');
+    Id strikethroughPricebookId = Id.valueOf('01s000000000002');
+    Map<Id, Id> strikethroughByBuyerGroupId = new Map<Id, Id>{
+      buyerGroupId => strikethroughPricebookId
+    };
+
+    System.assertEquals(
+      false,
+      WebStorePricebookResolver.isStrikethroughPricebook(
+        buyerGroupId,
+        regularPricebookId,
+        strikethroughByBuyerGroupId
+      )
+    );
+    System.assertEquals(
+      true,
+      WebStorePricebookResolver.isStrikethroughPricebook(
+        buyerGroupId,
+        strikethroughPricebookId,
+        strikethroughByBuyerGroupId
       )
     );
   }
