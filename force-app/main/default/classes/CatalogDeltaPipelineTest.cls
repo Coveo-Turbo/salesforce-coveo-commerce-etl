@@ -503,6 +503,39 @@ private class CatalogDeltaPipelineTest {
   }
 
   @IsTest
+  static void testStaleTerminalObservationDoesNotFailAdvancedRun() {
+    CatalogJobConfig__mdt config = createConfig(
+      'DELTA_STALE_SNAPSHOT_63',
+      CatalogSyncMode.DELTA
+    );
+    Catalog_Delta_Run__c run = createRun(
+      config,
+      CatalogDeltaStageBatch.DISCOVER_PRICES
+    );
+    String completedStageJobId = String.valueOf(UserInfo.getUserId());
+    String nextStageJobId = String.valueOf(Test.getStandardPricebookId());
+    run.CurrentAsyncJobId__c = nextStageJobId;
+    update run;
+
+    Catalog_Delta_Run__c reconciled = CatalogDeltaRunService.reconcileTerminalJobObservation(
+      run.Id,
+      completedStageJobId
+    );
+
+    System.assertEquals(
+      CatalogDeltaRunService.STATUS_RUNNING,
+      reconciled.Status__c,
+      'A stale observation of the previous child job must not fail the current stage.'
+    );
+    System.assertEquals(nextStageJobId, reconciled.CurrentAsyncJobId__c);
+    System.assertEquals(null, reconciled.CompletedAt__c);
+    System.assertEquals(
+      CatalogDeltaRunService.CLEANUP_PENDING,
+      reconciled.CleanupStatus__c
+    );
+  }
+
+  @IsTest
   static void testCancellationWaitsForChildJobThenBecomesTerminal() {
     CatalogJobConfig__mdt config = createConfig(
       'DELTA_CANCEL_63',

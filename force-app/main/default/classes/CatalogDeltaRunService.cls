@@ -421,15 +421,13 @@ public with sharing class CatalogDeltaRunService {
         currentJob.Status == 'Failed' ||
         currentJob.Status == 'Aborted')
       ) {
-        if (run.Status__c == STATUS_CANCEL_REQUESTED) {
-          failRun(run.Id, 'Canceled by an administrator.');
-        } else {
-          failRun(
+        runsById.put(
+          run.Id,
+          reconcileTerminalJobObservation(
             run.Id,
-            'The current Async Apex stage ended before the delta pipeline completed.'
-          );
-        }
-        runsById.put(run.Id, loadRun(run.Id));
+            run.CurrentAsyncJobId__c
+          )
+        );
       }
     }
 
@@ -460,6 +458,45 @@ public with sharing class CatalogDeltaRunService {
     return status == STATUS_SUCCEEDED ||
       status == STATUS_FAILED ||
       status == STATUS_CANCELED;
+  }
+
+  @TestVisible
+  private static Catalog_Delta_Run__c reconcileTerminalJobObservation(
+    Id runId,
+    String observedJobId
+  ) {
+    Catalog_Delta_Run__c currentRun = loadRunForUpdate(runId);
+    if (isTerminalStatus(currentRun.Status__c)) {
+      return currentRun;
+    }
+
+    // Snapshot polling reads the run and AsyncApexJob in separate queries. A
+    // stage can advance between those reads, so never terminalize a run unless
+    // the observed child job still owns it after acquiring the row lock.
+    if (currentRun.CurrentAsyncJobId__c != observedJobId) {
+      return currentRun;
+    }
+
+    AsyncApexJob currentJob = loadAsyncJob(currentRun.CurrentAsyncJobId__c);
+    if (
+      currentJob != null &&
+      currentJob.Status != 'Completed' &&
+      currentJob.Status != 'Failed' &&
+      currentJob.Status != 'Aborted'
+    ) {
+      return currentRun;
+    }
+
+    if (currentRun.Status__c == STATUS_CANCEL_REQUESTED) {
+      markCanceled(currentRun, 'Canceled by an administrator.');
+    } else {
+      markFailed(
+        currentRun,
+        'The current Async Apex stage ended before the delta pipeline completed.'
+      );
+    }
+    tryEnqueueCleanup(currentRun.Id);
+    return currentRun;
   }
 
   private static Snapshot buildSnapshot(
