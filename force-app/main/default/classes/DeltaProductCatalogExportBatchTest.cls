@@ -110,8 +110,8 @@ private class DeltaProductCatalogExportBatchTest {
   }
 
   @IsTest
-  static void testStart_returnsChangedProductsSinceBaseline() {
-    Product2 product = createProduct('START-001');
+  static void testStart_legacyConstructorDefersDiscoveryToPipeline() {
+    createProduct('START-001');
     CatalogJobConfig__mdt config = createConfig();
     DeltaProductCatalogExportBatch batch = new DeltaProductCatalogExportBatch(
       config,
@@ -121,8 +121,11 @@ private class DeltaProductCatalogExportBatchTest {
 
     List<Product2> scopeProducts = collectProducts(batch.start(null));
 
-    System.assertEquals(1, scopeProducts.size());
-    System.assertEquals(product.Id, scopeProducts[0].Id);
+    System.assertEquals(
+      0,
+      scopeProducts.size(),
+      'Legacy constructors must bootstrap the scalable pipeline instead of materializing changed IDs.'
+    );
   }
 
   @IsTest
@@ -136,10 +139,16 @@ private class DeltaProductCatalogExportBatchTest {
     ];
 
     CatalogJobConfig__mdt config = createConfig();
+    CatalogJobConfig__mdt fullConfig = createConfig();
+    fullConfig.DeveloperName = 'FULL_JOB';
+    fullConfig.SyncMode__c = CatalogSyncMode.FULL;
+    fullConfig.BaselineFullConfigDeveloperName__c = null;
+    Datetime baseline = System.now().addMinutes(-5);
+    CatalogSyncStateService.recordSuccessfulFullSync(fullConfig, baseline);
     DeltaProductCatalogExportBatch batch = new DeltaProductCatalogExportBatch(
       config,
       Test.getStandardPricebookId(),
-      System.now().addMinutes(-5)
+      baseline
     );
     batch.runCutoff = System.now();
 
@@ -186,9 +195,21 @@ private class DeltaProductCatalogExportBatchTest {
     ];
 
     System.assertEquals('FULL_JOB', stateRecord.BaselineFullConfigDeveloperName__c);
-    System.assertEquals(CatalogSyncMode.DELTA, stateRecord.LastRunMode__c);
-    System.assertEquals('DELTA_JOB', stateRecord.LastSuccessfulConfigDeveloperName__c);
-    System.assertNotEquals(null, stateRecord.LastSuccessfulSyncAt__c);
+    System.assertEquals(CatalogSyncMode.FULL, stateRecord.LastRunMode__c);
+    System.assertEquals('FULL_JOB', stateRecord.LastSuccessfulConfigDeveloperName__c);
+    System.assertEquals(
+      baseline,
+      stateRecord.LastSuccessfulSyncAt__c,
+      'Starting the pipeline must not advance the watermark before staged export succeeds.'
+    );
+    System.assertEquals(
+      1,
+      [
+        SELECT COUNT()
+        FROM Catalog_Delta_Run__c
+        WHERE ConfigDeveloperName__c = 'DELTA_JOB'
+      ]
+    );
   }
 
   @IsTest
@@ -218,8 +239,8 @@ private class DeltaProductCatalogExportBatchTest {
   }
 
   @IsTest
-  static void testStart_loadsBaselineFromReadinessStateWhenUnset() {
-    Product2 product = createProduct('READY-001');
+  static void testStart_withoutBaselineStillDefersReadinessToPipelineLaunch() {
+    createProduct('READY-001');
     CatalogJobConfig__mdt deltaConfig = createConfig();
     CatalogJobConfig__mdt fullConfig = createConfig();
     fullConfig.DeveloperName = 'FULL_JOB';
@@ -251,15 +272,14 @@ private class DeltaProductCatalogExportBatchTest {
 
     List<Product2> scopeProducts = collectProducts(batch.start(null));
 
-    System.assertEquals(baseline, batch.baselineTimestamp);
-    System.assertEquals(1, scopeProducts.size());
-    System.assertEquals(product.Id, scopeProducts[0].Id);
-    System.assertNotEquals(null, batch.runCutoff);
+    System.assertEquals(null, batch.baselineTimestamp);
+    System.assertEquals(0, scopeProducts.size());
+    System.assertEquals(null, batch.runCutoff);
   }
 
   @IsTest
   static void testStart_preservesProvidedRunCutoff() {
-    Product2 product = createProduct('CUTOFF-001');
+    createProduct('CUTOFF-001');
     Datetime baseline = System.now().addMinutes(-10);
     Datetime runCutoff = System.now().addMinutes(2);
     CatalogJobConfig__mdt config = createConfig();
@@ -273,8 +293,7 @@ private class DeltaProductCatalogExportBatchTest {
 
     List<Product2> scopeProducts = collectProducts(batch.start(null));
 
-    System.assertEquals(1, scopeProducts.size());
-    System.assertEquals(product.Id, scopeProducts[0].Id);
+    System.assertEquals(0, scopeProducts.size());
     System.assertEquals(runCutoff, batch.runCutoff);
   }
 

@@ -409,7 +409,7 @@
                                       for:item="stage"
                                     >
                                       <div
-                                        key={stage.jobId}
+                                        key={stage.trackingKey}
                                         class="cc-stage-card"
                                       >
                                         <div class="cc-stage-card__header">
@@ -437,6 +437,7 @@
                                                 type="button"
                                                 class="cc-stage-card__abort"
                                                 data-job-id={stage.jobId}
+                                                data-run-id={stage.runId}
                                                 data-job-label={stage.label}
                                                 onclick={handleAbortStage}
                                               >

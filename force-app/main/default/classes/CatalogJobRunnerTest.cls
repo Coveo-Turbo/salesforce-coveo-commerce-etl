@@ -690,6 +690,7 @@ private class CatalogJobRunnerTest {
       System.assert(config.containsKey('lastSuccessfulFullSyncAt'));
       System.assert(config.containsKey('lastSuccessfulSyncAt'));
       System.assert(config.containsKey('currentProductJobId'));
+      System.assert(config.containsKey('currentProductRunId'));
       System.assert(config.containsKey('currentProductJobStatus'));
       System.assert(config.containsKey('currentProductRunMode'));
       System.assert(config.containsKey('currentProductConfigDeveloperName'));

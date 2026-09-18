@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>CurrentProductRun__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Persisted multi-stage delta run currently associated with this export target.</description>
+    <label>Current Product Run</label>
+    <referenceTo>Catalog_Delta_Run__c</referenceTo>
+    <relationshipLabel>Catalog Sync States</relationshipLabel>
+    <relationshipName>CatalogSyncStates</relationshipName>
+    <required>false</required>
+    <type>Lookup</type>
+</CustomField>

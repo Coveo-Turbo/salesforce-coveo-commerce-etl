@@ -44,65 +44,30 @@ private class CatalogDeltaScopeResolverTest {
   }
 
   @IsTest
-  static void testCollectChangedProductIds_capturesProductPriceAndCategoryLinks() {
-    Datetime lowerExclusive = System.now().addMinutes(-5);
-    Product2 changedProduct = createProduct('CHANGE-001', 'Hardware');
-    insert new PricebookEntry(
-      Pricebook2Id = Test.getStandardPricebookId(),
-      Product2Id = changedProduct.Id,
-      UnitPrice = 49.99,
-      IsActive = true
-    );
-    createCatalog(changedProduct);
-
-    Set<Id> changedProductIds = CatalogDeltaScopeResolver.collectChangedProductIds(
-      createConfig('Default'),
-      lowerExclusive,
-      System.now().addMinutes(5)
-    );
-
-    System.assert(changedProductIds.contains(changedProduct.Id));
-  }
-
-  @IsTest
-  static void testResolveExportProductIds_filtersToScopedCatalog() {
-    Product2 inCatalog = createProduct('CAT-001', 'Hardware');
-    Product2 outsideCatalog = createProduct('CAT-002', 'Hardware');
-    ProductCatalog catalog = createCatalog(inCatalog);
-
-    CatalogJobConfig__mdt config = createConfig('Default');
-    config.CatalogId__c = catalog.Id;
-    config.ProductFilter__c = 'Family = \'Hardware\'';
-
-    Set<Id> exportProductIds = CatalogDeltaScopeResolver.resolveExportProductIds(
-      config,
-      System.now().addMinutes(-5),
-      System.now().addMinutes(5)
-    );
-
-    System.assert(exportProductIds.contains(inCatalog.Id));
-    System.assert(!exportProductIds.contains(outsideCatalog.Id));
-  }
-
-  @IsTest
-  static void testDescribeScope_returnsImpactedRootAndExportCounts() {
-    Product2 inCatalog = createProduct('METRIC-001', 'Hardware');
-    Product2 outsideCatalog = createProduct('METRIC-002', 'Hardware');
-    ProductCatalog catalog = createCatalog(inCatalog);
-
-    CatalogJobConfig__mdt config = createConfig('Default');
-    config.CatalogId__c = catalog.Id;
-
-    CatalogDeltaScopeResolver.ScopeMetrics metrics =
-      CatalogDeltaScopeResolver.describeScope(
-        config,
+  static void testSynchronousScopeApisDirectCallersToPersistedPipeline() {
+    Boolean resolutionRejected = false;
+    try {
+      CatalogDeltaScopeResolver.resolveExportProductIds(
+        createConfig('Default'),
         System.now().addMinutes(-5),
-        System.now().addMinutes(5)
+        System.now()
       );
+    } catch (CatalogJobException e) {
+      resolutionRejected = e.getMessage().contains('persisted delta pipeline');
+    }
+    System.assertEquals(true, resolutionRejected);
 
-    System.assertEquals(2, metrics.impactedProductCount);
-    System.assertEquals(2, metrics.rootProductCount);
-    System.assertEquals(1, metrics.exportProductCount);
+    Boolean metricsRejected = false;
+    try {
+      CatalogDeltaScopeResolver.describeScope(
+        createConfig('Default'),
+        System.now().addMinutes(-5),
+        System.now()
+      );
+    } catch (CatalogJobException e) {
+      metricsRejected = e.getMessage().contains('getDeltaRunSnapshots');
+    }
+    System.assertEquals(true, metricsRejected);
   }
 
   @IsTest
