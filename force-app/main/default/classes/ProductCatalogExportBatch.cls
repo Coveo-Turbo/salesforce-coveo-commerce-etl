@@ -129,6 +129,9 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   }
 
   global Database.QueryLocator start(Database.BatchableContext bc) {
+    if (bc != null) {
+      CatalogDeltaRunService.claimFullRun(jobConfig, bc.getJobId());
+    }
     runCutoff = System.now();
     List<String> fields = CatalogProductExportSupport.getRequiredProductFields(
       jobConfig
@@ -212,7 +215,8 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
 
     CatalogSyncStateService.recordSuccessfulFullSync(
       jobConfig,
-      runCutoff == null ? System.now() : runCutoff
+      runCutoff == null ? System.now() : runCutoff,
+      bc == null ? null : bc.getJobId()
     );
 
     // Payload logs are inserted asynchronously via CoveoPayloadLogQueueable

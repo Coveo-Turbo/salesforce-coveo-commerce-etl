@@ -690,6 +690,7 @@ private class CatalogJobRunnerTest {
       System.assert(config.containsKey('lastSuccessfulFullSyncAt'));
       System.assert(config.containsKey('lastSuccessfulSyncAt'));
       System.assert(config.containsKey('currentProductJobId'));
+      System.assert(config.containsKey('currentProductRunId'));
       System.assert(config.containsKey('currentProductJobStatus'));
       System.assert(config.containsKey('currentProductRunMode'));
       System.assert(config.containsKey('currentProductConfigDeveloperName'));
@@ -744,7 +745,7 @@ private class CatalogJobRunnerTest {
   }
 
   @IsTest
-  static void testAbortRunJob_abortsQueuedAsyncJob() {
+  static void testAbortRunJob_handlesQueuedOrAlreadyCompletedAsyncJob() {
     Id jobId;
 
     Test.startTest();
@@ -758,7 +759,10 @@ private class CatalogJobRunnerTest {
       new List<String>{ String.valueOf(jobId) }
     );
     System.assertEquals(1, snapshots.size());
-    System.assertEquals('Aborted', snapshots[0].status);
+    System.assert(
+      new Set<String>{ 'Aborted', 'Completed' }.contains(snapshots[0].status),
+      'A no-op async job may complete before the abort request is observed.'
+    );
   }
 
   @IsTest

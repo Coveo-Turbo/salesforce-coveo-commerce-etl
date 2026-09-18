@@ -106,22 +106,11 @@ global with sharing class CatalogProductSyncScheduler implements Schedulable {
         return;
       }
 
-      DeltaProductCatalogExportBatch deltaBatch = new DeltaProductCatalogExportBatch(
-        jobConfigDeveloperName
-      );
-      Id deltaJobId = Database.executeBatch(
-        deltaBatch,
-        deltaBatch.getBatchSize()
-      );
-      CatalogSyncStateService.recordStartedProductSync(
-        config,
-        CatalogSyncMode.DELTA,
-        deltaJobId,
-        System.now()
-      );
+      CatalogDeltaRunService.launch(config);
       return;
     }
 
+    CatalogDeltaRunService.assertNoActiveDeltaRun(config);
     ProductCatalogExportBatch fullBatch = new ProductCatalogExportBatch(
       jobConfigDeveloperName
     );

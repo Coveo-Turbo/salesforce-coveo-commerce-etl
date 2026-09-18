@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>PricebookScopeFiltered__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>True when price discovery is restricted to Standard plus a configured custom Pricebook scope.</description>
+    <label>Pricebook Scope Filtered</label>
+    <type>Checkbox</type>
+</CustomField>
