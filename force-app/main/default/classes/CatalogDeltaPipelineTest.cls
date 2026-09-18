@@ -440,16 +440,22 @@ private class CatalogDeltaPipelineTest {
       IsImpacted__c = true
     );
 
-    CatalogDeltaRunService.suppressChainingInTests = false;
-    Test.startTest();
     CatalogDeltaRunService.failRun(run.Id, 'Expected stage failure');
-    Test.stopTest();
     Catalog_Sync_State__c stateAfterFailure = [
       SELECT LastSuccessfulSyncAt__c
       FROM Catalog_Sync_State__c
       WHERE ResolvedTargetKey__c = :run.ResolvedTargetKey__c
     ];
     System.assertEquals(baseline, stateAfterFailure.LastSuccessfulSyncAt__c);
+    System.assertEquals(
+      CatalogDeltaRunService.STATUS_FAILED,
+      [SELECT Status__c FROM Catalog_Delta_Run__c WHERE Id = :run.Id].Status__c
+    );
+
+    CatalogDeltaCleanupBatch cleanup = new CatalogDeltaCleanupBatch(run.Id);
+    List<SObject> cleanupScope = collectScope(cleanup.start(null));
+    cleanup.execute(null, cleanupScope);
+    cleanup.finish(null);
 
     System.assertEquals(
       0,
