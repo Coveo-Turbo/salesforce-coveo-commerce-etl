@@ -110,6 +110,54 @@ private class DeltaProductCatalogExportBatchTest {
   }
 
   @IsTest
+  static void testHydrateJobConfig_prefersMatchingTestOverride() {
+    CatalogJobConfig__mdt overrideConfig = createConfig();
+    overrideConfig.ProductFilter__c = 'IsActive = TRUE';
+    DeltaProductCatalogExportBatch.testJobConfigOverride = overrideConfig;
+
+    CatalogJobConfig__mdt hydratedConfig = DeltaProductCatalogExportBatch.hydrateJobConfig(
+      createConfig()
+    );
+
+    DeltaProductCatalogExportBatch.testJobConfigOverride = null;
+
+    System.assertEquals(
+      'IsActive = TRUE',
+      hydratedConfig.ProductFilter__c,
+      'A matching test override must win over a custom metadata reload.'
+    );
+  }
+
+  @IsTest
+  static void testHydrateJobConfig_fallsBackWhenNoMetadataRecordExists() {
+    CatalogJobConfig__mdt suppliedConfig = createConfig();
+
+    CatalogJobConfig__mdt hydratedConfig = DeltaProductCatalogExportBatch.hydrateJobConfig(
+      suppliedConfig
+    );
+
+    System.assertEquals(
+      suppliedConfig.DeveloperName,
+      hydratedConfig.DeveloperName,
+      'Hydration must fall back to the supplied config when no record matches.'
+    );
+    System.assertEquals(
+      'source-456',
+      hydratedConfig.SourceId__c,
+      'Fallback must preserve the supplied field values.'
+    );
+  }
+
+  @IsTest
+  static void testHydrateJobConfig_returnsNullForNullConfig() {
+    System.assertEquals(
+      null,
+      DeltaProductCatalogExportBatch.hydrateJobConfig(null),
+      'A null config must not raise before the constructor validates it.'
+    );
+  }
+
+  @IsTest
   static void testStart_legacyConstructorDefersDiscoveryToPipeline() {
     createProduct('START-001');
     CatalogJobConfig__mdt config = createConfig();
@@ -209,6 +257,64 @@ private class DeltaProductCatalogExportBatchTest {
         FROM Catalog_Delta_Run__c
         WHERE ConfigDeveloperName__c = 'DELTA_JOB'
       ]
+    );
+  }
+
+  @IsTest
+  static void testExecute_persistsPayloadLogWhenLoggingEnabled() {
+    recordedRequests.clear();
+    Product2 product = createProduct('LOG-001');
+    Product2 scopedProduct = [
+      SELECT Id, Name, ProductCode, Description, Family, IsActive
+      FROM Product2
+      WHERE Id = :product.Id
+    ];
+
+    CatalogJobConfig__mdt config = createConfig();
+    config.EnablePayloadLogging__c = true;
+    DeltaProductCatalogExportBatch batch = new DeltaProductCatalogExportBatch(
+      config,
+      Test.getStandardPricebookId(),
+      System.now().addMinutes(-5)
+    );
+
+    Test.setMock(
+      HttpCalloutMock.class,
+      new RecordingHttpMock(
+        new Map<String, MockResponse>{
+          '/files' => new MockResponse(
+            201,
+            '201 Created',
+            '{"fileId":"delta-log-file","uploadUri":"https://upload.example.com/put","requiredHeaders":{"x-amz-meta-test":"abc"}}'
+          ),
+          '/stream/update' => new MockResponse(
+            202,
+            '202 Accepted',
+            '{"orderingId":92}'
+          ),
+          'upload.example.com/put' => new MockResponse(200, '200 OK', '')
+        }
+      )
+    );
+
+    Test.startTest();
+    batch.execute(null, new List<Product2>{ scopedProduct });
+    Test.stopTest();
+
+    List<Coveo_Payload_Log__c> payloadLogs = [
+      SELECT ScopeSize__c, OperationCount__c, IsValid__c, Payload__c
+      FROM Coveo_Payload_Log__c
+    ];
+
+    System.assertEquals(
+      1,
+      payloadLogs.size(),
+      'The delta export stage must persist a payload log when logging is enabled.'
+    );
+    System.assertEquals(1, payloadLogs[0].ScopeSize__c);
+    System.assert(
+      String.isNotBlank(payloadLogs[0].Payload__c),
+      'The logged payload must not be blank.'
     );
   }
 

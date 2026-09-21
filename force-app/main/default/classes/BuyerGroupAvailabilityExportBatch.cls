@@ -21,38 +21,9 @@ global with sharing class BuyerGroupAvailabilityExportBatch implements Database.
   private static CatalogJobConfig__mdt loadJobConfig(
     String jobConfigDeveloperName
   ) {
-    List<CatalogJobConfig__mdt> configs = [
-      SELECT
-        DeveloperName,
-        Label,
-        CoveoOrgId__c,
-        SourceId__c,
-        AvailabilitySourceId__c,
-        WebStoreId__c,
-        WebStoreIds__c,
-        PricebookIds__c,
-        Locale__c,
-        IsActive__c,
-        ProductFilter__c,
-        BuilderType__c,
-        CatalogId__c,
-        BatchSize__c,
-        EnablePayloadLogging__c,
-        EnableBuyerGroupAvailability__c,
-        BuyerGroupAvailabilityMode__c
-      FROM CatalogJobConfig__mdt
-      WHERE DeveloperName = :jobConfigDeveloperName
-      LIMIT 1
-    ];
-
-    if (configs.isEmpty()) {
-      throw new CatalogJobException(
-        'No CatalogJobConfig__mdt record found with DeveloperName: ' +
-        jobConfigDeveloperName
-      );
-    }
-
-    return configs[0];
+    return CatalogJobConfigSelector.requireByDeveloperName(
+      jobConfigDeveloperName
+    );
   }
 
   public Integer getBatchSize() {

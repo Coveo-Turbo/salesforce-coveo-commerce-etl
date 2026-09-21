@@ -91,8 +91,9 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
     }
 
     Catalog_Delta_Run__c run = CatalogDeltaRunService.loadRun(runId);
+    CatalogJobConfig__mdt resolvedConfig = hydrateJobConfig(jobConfig);
     this.runId = runId;
-    this.jobConfig = jobConfig;
+    this.jobConfig = resolvedConfig;
     this.bootstrapMode = false;
     this.stdPricebookId = String.isBlank(run.StandardPricebookId__c)
       ? null
@@ -103,9 +104,40 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
     this.runCutoff = run.CutoffTimestamp__c;
     extraFieldNames.addAll(
       CatalogProductExportSupport.parseExtraFieldNames(
-        jobConfig.AdditionalProductFields__c
+        resolvedConfig.AdditionalProductFields__c
       )
     );
+  }
+
+  /**
+   * Reloads the config through the shared selector so the export stage never
+   * depends on the SELECT list used by whichever class launched the run. A
+   * partially queried config reaching execute() previously failed the export
+   * stage with "SObject row was retrieved via SOQL without querying the
+   * requested field". Falls back to the supplied config when no matching
+   * custom metadata record exists, which keeps in-memory test configs usable.
+   */
+  @TestVisible
+  private static CatalogJobConfig__mdt hydrateJobConfig(
+    CatalogJobConfig__mdt jobConfig
+  ) {
+    if (jobConfig == null) {
+      return null;
+    }
+
+    if (
+      Test.isRunningTest() &&
+      testJobConfigOverride != null &&
+      testJobConfigOverride.DeveloperName == jobConfig.DeveloperName
+    ) {
+      return testJobConfigOverride;
+    }
+
+    CatalogJobConfig__mdt reloadedConfig = CatalogJobConfigSelector.findByDeveloperName(
+      jobConfig.DeveloperName
+    );
+
+    return reloadedConfig == null ? jobConfig : reloadedConfig;
   }
 
   private static CatalogJobConfig__mdt loadJobConfig(
@@ -119,40 +151,9 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
       return testJobConfigOverride;
     }
 
-    List<CatalogJobConfig__mdt> configs = [
-      SELECT
-        DeveloperName,
-        Label,
-        CoveoOrgId__c,
-        SourceId__c,
-        WebStoreId__c,
-        WebStoreIds__c,
-        PricebookIds__c,
-        Locale__c,
-        IsActive__c,
-        ProductFilter__c,
-        AdditionalProductFields__c,
-        BuilderType__c,
-        CatalogId__c,
-        BatchSize__c,
-        EnablePayloadLogging__c,
-        EnableBuyerGroupAvailability__c,
-        BuyerGroupAvailabilityMode__c,
-        SyncMode__c,
-        BaselineFullConfigDeveloperName__c
-      FROM CatalogJobConfig__mdt
-      WHERE DeveloperName = :jobConfigDeveloperName
-      LIMIT 1
-    ];
-
-    if (configs.isEmpty()) {
-      throw new CatalogJobException(
-        'No CatalogJobConfig__mdt record found with DeveloperName: ' +
-        jobConfigDeveloperName
-      );
-    }
-
-    return configs[0];
+    return CatalogJobConfigSelector.requireByDeveloperName(
+      jobConfigDeveloperName
+    );
   }
 
   public Integer getBatchSize() {

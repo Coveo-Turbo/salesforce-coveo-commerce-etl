@@ -699,32 +699,9 @@ public with sharing class CatalogSyncStateService {
       return configsByDeveloperName;
     }
 
-    for (CatalogJobConfig__mdt config : [
-      SELECT
-        DeveloperName,
-        Label,
-        CoveoOrgId__c,
-        SourceId__c,
-        AvailabilitySourceId__c,
-        WebStoreId__c,
-        WebStoreIds__c,
-        PricebookIds__c,
-        Locale__c,
-        IsActive__c,
-        ProductFilter__c,
-        AdditionalProductFields__c,
-        BuilderType__c,
-        CatalogId__c,
-        BatchSize__c,
-        EnableBuyerGroupAvailability__c,
-        BuyerGroupAvailabilityMode__c,
-        SyncMode__c,
-        BaselineFullConfigDeveloperName__c
-      FROM CatalogJobConfig__mdt
-      WHERE DeveloperName IN :developerNames
-    ]) {
-      configsByDeveloperName.put(config.DeveloperName, config);
-    }
+    configsByDeveloperName.putAll(
+      CatalogJobConfigSelector.getByDeveloperNames(developerNames)
+    );
 
     return configsByDeveloperName;
   }
