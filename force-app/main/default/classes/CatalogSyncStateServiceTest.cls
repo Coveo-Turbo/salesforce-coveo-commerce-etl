@@ -5,6 +5,10 @@ private class CatalogSyncStateServiceTest {
     CatalogSyncStateService.clearTestOverrides();
   }
 
+  private static String formatTestDatetime(Datetime value) {
+    return value == null ? null : value.formatGmt('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
+  }
+
   private static CatalogJobConfig__mdt createConfig(
     String developerName,
     String syncMode,
@@ -287,9 +291,11 @@ private class CatalogSyncStateServiceTest {
       startedAt
     );
 
+    Datetime completionWindowStart = System.now();
     Test.startTest();
     CatalogSyncStateService.recordSuccessfulFullSync(config, cutoff);
     Test.stopTest();
+    Datetime completionWindowEnd = System.now();
 
     Catalog_Sync_State__c stateRecord = [
       SELECT RecentProductRunsJson__c
@@ -302,8 +308,122 @@ private class CatalogSyncStateServiceTest {
     ];
 
     System.assert(stateRecord.RecentProductRunsJson__c.contains('Completed'));
+    List<Object> recentRuns = (List<Object>) JSON.deserializeUntyped(
+      stateRecord.RecentProductRunsJson__c
+    );
+    Map<String, Object> recentRun = (Map<String, Object>) recentRuns[0];
+    Datetime completedAt = (Datetime) JSON.deserialize(
+      JSON.serialize(recentRun.get('completedAt')),
+      Datetime.class
+    );
     System.assert(
-      stateRecord.RecentProductRunsJson__c.contains('2026-04-02T09:45:00Z')
+      completedAt >= completionWindowStart.addSeconds(-1) &&
+      completedAt <= completionWindowEnd.addSeconds(1),
+      'Recent-run completion must use the actual completion time, not the watermark cutoff.'
+    );
+  }
+
+  @IsTest
+  static void testGetSnapshotsByDeveloperName_preservesHistoryAcrossTargetChanges() {
+    CatalogJobConfig__mdt oldConfig = createConfig(
+      'FULL_CONFIG',
+      CatalogSyncMode.FULL,
+      null
+    );
+    oldConfig.AdditionalProductFields__c = 'Description';
+    CatalogJobConfig__mdt currentConfig = createConfig(
+      'FULL_CONFIG',
+      CatalogSyncMode.FULL,
+      null
+    );
+    currentConfig.AdditionalProductFields__c = 'Description,Family';
+
+    Datetime oldStartedAt = Datetime.newInstanceGmt(2026, 4, 1, 9, 0, 0);
+    Datetime oldCompletedAt = oldStartedAt.addHours(5);
+    Catalog_Sync_State__c oldState = createState(
+      oldConfig,
+      oldStartedAt,
+      oldStartedAt,
+      CatalogSyncMode.FULL,
+      oldConfig.DeveloperName
+    );
+    oldState.RecentProductRunsJson__c = JSON.serialize(
+      new List<Object>{
+        new Map<String, Object>{
+          'jobId' => '707000000000001AAA',
+          'runMode' => CatalogSyncMode.FULL,
+          'configDeveloperName' => oldConfig.DeveloperName,
+          'status' => 'Completed',
+          'startedAt' => formatTestDatetime(oldStartedAt),
+          'completedAt' => formatTestDatetime(oldCompletedAt)
+        }
+      }
+    );
+
+    Datetime currentStartedAt = Datetime.newInstanceGmt(2026, 4, 2, 9, 0, 0);
+    Catalog_Sync_State__c currentState = createState(
+      currentConfig,
+      null,
+      null,
+      null,
+      null,
+      '707000000000002AAA',
+      CatalogSyncMode.FULL,
+      currentConfig.DeveloperName,
+      currentStartedAt
+    );
+    currentState.BaselineFullConfigDeveloperName__c = currentConfig.DeveloperName;
+    currentState.RecentProductRunsJson__c = JSON.serialize(
+      new List<Object>{
+        new Map<String, Object>{
+          'jobId' => '707000000000002AAA',
+          'runMode' => CatalogSyncMode.FULL,
+          'configDeveloperName' => currentConfig.DeveloperName,
+          'status' => 'Processing',
+          'startedAt' => formatTestDatetime(currentStartedAt)
+        }
+      }
+    );
+
+    CatalogSyncStateService.testStatesByTargetKey = new Map<String, Catalog_Sync_State__c>{
+      oldState.ResolvedTargetKey__c => oldState,
+      currentState.ResolvedTargetKey__c => currentState
+    };
+    CatalogSyncStateService.testAsyncJobStatusesById = new Map<String, String>{
+      '707000000000001AAA' => 'Completed',
+      '707000000000002AAA' => 'Processing'
+    };
+    CatalogSyncStateService.testAsyncJobCreatedDatesById = new Map<String, Datetime>{
+      '707000000000001AAA' => oldStartedAt,
+      '707000000000002AAA' => currentStartedAt
+    };
+    CatalogSyncStateService.testAsyncJobCompletedDatesById = new Map<String, Datetime>{
+      '707000000000001AAA' => oldCompletedAt
+    };
+
+    CatalogSyncStateService.Snapshot snapshot = CatalogSyncStateService.getSnapshotsByDeveloperName(
+        new List<CatalogJobConfig__mdt>{ currentConfig }
+      )
+      .get(currentConfig.DeveloperName);
+    Map<String, CatalogSyncStateService.RecentProductRun> runsByJobId = new Map<String, CatalogSyncStateService.RecentProductRun>();
+    for (CatalogSyncStateService.RecentProductRun recentRun : snapshot.recentProductRuns) {
+      runsByJobId.put(recentRun.jobId, recentRun);
+    }
+
+    System.assertEquals(
+      true,
+      snapshot.currentProductIsActive,
+      'Readiness and active status must still come from the current target.'
+    );
+    System.assertEquals(
+      2,
+      runsByJobId.size(),
+      'Live Runs history must include the same config from both target states.'
+    );
+    System.assertEquals(
+      formatTestDatetime(oldCompletedAt),
+      runsByJobId.get('707000000000001AAA').completedAt,
+      'The previous target full run must remain visible with its actual completion time.'
     );
   }
 

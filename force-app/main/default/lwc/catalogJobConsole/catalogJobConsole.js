@@ -1028,7 +1028,8 @@ export default class CatalogJobConsole extends NavigationMixin(
         `${launch.label}: ${this.describeLaunchMode(
           launch.mode,
           launch.jobs
-        )} started`
+        )} started`,
+        launch.launchedAt
       );
     });
 
@@ -1192,7 +1193,8 @@ export default class CatalogJobConsole extends NavigationMixin(
       this.addActivity(
         `${runSession.label}: tracking active Salesforce product job${
           trackedJobId ? ` ${trackedJobId}` : ""
-        }`
+        }`,
+        runSession.launchedAt
       );
     });
 
@@ -1342,7 +1344,10 @@ export default class CatalogJobConsole extends NavigationMixin(
 
         if (job.status !== snapshot.status) {
           this.addActivity(
-            `${runSession.label}: ${this.describeStageChange(job.channel, snapshot.status)}`
+            `${runSession.label}: ${this.describeStageChange(job.channel, snapshot.status)}`,
+            snapshot.isTerminal && snapshot.completedDate
+              ? snapshot.completedDate
+              : snapshot.createdDate
           );
         }
 
@@ -1452,12 +1457,13 @@ export default class CatalogJobConsole extends NavigationMixin(
     }, []);
   }
 
-  addActivity(message) {
+  addActivity(message, eventTimestamp = null) {
+    const timestamp = eventTimestamp || new Date().toISOString();
     const entry = {
       key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       message,
-      timestamp: new Date().toISOString(),
-      timestampLabel: this.formatTimestamp(new Date().toISOString())
+      timestamp,
+      timestampLabel: this.formatTimestamp(timestamp)
     };
 
     this.activityFeed = [entry, ...this.activityFeed].slice(
