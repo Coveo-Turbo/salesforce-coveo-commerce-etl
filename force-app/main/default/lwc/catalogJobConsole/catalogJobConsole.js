@@ -1108,6 +1108,53 @@ export default class CatalogJobConsole extends NavigationMixin(
       return;
     }
 
+    const authoritativeDeltaRunsById = new Map();
+    const authoritativeDeltaRunsByInitialJobId = new Map();
+    trackedRunsByKey.forEach(({ config, recentRun }) => {
+      if (
+        recentRun?.runId &&
+        recentRun?.hasPipelineSnapshot === true
+      ) {
+        const trackedRun = { config, recentRun };
+        authoritativeDeltaRunsById.set(recentRun.runId, trackedRun);
+        if (recentRun.jobId) {
+          authoritativeDeltaRunsByInitialJobId.set(
+            recentRun.jobId,
+            trackedRun
+          );
+        }
+      }
+    });
+
+    let mergedAuthoritativeDeltaRun = false;
+    if (authoritativeDeltaRunsById.size) {
+      this.runSessions = this.runSessions.map((runSession) => {
+        const nextJobs = (runSession.jobs || []).map((job) => {
+          const trackedRun = job.runId
+            ? authoritativeDeltaRunsById.get(job.runId)
+            : authoritativeDeltaRunsByInitialJobId.get(job.jobId);
+          if (!trackedRun) {
+            return job;
+          }
+
+          mergedAuthoritativeDeltaRun = true;
+          const authoritativeJob = this.createTrackedProductRunSession(
+            trackedRun.config,
+            trackedRun.recentRun
+          ).jobs[0];
+          return {
+            ...job,
+            ...authoritativeJob
+          };
+        });
+
+        return this.decorateRunSession({
+          ...runSession,
+          jobs: nextJobs
+        });
+      });
+    }
+
     const knownTrackingKeys = new Set();
     this.runSessions.forEach((runSession) => {
       (runSession.jobs || []).forEach((job) => {
@@ -1130,6 +1177,9 @@ export default class CatalogJobConsole extends NavigationMixin(
     });
 
     if (!nextRuns.length) {
+      if (mergedAuthoritativeDeltaRun) {
+        this.persistRunState();
+      }
       return;
     }
 
@@ -1172,10 +1222,15 @@ export default class CatalogJobConsole extends NavigationMixin(
             ? config.currentProductRunId || ""
             : "")
         : "";
-    const status =
-      recentRun?.status || config.currentProductJobStatus || "Queued";
+    const hasPipelineSnapshot =
+      !!runId && recentRun?.hasPipelineSnapshot === true;
+    const status = hasPipelineSnapshot
+      ? recentRun.status
+      : recentRun?.status || config.currentProductJobStatus || "Queued";
     const completedAt = recentRun?.completedAt || null;
-    const isTerminal = runId ? false : recentRun?.isTerminal === true;
+    const isTerminal = runId
+      ? hasPipelineSnapshot && recentRun?.isTerminal === true
+      : recentRun?.isTerminal === true;
 
     return {
       runKey: runId ? `tracked-run-${runId}` : `tracked-${jobId}`,
@@ -1191,23 +1246,36 @@ export default class CatalogJobConsole extends NavigationMixin(
       launchedAt,
       jobs: [
         {
-          jobId,
+          jobId: recentRun?.currentJobId || jobId,
           runId,
           trackingType: runId ? "DeltaPipeline" : "AsyncApexJob",
           channel: "products",
           label:
-            runMode === SYNC_MODE_DELTA
+            hasPipelineSnapshot && recentRun?.stageLabel
+              ? recentRun.stageLabel
+              : runMode === SYNC_MODE_DELTA
               ? "Delta Product Sync"
               : "Full Product Sync",
-          impactedProductCount: undefined,
-          changedRootProductCount: undefined,
-          exportProductCount: undefined,
-          scopeSummary: "",
+          stageLabel: recentRun?.stageLabel || "",
+          impactedProductCount: hasPipelineSnapshot
+            ? recentRun.impactedProductCount
+            : undefined,
+          changedRootProductCount: hasPipelineSnapshot
+            ? recentRun.changedRootProductCount
+            : undefined,
+          exportProductCount: hasPipelineSnapshot
+            ? recentRun.exportProductCount
+            : undefined,
+          scopeSummary: hasPipelineSnapshot
+            ? recentRun.scopeSummary || ""
+            : "",
           status,
           jobItemsProcessed: 0,
           totalJobItems: 0,
           numberOfErrors: 0,
-          extendedStatus: "",
+          extendedStatus: hasPipelineSnapshot
+            ? recentRun.extendedStatus || ""
+            : "",
           isTerminal,
           createdDate: launchedAt,
           completedDate: completedAt

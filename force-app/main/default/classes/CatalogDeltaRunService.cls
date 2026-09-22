@@ -574,6 +574,10 @@ public with sharing class CatalogDeltaRunService {
     return describeStage(run.Stage__c);
   }
 
+  public static String describeScopeSummary(Catalog_Delta_Run__c run) {
+    return run == null ? null : buildScopeSummary(run);
+  }
+
   public static String describeStage(String stage) {
     if (stage == CatalogDeltaStageBatch.DISCOVER_PRODUCTS) {
       return 'Discovering product changes';

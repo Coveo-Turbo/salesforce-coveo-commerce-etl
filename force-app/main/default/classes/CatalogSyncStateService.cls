@@ -49,6 +49,22 @@ public with sharing class CatalogSyncStateService {
     public String completedAt { get; set; }
     @AuraEnabled
     public Boolean isTerminal { get; set; }
+    @AuraEnabled
+    public Boolean hasPipelineSnapshot { get; set; }
+    @AuraEnabled
+    public String currentJobId { get; set; }
+    @AuraEnabled
+    public String stageLabel { get; set; }
+    @AuraEnabled
+    public String scopeSummary { get; set; }
+    @AuraEnabled
+    public String extendedStatus { get; set; }
+    @AuraEnabled
+    public Integer impactedProductCount { get; set; }
+    @AuraEnabled
+    public Integer changedRootProductCount { get; set; }
+    @AuraEnabled
+    public Integer exportProductCount { get; set; }
   }
 
   public class DeltaReadiness {
@@ -183,6 +199,7 @@ public with sharing class CatalogSyncStateService {
       stateKeys
     );
     Set<String> trackedProductJobIds = new Set<String>();
+    Set<Id> trackedDeltaRunIds = new Set<Id>();
     for (Catalog_Sync_State__c stateRecord : statesByTargetKey.values()) {
       if (String.isNotBlank(stateRecord.CurrentProductJobId__c)) {
         trackedProductJobIds.add(stateRecord.CurrentProductJobId__c);
@@ -196,10 +213,21 @@ public with sharing class CatalogSyncStateService {
         if (String.isNotBlank(storedRun.jobId)) {
           trackedProductJobIds.add(storedRun.jobId);
         }
+        if (String.isNotBlank(storedRun.runId)) {
+          try {
+            trackedDeltaRunIds.add((Id) storedRun.runId);
+          } catch (Exception e) {
+            // Ignore stale or malformed historical IDs. The existing Async
+            // Apex history remains available as a fallback.
+          }
+        }
       }
     }
     Map<String, TrackedAsyncJob> trackedJobsById = loadTrackedJobsById(
       trackedProductJobIds
+    );
+    Map<Id, Catalog_Delta_Run__c> trackedDeltaRunsById = loadDeltaRunsById(
+      trackedDeltaRunIds
     );
 
     for (CatalogJobConfig__mdt config : configs) {
@@ -227,7 +255,8 @@ public with sharing class CatalogSyncStateService {
         trackedJobsById.get(
           stateRecord == null ? null : stateRecord.CurrentProductJobId__c
         ),
-        trackedJobsById
+        trackedJobsById,
+        trackedDeltaRunsById
       );
       snapshotsByDeveloperName.put(config.DeveloperName, snapshot);
     }
@@ -550,7 +579,8 @@ public with sharing class CatalogSyncStateService {
     String baselineTargetKey,
     Catalog_Sync_State__c stateRecord,
     TrackedAsyncJob trackedJob,
-    Map<String, TrackedAsyncJob> trackedJobsById
+    Map<String, TrackedAsyncJob> trackedJobsById,
+    Map<Id, Catalog_Delta_Run__c> trackedDeltaRunsById
   ) {
     Snapshot snapshot = new Snapshot();
     snapshot.resolvedTargetKey = targetKey;
@@ -592,7 +622,8 @@ public with sharing class CatalogSyncStateService {
     }
     snapshot.recentProductRuns = buildRecentProductRuns(
       stateRecord,
-      trackedJobsById
+      trackedJobsById,
+      trackedDeltaRunsById
     );
 
     if (!CatalogSyncMode.isDelta(config)) {
@@ -877,6 +908,36 @@ public with sharing class CatalogSyncStateService {
     return jobsById;
   }
 
+  private static Map<Id, Catalog_Delta_Run__c> loadDeltaRunsById(
+    Set<Id> runIds
+  ) {
+    Map<Id, Catalog_Delta_Run__c> runsById = new Map<Id, Catalog_Delta_Run__c>();
+
+    if (runIds == null || runIds.isEmpty()) {
+      return runsById;
+    }
+
+    for (Catalog_Delta_Run__c run : [
+      SELECT
+        Id,
+        Status__c,
+        Stage__c,
+        CurrentAsyncJobId__c,
+        ErrorMessage__c,
+        ImpactedProductCount__c,
+        RootProductCount__c,
+        ExportProductCount__c,
+        CreatedDate,
+        CompletedAt__c
+      FROM Catalog_Delta_Run__c
+      WHERE Id IN :runIds
+    ]) {
+      runsById.put(run.Id, run);
+    }
+
+    return runsById;
+  }
+
   private static Boolean isTerminalAsyncJobStatus(String status) {
     return status == 'Completed' || status == 'Aborted' || status == 'Failed';
   }
@@ -945,7 +1006,8 @@ public with sharing class CatalogSyncStateService {
 
   private static List<RecentProductRun> buildRecentProductRuns(
     Catalog_Sync_State__c stateRecord,
-    Map<String, TrackedAsyncJob> trackedJobsById
+    Map<String, TrackedAsyncJob> trackedJobsById,
+    Map<Id, Catalog_Delta_Run__c> trackedDeltaRunsById
   ) {
     List<RecentProductRun> recentProductRuns = new List<RecentProductRun>();
 
@@ -982,10 +1044,73 @@ public with sharing class CatalogSyncStateService {
       recentRun.isTerminal = trackedJob != null
         ? trackedJob.isTerminal
         : isTerminalAsyncJobStatus(recentRun.status);
+
+      Catalog_Delta_Run__c deltaRun;
+      if (String.isNotBlank(storedRun.runId)) {
+        try {
+          deltaRun = trackedDeltaRunsById == null
+            ? null
+            : trackedDeltaRunsById.get((Id) storedRun.runId);
+        } catch (Exception e) {
+          deltaRun = null;
+        }
+      }
+
+      if (deltaRun != null) {
+        recentRun.hasPipelineSnapshot = true;
+        recentRun.currentJobId = deltaRun.CurrentAsyncJobId__c;
+        recentRun.status = resolveDeltaRunDisplayStatus(deltaRun.Status__c);
+        recentRun.startedAt = formatDatetime(deltaRun.CreatedDate);
+        recentRun.completedAt = formatDatetime(deltaRun.CompletedAt__c);
+        recentRun.isTerminal = CatalogDeltaRunService.isTerminalStatus(
+          deltaRun.Status__c
+        );
+        recentRun.stageLabel = CatalogDeltaRunService.describeStage(
+          deltaRun.Stage__c
+        );
+        recentRun.scopeSummary = CatalogDeltaRunService.describeScopeSummary(
+          deltaRun
+        );
+        recentRun.extendedStatus = deltaRun.ErrorMessage__c;
+        recentRun.impactedProductCount = decimalToInteger(
+          deltaRun.ImpactedProductCount__c
+        );
+        recentRun.changedRootProductCount = decimalToInteger(
+          deltaRun.RootProductCount__c
+        );
+        recentRun.exportProductCount = decimalToInteger(
+          deltaRun.ExportProductCount__c
+        );
+      } else {
+        recentRun.hasPipelineSnapshot = false;
+      }
       recentProductRuns.add(recentRun);
     }
 
     return recentProductRuns;
+  }
+
+  private static String resolveDeltaRunDisplayStatus(String status) {
+    if (status == CatalogDeltaRunService.STATUS_SUCCEEDED) {
+      return 'Completed';
+    }
+    if (status == CatalogDeltaRunService.STATUS_FAILED) {
+      return 'Failed';
+    }
+    if (status == CatalogDeltaRunService.STATUS_CANCELED) {
+      return 'Aborted';
+    }
+    if (
+      status == CatalogDeltaRunService.STATUS_RUNNING ||
+      status == CatalogDeltaRunService.STATUS_CANCEL_REQUESTED
+    ) {
+      return 'Processing';
+    }
+    return 'Queued';
+  }
+
+  private static Integer decimalToInteger(Decimal value) {
+    return value == null ? 0 : value.intValue();
   }
 
   private static String defaultRecentProductRunStatus(

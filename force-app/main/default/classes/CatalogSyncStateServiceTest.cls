@@ -628,6 +628,128 @@ private class CatalogSyncStateServiceTest {
   }
 
   @IsTest
+  static void testGetSnapshotsByDeveloperName_enrichesRecentDeltaRunsFromPipeline() {
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_CONFIG',
+      CatalogSyncMode.FULL,
+      null
+    );
+    CatalogJobConfig__mdt deltaConfig = createConfig(
+      'DELTA_CONFIG',
+      CatalogSyncMode.DELTA,
+      'FULL_CONFIG'
+    );
+    Datetime baseline = Datetime.newInstanceGmt(2026, 4, 1, 10, 0, 0);
+    Catalog_Sync_State__c stateRecord = createState(
+      deltaConfig,
+      baseline,
+      baseline,
+      CatalogSyncMode.FULL,
+      'FULL_CONFIG'
+    );
+
+    Catalog_Delta_Run__c exportedRun = new Catalog_Delta_Run__c(
+      ResolvedTargetKey__c = CatalogSyncStateService.buildResolvedTargetKey(
+        deltaConfig
+      ),
+      ConfigDeveloperName__c = deltaConfig.DeveloperName,
+      BaselineTimestamp__c = baseline,
+      CutoffTimestamp__c = baseline.addHours(1),
+      Status__c = CatalogDeltaRunService.STATUS_SUCCEEDED,
+      Stage__c = CatalogDeltaStageBatch.EXPORT_PRODUCTS,
+      CurrentAsyncJobId__c = '707000000000003AAA',
+      CleanupStatus__c = CatalogDeltaRunService.CLEANUP_COMPLETED,
+      ImpactedProductCount__c = 1,
+      RootProductCount__c = 1,
+      ExportProductCount__c = 1,
+      CompletedAt__c = baseline.addHours(1)
+    );
+    Catalog_Delta_Run__c noChangeRun = new Catalog_Delta_Run__c(
+      ResolvedTargetKey__c = exportedRun.ResolvedTargetKey__c,
+      ConfigDeveloperName__c = deltaConfig.DeveloperName,
+      BaselineTimestamp__c = baseline.addHours(1),
+      CutoffTimestamp__c = baseline.addHours(2),
+      Status__c = CatalogDeltaRunService.STATUS_SUCCEEDED,
+      Stage__c = CatalogDeltaStageBatch.EXPORT_PRODUCTS,
+      CurrentAsyncJobId__c = '707000000000004AAA',
+      CleanupStatus__c = CatalogDeltaRunService.CLEANUP_COMPLETED,
+      ImpactedProductCount__c = 0,
+      RootProductCount__c = 0,
+      ExportProductCount__c = 0,
+      CompletedAt__c = baseline.addHours(2)
+    );
+    insert new List<Catalog_Delta_Run__c>{ exportedRun, noChangeRun };
+
+    stateRecord.RecentProductRunsJson__c = JSON.serialize(
+      new List<Object>{
+        new Map<String, Object>{
+          'jobId' => '707000000000001AAA',
+          'runId' => exportedRun.Id,
+          'runMode' => CatalogSyncMode.DELTA,
+          'configDeveloperName' => deltaConfig.DeveloperName,
+          'status' => 'Completed'
+        },
+        new Map<String, Object>{
+          'jobId' => '707000000000002AAA',
+          'runId' => noChangeRun.Id,
+          'runMode' => CatalogSyncMode.DELTA,
+          'configDeveloperName' => deltaConfig.DeveloperName,
+          'status' => 'Completed'
+        }
+      }
+    );
+
+    CatalogSyncStateService.testConfigsByDeveloperName = new Map<String, CatalogJobConfig__mdt>{
+      fullConfig.DeveloperName => fullConfig
+    };
+    CatalogSyncStateService.testStatesByTargetKey = new Map<String, Catalog_Sync_State__c>{
+      stateRecord.ResolvedTargetKey__c => stateRecord
+    };
+
+    CatalogSyncStateService.Snapshot snapshot = CatalogSyncStateService.getSnapshotsByDeveloperName(
+        new List<CatalogJobConfig__mdt>{ deltaConfig }
+      )
+      .get(deltaConfig.DeveloperName);
+    Map<String, CatalogSyncStateService.RecentProductRun> recentRunsById = new Map<String, CatalogSyncStateService.RecentProductRun>();
+    for (CatalogSyncStateService.RecentProductRun recentRun : snapshot.recentProductRuns) {
+      recentRunsById.put(recentRun.runId, recentRun);
+    }
+
+    CatalogSyncStateService.RecentProductRun exportedSnapshot = recentRunsById.get(
+      String.valueOf(exportedRun.Id)
+    );
+    System.assertEquals(true, exportedSnapshot.hasPipelineSnapshot);
+    System.assertEquals(true, exportedSnapshot.isTerminal);
+    System.assertEquals('Completed', exportedSnapshot.status);
+    System.assertEquals(
+      'Exporting changed products',
+      exportedSnapshot.stageLabel
+    );
+    System.assertEquals(
+      '1 impacted product • 1 changed root • 1 product exported',
+      exportedSnapshot.scopeSummary
+    );
+    System.assertEquals(1, exportedSnapshot.impactedProductCount);
+    System.assertEquals(1, exportedSnapshot.changedRootProductCount);
+    System.assertEquals(1, exportedSnapshot.exportProductCount);
+    System.assertEquals(
+      '707000000000003AAA',
+      exportedSnapshot.currentJobId
+    );
+
+    CatalogSyncStateService.RecentProductRun noChangeSnapshot = recentRunsById.get(
+      String.valueOf(noChangeRun.Id)
+    );
+    System.assertEquals(true, noChangeSnapshot.hasPipelineSnapshot);
+    System.assertEquals(
+      'No changed products since last sync',
+      noChangeSnapshot.scopeSummary
+    );
+    System.assertEquals(0, noChangeSnapshot.impactedProductCount);
+    System.assertEquals(0, noChangeSnapshot.exportProductCount);
+  }
+
+  @IsTest
   static void testGetSnapshotsByDeveloperName_blocksDeltaWhileFullRunIsActive() {
     CatalogJobConfig__mdt fullConfig = createConfig(
       'FULL_CONFIG',
