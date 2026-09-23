@@ -1114,7 +1114,8 @@ export default class CatalogJobConsole extends NavigationMixin(
     trackedRunsByKey.forEach(({ config, recentRun }) => {
       if (
         recentRun?.runId &&
-        recentRun?.hasPipelineSnapshot === true
+        recentRun?.hasPipelineSnapshot === true &&
+        recentRun?.isTerminal === true
       ) {
         const trackedRun = { config, recentRun };
         authoritativeDeltaRunsById.set(recentRun.runId, trackedRun);
@@ -1344,7 +1345,11 @@ export default class CatalogJobConsole extends NavigationMixin(
 
         if (job.status !== snapshot.status) {
           this.addActivity(
-            `${runSession.label}: ${this.describeStageChange(job.channel, snapshot.status)}`,
+            `${runSession.label}: ${this.describeStageChange(
+              job.channel,
+              snapshot.status,
+              snapshot.stageLabel
+            )}`,
             snapshot.isTerminal && snapshot.completedDate
               ? snapshot.completedDate
               : snapshot.createdDate
@@ -1459,6 +1464,13 @@ export default class CatalogJobConsole extends NavigationMixin(
 
   addActivity(message, eventTimestamp = null) {
     const timestamp = eventTimestamp || new Date().toISOString();
+    if (
+      this.activityFeed.some(
+        (entry) => entry.message === message && entry.timestamp === timestamp
+      )
+    ) {
+      return;
+    }
     const entry = {
       key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       message,
@@ -1517,7 +1529,9 @@ export default class CatalogJobConsole extends NavigationMixin(
 
       if (storedActivity) {
         const parsedActivity = JSON.parse(storedActivity);
-        this.activityFeed = Array.isArray(parsedActivity) ? parsedActivity : [];
+        this.activityFeed = Array.isArray(parsedActivity)
+          ? this.dedupeActivityEntries(parsedActivity)
+          : [];
       }
 
       if (storedSelectedConfig) {
@@ -2049,11 +2063,11 @@ export default class CatalogJobConsole extends NavigationMixin(
     }
   }
 
-  describeStageChange(channel, status) {
-    let subject = "Syncing products";
-    if (channel === "availability") {
+  describeStageChange(channel, status, stageLabel = null) {
+    let subject = stageLabel || "Syncing products";
+    if (!stageLabel && channel === "availability") {
       subject = "Syncing availability";
-    } else if (channel === "access") {
+    } else if (!stageLabel && channel === "access") {
       subject = "Syncing embedded access";
     }
 
@@ -2069,6 +2083,18 @@ export default class CatalogJobConsole extends NavigationMixin(
       default:
         return `${subject} queued`;
     }
+  }
+
+  dedupeActivityEntries(entries) {
+    const includedEntries = new Set();
+    return entries.filter((entry) => {
+      const dedupeKey = `${entry?.timestamp || ""}|${entry?.message || ""}`;
+      if (includedEntries.has(dedupeKey)) {
+        return false;
+      }
+      includedEntries.add(dedupeKey);
+      return true;
+    });
   }
 
   describeStageStatusBadge(status) {

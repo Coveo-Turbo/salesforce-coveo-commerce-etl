@@ -550,7 +550,9 @@ public with sharing class CatalogDeltaRunService {
       ? run.ErrorMessage__c
       : job == null ? null : job.ExtendedStatus;
     snapshot.scopeSummary = buildScopeSummary(run);
-    snapshot.createdDate = formatDatetime(run.CreatedDate);
+    snapshot.createdDate = formatDatetime(
+      job == null || job.CreatedDate == null ? run.CreatedDate : job.CreatedDate
+    );
     snapshot.completedDate = formatDatetime(run.CompletedAt__c);
     return snapshot;
   }

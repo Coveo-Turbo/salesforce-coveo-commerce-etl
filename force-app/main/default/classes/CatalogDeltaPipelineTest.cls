@@ -427,6 +427,11 @@ private class CatalogDeltaPipelineTest {
     List<CatalogDeltaRunService.Snapshot> transitionSnapshots = CatalogDeltaRunService.getSnapshots(
       new List<String>{ String.valueOf(run.Id) }
     );
+    Datetime childCreatedAt = [
+      SELECT CreatedDate
+      FROM AsyncApexJob
+      WHERE Id = :completedChildJobId
+    ].CreatedDate;
 
     Catalog_Delta_Run__c runAfterOverlap = CatalogDeltaRunService.loadRun(
       run.Id
@@ -434,6 +439,11 @@ private class CatalogDeltaPipelineTest {
     System.assertEquals(true, overlapRejected);
     System.assertEquals('Processing', transitionSnapshots[0].status);
     System.assertEquals(false, transitionSnapshots[0].isTerminal);
+    System.assertEquals(
+      childCreatedAt.formatGmt('yyyy-MM-dd\'T\'HH:mm:ss\'Z\''),
+      transitionSnapshots[0].createdDate,
+      'Activity timestamps must come from the current stage job.'
+    );
     System.assertEquals(
       CatalogDeltaRunService.STATUS_RUNNING,
       runAfterOverlap.Status__c,
