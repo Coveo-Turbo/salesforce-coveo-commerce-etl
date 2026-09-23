@@ -342,21 +342,31 @@ private class CatalogDeltaPipelineTest {
         baseline,
         System.now().addMinutes(2)
       );
-    } catch (CatalogJobConfigException e) {
+    } catch (CatalogJobOverlapException e) {
       overlapRejected = e.getMessage().contains('already running');
     }
     Boolean fullOverlapRejected = false;
     try {
       CatalogDeltaRunService.assertNoActiveDeltaRun(fullConfig);
-    } catch (CatalogJobConfigException e) {
+    } catch (CatalogJobOverlapException e) {
       fullOverlapRejected = e.getMessage().contains('already running');
     }
+    CatalogDeltaRunService.LaunchResult scheduledOverlap = CatalogDeltaRunService.launchOrSkipIfActive(
+      deltaConfig,
+      baseline,
+      System.now().addMinutes(3)
+    );
     Test.stopTest();
 
     System.assertNotEquals(null, launch.runId);
     System.assertNotEquals(null, launch.jobId);
     System.assertEquals(true, overlapRejected);
     System.assertEquals(true, fullOverlapRejected);
+    System.assertEquals(
+      null,
+      scheduledOverlap,
+      'Scheduled launch helpers must skip an active target without throwing.'
+    );
 
     Catalog_Sync_State__c stateRecord = [
       SELECT CurrentProductRun__c, CurrentProductRunMode__c
@@ -367,6 +377,70 @@ private class CatalogDeltaPipelineTest {
     ];
     System.assertEquals(launch.runId, stateRecord.CurrentProductRun__c);
     System.assertEquals(CatalogSyncMode.DELTA, stateRecord.CurrentProductRunMode__c);
+  }
+
+  @IsTest
+  static void testLaunchDoesNotFailActiveRunWhenObservedChildCompleted() {
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_63',
+      CatalogSyncMode.FULL
+    );
+    CatalogJobConfig__mdt deltaConfig = createConfig(
+      'DELTA_TRANSITION_63',
+      CatalogSyncMode.DELTA
+    );
+    Datetime baseline = System.now().addMinutes(-10);
+    CatalogSyncStateService.recordSuccessfulFullSync(fullConfig, baseline);
+    Catalog_Delta_Run__c run = createRun(
+      deltaConfig,
+      CatalogDeltaStageBatch.DISCOVER_PRICES
+    );
+
+    Test.startTest();
+    Id completedChildJobId = System.enqueueJob(new NoOpQueueable());
+    Test.stopTest();
+
+    run.CurrentAsyncJobId__c = String.valueOf(completedChildJobId);
+    run.LastHeartbeatAt__c = System.now();
+    update run;
+    Catalog_Sync_State__c stateRecord = [
+      SELECT Id
+      FROM Catalog_Sync_State__c
+      WHERE ResolvedTargetKey__c = :run.ResolvedTargetKey__c
+    ];
+    stateRecord.CurrentProductRun__c = run.Id;
+    stateRecord.CurrentProductJobId__c = String.valueOf(completedChildJobId);
+    stateRecord.CurrentProductRunMode__c = CatalogSyncMode.DELTA;
+    update stateRecord;
+
+    Boolean overlapRejected = false;
+    try {
+      CatalogDeltaRunService.launch(
+        deltaConfig,
+        baseline,
+        System.now().addMinutes(1)
+      );
+    } catch (CatalogJobOverlapException e) {
+      overlapRejected = e.getMessage().contains('already running');
+    }
+
+    List<CatalogDeltaRunService.Snapshot> transitionSnapshots = CatalogDeltaRunService.getSnapshots(
+      new List<String>{ String.valueOf(run.Id) }
+    );
+
+    Catalog_Delta_Run__c runAfterOverlap = CatalogDeltaRunService.loadRun(
+      run.Id
+    );
+    System.assertEquals(true, overlapRejected);
+    System.assertEquals('Processing', transitionSnapshots[0].status);
+    System.assertEquals(false, transitionSnapshots[0].isTerminal);
+    System.assertEquals(
+      CatalogDeltaRunService.STATUS_RUNNING,
+      runAfterOverlap.Status__c,
+      'A completed child can be transitioning to the next stage and must not terminalize its parent run.'
+    );
+    System.assertEquals(null, runAfterOverlap.ErrorMessage__c);
+    System.assertEquals(null, runAfterOverlap.CompletedAt__c);
   }
 
   @IsTest
@@ -485,6 +559,7 @@ private class CatalogDeltaPipelineTest {
       CatalogDeltaStageBatch.DISCOVER_PRODUCTS
     );
     run.CurrentAsyncJobId__c = UserInfo.getUserId();
+    run.LastHeartbeatAt__c = System.now().addMinutes(-2);
     update run;
 
     List<CatalogDeltaRunService.Snapshot> snapshots = CatalogDeltaRunService.getSnapshots(
@@ -505,6 +580,88 @@ private class CatalogDeltaPipelineTest {
         FROM Catalog_Sync_State__c
         WHERE ResolvedTargetKey__c = :run.ResolvedTargetKey__c
       ].LastSuccessfulSyncAt__c
+    );
+  }
+
+  @IsTest
+  static void testScheduledLaunchRecoversStableOrphanBeforeRetry() {
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_63',
+      CatalogSyncMode.FULL
+    );
+    CatalogJobConfig__mdt deltaConfig = createConfig(
+      'DELTA_ORPHAN_RETRY_63',
+      CatalogSyncMode.DELTA
+    );
+    Datetime baseline = System.now().addHours(-2);
+    CatalogSyncStateService.recordSuccessfulFullSync(fullConfig, baseline);
+    Catalog_Delta_Run__c orphanedRun = createRun(
+      deltaConfig,
+      CatalogDeltaStageBatch.DISCOVER_PRODUCTS
+    );
+    orphanedRun.CurrentAsyncJobId__c = UserInfo.getUserId();
+    orphanedRun.LastHeartbeatAt__c = System.now().addMinutes(-2);
+    update orphanedRun;
+
+    Catalog_Sync_State__c stateRecord = [
+      SELECT Id
+      FROM Catalog_Sync_State__c
+      WHERE ResolvedTargetKey__c = :orphanedRun.ResolvedTargetKey__c
+    ];
+    stateRecord.CurrentProductRun__c = orphanedRun.Id;
+    stateRecord.CurrentProductJobId__c = orphanedRun.CurrentAsyncJobId__c;
+    stateRecord.CurrentProductRunMode__c = CatalogSyncMode.DELTA;
+    update stateRecord;
+
+    CatalogDeltaRunService.assertNoActiveDeltaRun(fullConfig);
+
+    Test.startTest();
+    CatalogDeltaRunService.LaunchResult replacement = CatalogDeltaRunService.launchOrSkipIfActive(
+      deltaConfig,
+      baseline,
+      System.now().addMinutes(1)
+    );
+    Test.stopTest();
+
+    System.assertNotEquals(
+      null,
+      replacement,
+      'A stable orphan must be reconciled so an unattended scheduled retry can launch.'
+    );
+    System.assertEquals(
+      CatalogDeltaRunService.STATUS_FAILED,
+      [
+        SELECT Status__c
+        FROM Catalog_Delta_Run__c
+        WHERE Id = :orphanedRun.Id
+      ].Status__c
+    );
+  }
+
+  @IsTest
+  static void testCompletedJobWithoutCompletedDateNeverUsesStaleHeartbeat() {
+    CatalogJobConfig__mdt config = createConfig(
+      'DELTA_NULL_COMPLETED_DATE_63',
+      CatalogSyncMode.DELTA
+    );
+    Catalog_Delta_Run__c run = createRun(
+      config,
+      CatalogDeltaStageBatch.DISCOVER_PRODUCTS
+    );
+    run.LastHeartbeatAt__c = System.now().addMinutes(-5);
+
+    AsyncApexJob incompleteTerminalObservation = (AsyncApexJob) JSON.deserialize(
+      '{"Status":"Completed"}',
+      AsyncApexJob.class
+    );
+
+    System.assertEquals(
+      false,
+      CatalogDeltaRunService.shouldAttemptOrphanReconciliation(
+        run,
+        incompleteTerminalObservation
+      ),
+      'Completed is not stable until Salesforce supplies CompletedDate.'
     );
   }
 

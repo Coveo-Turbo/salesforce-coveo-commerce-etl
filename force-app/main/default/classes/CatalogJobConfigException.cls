@@ -1,2 +1,2 @@
-public class CatalogJobConfigException extends Exception {
+public virtual class CatalogJobConfigException extends Exception {
 }

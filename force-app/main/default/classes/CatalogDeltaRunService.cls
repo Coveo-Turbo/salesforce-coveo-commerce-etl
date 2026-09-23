@@ -12,6 +12,7 @@ public with sharing class CatalogDeltaRunService {
   public static final String CLEANUP_FAILED = 'Failed';
 
   public static final Integer DISCOVERY_BATCH_SIZE = 500;
+  private static final Integer ORPHAN_RECONCILIATION_GRACE_SECONDS = 60;
 
   @TestVisible
   private static Boolean suppressChainingInTests = true;
@@ -56,6 +57,29 @@ public with sharing class CatalogDeltaRunService {
     );
   }
 
+  public static LaunchResult launchOrSkipIfActive(
+    CatalogJobConfig__mdt config
+  ) {
+    try {
+      return launch(config);
+    } catch (CatalogJobOverlapException e) {
+      return null;
+    }
+  }
+
+  @TestVisible
+  private static LaunchResult launchOrSkipIfActive(
+    CatalogJobConfig__mdt config,
+    Datetime baselineTimestamp,
+    Datetime cutoffTimestamp
+  ) {
+    try {
+      return launch(config, baselineTimestamp, cutoffTimestamp);
+    } catch (CatalogJobOverlapException e) {
+      return null;
+    }
+  }
+
   @TestVisible
   public static LaunchResult launch(
     CatalogJobConfig__mdt config,
@@ -78,6 +102,7 @@ public with sharing class CatalogDeltaRunService {
     }
 
     String targetKey = CatalogSyncStateService.buildResolvedTargetKey(config);
+    reconcileStaleActiveRun(targetKey);
     Catalog_Sync_State__c lockedState = lockTargetState(targetKey, false);
     rejectActiveTrackedProductJob(lockedState, config.DeveloperName);
     reconcileOrRejectActiveRun(targetKey, config.DeveloperName);
@@ -141,6 +166,7 @@ public with sharing class CatalogDeltaRunService {
       return;
     }
     String targetKey = CatalogSyncStateService.buildResolvedTargetKey(config);
+    reconcileStaleActiveRun(targetKey);
     Catalog_Sync_State__c lockedState = lockTargetState(targetKey, true);
     reconcileOrRejectActiveRun(targetKey, config.DeveloperName);
     rejectActiveTrackedProductJob(lockedState, config.DeveloperName);
@@ -154,7 +180,7 @@ public with sharing class CatalogDeltaRunService {
     Catalog_Sync_State__c lockedState = lockTargetState(targetKey, true);
     List<Catalog_Delta_Run__c> activeRuns = loadActiveRuns(targetKey, false);
     if (!activeRuns.isEmpty()) {
-      throw new CatalogJobConfigException(
+      throw new CatalogJobOverlapException(
         'Delta sync "' +
           activeRuns[0].ConfigDeveloperName__c +
           '" is currently running for this export target.'
@@ -169,7 +195,7 @@ public with sharing class CatalogDeltaRunService {
       trackedJob.Status != 'Aborted' &&
       trackedJob.Id != jobId
     ) {
-      throw new CatalogJobConfigException(
+      throw new CatalogJobOverlapException(
         'Another product sync already owns this export target.'
       );
     }
@@ -416,10 +442,7 @@ public with sharing class CatalogDeltaRunService {
       }
       if (
         !isTerminalStatus(run.Status__c) &&
-        (currentJob == null ||
-        currentJob.Status == 'Completed' ||
-        currentJob.Status == 'Failed' ||
-        currentJob.Status == 'Aborted')
+        shouldAttemptOrphanReconciliation(run, currentJob)
       ) {
         runsById.put(
           run.Id,
@@ -484,6 +507,10 @@ public with sharing class CatalogDeltaRunService {
       currentJob.Status != 'Failed' &&
       currentJob.Status != 'Aborted'
     ) {
+      return currentRun;
+    }
+
+    if (!shouldAttemptOrphanReconciliation(currentRun, currentJob)) {
       return currentRun;
     }
 
@@ -738,7 +765,7 @@ public with sharing class CatalogDeltaRunService {
     ) {
       return;
     }
-    throw new CatalogJobConfigException(
+    throw new CatalogJobOverlapException(
       'A ' +
         CatalogSyncMode.resolve(stateRecord.CurrentProductRunMode__c).toLowerCase() +
         ' product sync is already running for this export target. Wait for it to finish before launching "' +
@@ -759,28 +786,81 @@ public with sharing class CatalogDeltaRunService {
     }
 
     Catalog_Delta_Run__c activeRun = activeRuns[0];
-    AsyncApexJob currentJob = loadAsyncJob(activeRun.CurrentAsyncJobId__c);
-    if (
-      currentJob == null ||
-      currentJob.Status == 'Completed' ||
-      currentJob.Status == 'Failed' ||
-      currentJob.Status == 'Aborted'
-    ) {
-      markFailed(
-        activeRun,
-        'The previous delta pipeline stopped before reaching a terminal run state.'
-      );
-      tryEnqueueCleanup(activeRun.Id);
-      return;
-    }
 
-    throw new CatalogJobConfigException(
+    // A completed child job does not mean the persisted pipeline is orphaned:
+    // stage finish can enqueue the next child before it updates the run's
+    // CurrentAsyncJobId__c. This launch path already owns the target-state row
+    // lock, while stage completion locks run then state. Never update or lock
+    // the active run here, because doing so both misclassifies that transition
+    // window and creates a lock-order inversion. Snapshot reconciliation owns
+    // orphan detection after reloading the run without the target-state lock.
+    throw new CatalogJobOverlapException(
       'Delta sync "' +
         activeRun.ConfigDeveloperName__c +
         '" is already running for the same export target. Wait for it to finish before launching "' +
         requestedConfigDeveloperName +
         '".'
     );
+  }
+
+  private static void reconcileStaleActiveRun(String targetKey) {
+    List<Catalog_Delta_Run__c> activeRuns = loadActiveRuns(targetKey, false);
+    if (activeRuns.isEmpty()) {
+      return;
+    }
+
+    Catalog_Delta_Run__c activeRun = activeRuns[0];
+    AsyncApexJob currentJob = loadAsyncJob(activeRun.CurrentAsyncJobId__c);
+    if (!shouldAttemptOrphanReconciliation(activeRun, currentJob)) {
+      return;
+    }
+
+    reconcileTerminalJobObservation(
+      activeRun.Id,
+      activeRun.CurrentAsyncJobId__c
+    );
+  }
+
+  @TestVisible
+  private static Boolean shouldAttemptOrphanReconciliation(
+    Catalog_Delta_Run__c run,
+    AsyncApexJob currentJob
+  ) {
+    if (run == null || isTerminalStatus(run.Status__c)) {
+      return false;
+    }
+    if (
+      currentJob != null &&
+      currentJob.Status != 'Completed' &&
+      currentJob.Status != 'Failed' &&
+      currentJob.Status != 'Aborted'
+    ) {
+      return false;
+    }
+    if (
+      currentJob != null &&
+      (currentJob.Status == 'Failed' || currentJob.Status == 'Aborted')
+    ) {
+      return true;
+    }
+
+    // Salesforce can expose Completed before it has populated CompletedDate
+    // and before Batchable.finish() advances the persisted pipeline. An old
+    // run heartbeat must never substitute for that missing terminal timestamp.
+    if (
+      currentJob != null &&
+      currentJob.Status == 'Completed' &&
+      currentJob.CompletedDate == null
+    ) {
+      return false;
+    }
+
+    Datetime terminalObservationAt = currentJob == null
+      ? run.LastHeartbeatAt__c
+      : currentJob.CompletedDate;
+    return terminalObservationAt != null &&
+      terminalObservationAt <=
+      System.now().addSeconds(-ORPHAN_RECONCILIATION_GRACE_SECONDS);
   }
 
   private static AsyncApexJob loadAsyncJob(String jobId) {
@@ -794,7 +874,7 @@ public with sharing class CatalogDeltaRunService {
       return null;
     }
     List<AsyncApexJob> jobs = [
-      SELECT Id, Status
+      SELECT Id, Status, CompletedDate
       FROM AsyncApexJob
       WHERE Id = :parsedId
       LIMIT 1

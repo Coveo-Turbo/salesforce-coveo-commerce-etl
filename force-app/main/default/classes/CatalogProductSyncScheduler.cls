@@ -106,11 +106,21 @@ global with sharing class CatalogProductSyncScheduler implements Schedulable {
         return;
       }
 
-      CatalogDeltaRunService.launch(config);
+      CatalogDeltaRunService.LaunchResult launchResult = CatalogDeltaRunService.launchOrSkipIfActive(
+        config
+      );
+      if (launchResult == null) {
+        recordOverlapSkip(jobConfigDeveloperName, scheduledMode);
+      }
       return;
     }
 
-    CatalogDeltaRunService.assertNoActiveDeltaRun(config);
+    try {
+      CatalogDeltaRunService.assertNoActiveDeltaRun(config);
+    } catch (CatalogJobOverlapException e) {
+      recordOverlapSkip(jobConfigDeveloperName, scheduledMode);
+      return;
+    }
     ProductCatalogExportBatch fullBatch = new ProductCatalogExportBatch(
       jobConfigDeveloperName
     );
@@ -121,6 +131,15 @@ global with sharing class CatalogProductSyncScheduler implements Schedulable {
       fullJobId,
       System.now()
     );
+  }
+
+  private static void recordOverlapSkip(
+    String configDeveloperName,
+    String syncMode
+  ) {
+    lastSkippedConfigDeveloperName = configDeveloperName;
+    lastSkippedSyncMode = syncMode;
+    lastSkippedReason = 'Another product sync already owns this export target.';
   }
 
   public static String scheduleFullSync(

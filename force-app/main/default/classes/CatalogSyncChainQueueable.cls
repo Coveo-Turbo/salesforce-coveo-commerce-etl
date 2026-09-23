@@ -11,6 +11,14 @@ public with sharing class CatalogSyncChainQueueable implements Queueable, Databa
   private static Boolean lastIncludeAvailability;
   @TestVisible
   private static List<String> lastRemainingConfigDeveloperNames;
+  @TestVisible
+  private static String lastSkippedConfigDeveloperName;
+  @TestVisible
+  private static String lastSkippedReason;
+  @TestVisible
+  private static Boolean simulateOverlapInTests = false;
+  @TestVisible
+  private static String lastAvailabilityRecoveryConfigDeveloperName;
 
   private List<String> pendingConfigDeveloperNames;
   private String expectedSyncMode;
@@ -58,12 +66,33 @@ public with sharing class CatalogSyncChainQueueable implements Queueable, Databa
       return;
     }
 
-    CatalogJobRunner.runChainedConfig(
-      currentConfigDeveloperName,
-      expectedSyncMode,
-      runProducts,
-      includeAvailability
-    );
+    try {
+      if (Test.isRunningTest() && simulateOverlapInTests) {
+        throw new CatalogJobOverlapException(
+          'Another product sync already owns this export target.'
+        );
+      }
+      CatalogJobRunner.runChainedConfig(
+        currentConfigDeveloperName,
+        expectedSyncMode,
+        runProducts,
+        includeAvailability
+      );
+    } catch (CatalogJobOverlapException e) {
+      lastSkippedConfigDeveloperName = currentConfigDeveloperName;
+      lastSkippedReason = e.getMessage();
+      if (includeAvailability) {
+        lastAvailabilityRecoveryConfigDeveloperName = currentConfigDeveloperName;
+        if (!Test.isRunningTest()) {
+          CatalogJobRunner.runChainedConfig(
+            currentConfigDeveloperName,
+            expectedSyncMode,
+            false,
+            true
+          );
+        }
+      }
+    }
 
     if (!pendingConfigDeveloperNames.isEmpty()) {
       System.enqueueJob(
