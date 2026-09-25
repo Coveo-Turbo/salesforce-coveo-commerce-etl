@@ -9,6 +9,18 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>CatalogDeltaRunService</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>CatalogDeltaStageBatch</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>CatalogDeltaCleanupBatch</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>CatalogProductExportSupport</apexClass>
         <enabled>true</enabled>
     </classAccesses>
@@ -126,6 +138,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Catalog_Sync_State__c.CurrentProductRun__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Catalog_Sync_State__c.CurrentProductRunMode__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -159,6 +176,26 @@
         <field>Catalog_Sync_State__c.RecentProductRunsJson__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.CleanupAsyncJobId__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.CleanupStatus__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.CompletedAt__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.CurrentAsyncJobId__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.ErrorMessage__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.ExportProductCount__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.ImpactedProductCount__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.InitialAsyncJobId__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.LastHeartbeatAt__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.PricebookLabelsJson__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.PricebookScopeFiltered__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.ResolvedPricebookIdsJson__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.RootProductCount__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Run__c.StandardPricebookId__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Work_Item__c.IsExportCandidate__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Work_Item__c.IsImpacted__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Work_Item__c.IsRoot__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Work_Item__c.Product__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Work_Item__c.ProductCategory__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Catalog_Delta_Work_Item__c.TraversalDepth__c</field><readable>true</readable></fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Coveo ETL Admin</label>
     <tabSettings>
@@ -176,6 +213,24 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>true</modifyAllRecords>
         <object>Catalog_Sync_State__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <object>Catalog_Delta_Run__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <object>Catalog_Delta_Work_Item__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>

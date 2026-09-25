@@ -105,30 +105,7 @@ public with sharing class CoveoCommerceSetupController {
   @AuraEnabled(cacheable=true)
   public static List<Map<String, Object>> getCatalogJobConfigs() {
     List<Map<String, Object>> configs = new List<Map<String, Object>>();
-    List<CatalogJobConfig__mdt> configRecords = [
-      SELECT
-        Id,
-        DeveloperName,
-        MasterLabel,
-        CoveoOrgId__c,
-        SourceId__c,
-        AvailabilitySourceId__c,
-        BuyerGroupAvailabilityMode__c,
-        WebStoreId__c,
-        WebStoreIds__c,
-        PricebookIds__c,
-        Locale__c,
-        IsActive__c,
-        ProductFilter__c,
-        AdditionalProductFields__c,
-        BuilderType__c,
-        CatalogId__c,
-        EnableBuyerGroupAvailability__c,
-        SyncMode__c,
-        BaselineFullConfigDeveloperName__c
-      FROM CatalogJobConfig__mdt
-      ORDER BY MasterLabel
-    ];
+    List<CatalogJobConfig__mdt> configRecords = CatalogJobConfigSelector.getAll();
     Map<String, CatalogSyncStateService.Snapshot> snapshotsByDeveloperName = CatalogSyncStateService.getSnapshotsByDeveloperName(
       configRecords
     );
@@ -986,20 +963,11 @@ public with sharing class CoveoCommerceSetupController {
       return conflictingConfigs;
     }
 
-    for (CatalogJobConfig__mdt config : [
-      SELECT
-        DeveloperName,
-        MasterLabel,
-        SourceId__c,
-        WebStoreId__c,
-        WebStoreIds__c,
-        PricebookIds__c,
-        IsActive__c,
-        EnableBuyerGroupAvailability__c,
-        BuyerGroupAvailabilityMode__c
-      FROM CatalogJobConfig__mdt
-      WHERE SourceId__c = :sourceId AND IsActive__c = TRUE
-    ]) {
+    for (
+      CatalogJobConfig__mdt config : CatalogJobConfigSelector.getActiveBySourceId(
+        sourceId
+      )
+    ) {
       if (
         config.DeveloperName == developerName ||
         !CatalogBuyerGroupAvailabilityMode.usesEmbedded(config)
@@ -1235,13 +1203,9 @@ public with sharing class CoveoCommerceSetupController {
       ? testChainConfigsByDeveloperName
       : new Map<String, CatalogJobConfig__mdt>();
     if (!(Test.isRunningTest() && testChainConfigsByDeveloperName != null)) {
-      for (CatalogJobConfig__mdt config : [
-        SELECT DeveloperName, IsActive__c, SyncMode__c
-        FROM CatalogJobConfig__mdt
-        WHERE DeveloperName IN :normalizedNames
-      ]) {
-        configsByName.put(config.DeveloperName, config);
-      }
+      configsByName.putAll(
+        CatalogJobConfigSelector.getByDeveloperNames(normalizedNames)
+      );
     }
 
     for (String developerName : normalizedNames) {

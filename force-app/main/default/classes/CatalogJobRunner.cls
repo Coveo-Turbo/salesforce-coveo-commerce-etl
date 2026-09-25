@@ -8,6 +8,12 @@ public with sharing class CatalogJobRunner {
     public String jobId { get; set; }
 
     @AuraEnabled
+    public String runId { get; set; }
+
+    @AuraEnabled
+    public String trackingType { get; set; }
+
+    @AuraEnabled
     public String channel { get; set; }
 
     @AuraEnabled
@@ -60,6 +66,12 @@ public with sharing class CatalogJobRunner {
     public String jobId { get; set; }
 
     @AuraEnabled
+    public String runId { get; set; }
+
+    @AuraEnabled
+    public String trackingType { get; set; }
+
+    @AuraEnabled
     public String channel { get; set; }
 
     @AuraEnabled
@@ -88,34 +100,29 @@ public with sharing class CatalogJobRunner {
 
     @AuraEnabled
     public String completedDate { get; set; }
+
+    @AuraEnabled
+    public String stage { get; set; }
+
+    @AuraEnabled
+    public String stageLabel { get; set; }
+
+    @AuraEnabled
+    public Integer impactedProductCount { get; set; }
+
+    @AuraEnabled
+    public Integer changedRootProductCount { get; set; }
+
+    @AuraEnabled
+    public Integer exportProductCount { get; set; }
+
+    @AuraEnabled
+    public String scopeSummary { get; set; }
   }
 
   @AuraEnabled(cacheable=true)
   public static List<CatalogJobConfig__mdt> listConfigs() {
-    return [
-      SELECT
-        DeveloperName,
-        Label,
-        CoveoOrgId__c,
-        SourceId__c,
-        AvailabilitySourceId__c,
-        WebStoreId__c,
-        WebStoreIds__c,
-        PricebookIds__c,
-        Locale__c,
-        IsActive__c,
-        ProductFilter__c,
-        AdditionalProductFields__c,
-        BuilderType__c,
-        CatalogId__c,
-        BatchSize__c,
-        EnableBuyerGroupAvailability__c,
-        BuyerGroupAvailabilityMode__c,
-        SyncMode__c,
-        BaselineFullConfigDeveloperName__c
-      FROM CatalogJobConfig__mdt
-      ORDER BY Label
-    ];
+    return CatalogJobConfigSelector.getAll();
   }
 
   @AuraEnabled(cacheable=true)
@@ -174,6 +181,9 @@ public with sharing class CatalogJobRunner {
           'currentProductJobId' => snapshot == null
             ? null
             : snapshot.currentProductJobId,
+          'currentProductRunId' => snapshot == null
+            ? null
+            : snapshot.currentProductRunId,
           'currentProductJobStatus' => snapshot == null
             ? null
             : snapshot.currentProductJobStatus,
@@ -424,6 +434,11 @@ public with sharing class CatalogJobRunner {
       )
       .get(config.DeveloperName);
 
+    if (snapshot != null && String.isNotBlank(snapshot.currentProductRunId)) {
+      CatalogDeltaRunService.cancelRun((Id) snapshot.currentProductRunId);
+      return snapshot.currentProductJobId;
+    }
+
     if (
       snapshot == null ||
       snapshot.currentProductIsActive != true ||
@@ -455,6 +470,14 @@ public with sharing class CatalogJobRunner {
 
     abortAsyncJob(jobId.trim());
     return jobId.trim();
+  }
+
+  @AuraEnabled
+  public static String abortDeltaRun(String runId) {
+    if (String.isBlank(runId)) {
+      throw new CatalogJobConfigException('A delta run id is required.');
+    }
+    return CatalogDeltaRunService.cancelRun((Id) runId.trim());
   }
 
   @AuraEnabled
@@ -516,6 +539,7 @@ public with sharing class CatalogJobRunner {
 
       RunSnapshot snapshot = new RunSnapshot();
       snapshot.jobId = String.valueOf(job.Id);
+      snapshot.trackingType = 'AsyncApexJob';
       snapshot.apexClassName = job.ApexClass != null
         ? job.ApexClass.Name
         : null;
@@ -535,6 +559,39 @@ public with sharing class CatalogJobRunner {
       snapshots.add(snapshot);
     }
 
+    return snapshots;
+  }
+
+  @AuraEnabled
+  public static List<RunSnapshot> getDeltaRunSnapshots(List<String> runIds) {
+    List<RunSnapshot> snapshots = new List<RunSnapshot>();
+    for (
+      CatalogDeltaRunService.Snapshot deltaSnapshot : CatalogDeltaRunService.getSnapshots(
+        runIds
+      )
+    ) {
+      RunSnapshot snapshot = new RunSnapshot();
+      snapshot.runId = deltaSnapshot.runId;
+      snapshot.jobId = deltaSnapshot.jobId;
+      snapshot.trackingType = 'DeltaPipeline';
+      snapshot.channel = 'products';
+      snapshot.apexClassName = 'CatalogDeltaPipeline';
+      snapshot.status = deltaSnapshot.status;
+      snapshot.stage = deltaSnapshot.stage;
+      snapshot.stageLabel = deltaSnapshot.stageLabel;
+      snapshot.impactedProductCount = deltaSnapshot.impactedProductCount;
+      snapshot.changedRootProductCount = deltaSnapshot.rootProductCount;
+      snapshot.exportProductCount = deltaSnapshot.exportProductCount;
+      snapshot.scopeSummary = deltaSnapshot.scopeSummary;
+      snapshot.jobItemsProcessed = deltaSnapshot.jobItemsProcessed;
+      snapshot.totalJobItems = deltaSnapshot.totalJobItems;
+      snapshot.numberOfErrors = deltaSnapshot.numberOfErrors;
+      snapshot.extendedStatus = deltaSnapshot.extendedStatus;
+      snapshot.isTerminal = deltaSnapshot.isTerminal;
+      snapshot.createdDate = deltaSnapshot.createdDate;
+      snapshot.completedDate = deltaSnapshot.completedDate;
+      snapshots.add(snapshot);
+    }
     return snapshots;
   }
 
@@ -624,39 +681,20 @@ public with sharing class CatalogJobRunner {
     CatalogJobConfig__mdt config
   ) {
     if (CatalogSyncMode.isDelta(config)) {
-      CatalogSyncStateService.DeltaReadiness readiness = CatalogSyncStateService.requireDeltaReadiness(
+      CatalogDeltaRunService.LaunchResult deltaLaunch = CatalogDeltaRunService.launch(
         config
       );
-      Datetime baselineTimestamp = readiness.stateRecord.LastSuccessfulSyncAt__c;
-      Datetime runCutoff = System.now();
-      CatalogDeltaScopeResolver.ScopeMetrics metrics = CatalogDeltaScopeResolver.describeScope(
-        config,
-        baselineTimestamp,
-        runCutoff
-      );
-      DeltaProductCatalogExportBatch deltaBatch = new DeltaProductCatalogExportBatch(
-        config.DeveloperName,
-        baselineTimestamp,
-        runCutoff
-      );
-      Id deltaJobId = Database.executeBatch(
-        deltaBatch,
-        deltaBatch.getBatchSize()
-      );
-      CatalogSyncStateService.recordStartedProductSync(
-        config,
-        CatalogSyncMode.DELTA,
-        deltaJobId,
-        runCutoff
-      );
-      return createLaunchHandle(
-        deltaJobId,
+      JobLaunchHandle handle = createLaunchHandle(
+        deltaLaunch.jobId,
         'products',
-        'Delta Product Sync',
-        metrics
+        'Delta Product Sync'
       );
+      handle.runId = String.valueOf(deltaLaunch.runId);
+      handle.trackingType = 'DeltaPipeline';
+      return handle;
     }
 
+    CatalogDeltaRunService.assertNoActiveDeltaRun(config);
     ProductCatalogExportBatch fullBatch = new ProductCatalogExportBatch(
       config.DeveloperName
     );
@@ -719,6 +757,7 @@ public with sharing class CatalogJobRunner {
   ) {
     JobLaunchHandle handle = new JobLaunchHandle();
     handle.jobId = String.valueOf(jobId);
+    handle.trackingType = 'AsyncApexJob';
     handle.channel = channel;
     handle.label = label;
     if (metrics != null) {
@@ -751,68 +790,13 @@ public with sharing class CatalogJobRunner {
   private static CatalogJobConfig__mdt getConfig(
     String jobConfigDeveloperName
   ) {
-    List<CatalogJobConfig__mdt> configs = [
-      SELECT
-        DeveloperName,
-        Label,
-        CoveoOrgId__c,
-        SourceId__c,
-        AvailabilitySourceId__c,
-        WebStoreId__c,
-        WebStoreIds__c,
-        PricebookIds__c,
-        Locale__c,
-        IsActive__c,
-        ProductFilter__c,
-        AdditionalProductFields__c,
-        BuilderType__c,
-        CatalogId__c,
-        BatchSize__c,
-        SyncMode__c,
-        BaselineFullConfigDeveloperName__c,
-        EnableBuyerGroupAvailability__c,
-        BuyerGroupAvailabilityMode__c
-      FROM CatalogJobConfig__mdt
-      WHERE DeveloperName = :jobConfigDeveloperName
-      LIMIT 1
-    ];
-
-    if (configs.isEmpty()) {
-      throw new CatalogJobException(
-        'No CatalogJobConfig__mdt record found with DeveloperName: ' +
-        jobConfigDeveloperName
-      );
-    }
-
-    return configs[0];
+    return CatalogJobConfigSelector.requireByDeveloperName(
+      jobConfigDeveloperName
+    );
   }
 
   private static List<CatalogJobConfig__mdt> getActiveConfigs() {
-    return [
-      SELECT
-        DeveloperName,
-        Label,
-        CoveoOrgId__c,
-        SourceId__c,
-        AvailabilitySourceId__c,
-        WebStoreId__c,
-        WebStoreIds__c,
-        PricebookIds__c,
-        Locale__c,
-        IsActive__c,
-        ProductFilter__c,
-        AdditionalProductFields__c,
-        BuilderType__c,
-        CatalogId__c,
-        BatchSize__c,
-        SyncMode__c,
-        BaselineFullConfigDeveloperName__c,
-        EnableBuyerGroupAvailability__c,
-        BuyerGroupAvailabilityMode__c
-      FROM CatalogJobConfig__mdt
-      WHERE IsActive__c = TRUE
-      ORDER BY Label
-    ];
+    return CatalogJobConfigSelector.getActive();
   }
 
   @TestVisible

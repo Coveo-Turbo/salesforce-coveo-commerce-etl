@@ -28,6 +28,29 @@ public with sharing class CatalogJobScopeUtil {
     );
   }
 
+  public static Database.QueryLocator buildProductQueryLocatorForDeltaRun(
+    CatalogJobConfig__mdt jobConfig,
+    Id runId,
+    List<String> requiredFieldNames,
+    List<String> extraFieldNames
+  ) {
+    if (runId == null) {
+      throw new CatalogJobException('A catalog delta run ID is required.');
+    }
+
+    String query = buildScopedProductQuery(
+      jobConfig,
+      null,
+      requiredFieldNames,
+      extraFieldNames
+    );
+    query +=
+      ' AND Id IN (SELECT Product__c FROM Catalog_Delta_Work_Item__c ' +
+      'WHERE Run__c = :runId AND Kind__c = \'Product\' ' +
+      'AND IsExportCandidate__c = TRUE AND Product__c != NULL)';
+    return Database.getQueryLocator(query);
+  }
+
   public static List<Product2> queryProductsByIds(
     CatalogJobConfig__mdt jobConfig,
     Set<Id> productIds,
@@ -147,8 +170,7 @@ public with sharing class CatalogJobScopeUtil {
     return productIds;
   }
 
-  @TestVisible
-  private static String validateAndSanitizeFilter(String filter) {
+  public static String validateAndSanitizeFilter(String filter) {
     if (String.isBlank(filter)) {
       return filter;
     }

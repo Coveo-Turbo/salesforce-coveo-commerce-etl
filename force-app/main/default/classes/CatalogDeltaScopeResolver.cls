@@ -4,6 +4,8 @@ public with sharing class CatalogDeltaScopeResolver {
     .getDescribe()
     .fields.getMap();
 
+  // Retained for source compatibility with callers that format completed
+  // metrics. Scope discovery itself is now persisted and asynchronous.
   public class ScopeMetrics {
     public Integer impactedProductCount { get; set; }
     public Integer rootProductCount { get; set; }
@@ -15,7 +17,9 @@ public with sharing class CatalogDeltaScopeResolver {
     Datetime lowerExclusive,
     Datetime upperInclusive
   ) {
-    return computeScope(jobConfig, lowerExclusive, upperInclusive).exportProductIds;
+    throw new CatalogJobException(
+      'Synchronous delta scope resolution is no longer supported. Launch the persisted delta pipeline through CatalogJobRunner.'
+    );
   }
 
   public static ScopeMetrics describeScope(
@@ -23,281 +27,61 @@ public with sharing class CatalogDeltaScopeResolver {
     Datetime lowerExclusive,
     Datetime upperInclusive
   ) {
-    ScopeComputation computation = computeScope(
-      jobConfig,
-      lowerExclusive,
-      upperInclusive
+    throw new CatalogJobException(
+      'Synchronous delta scope metrics are no longer supported. Poll CatalogJobRunner.getDeltaRunSnapshots instead.'
     );
-
-    ScopeMetrics metrics = new ScopeMetrics();
-    metrics.impactedProductCount = computation.changedProductIds.size();
-    metrics.rootProductCount = computation.rootProductIds.size();
-    metrics.exportProductCount = computation.exportProductIds.size();
-    return metrics;
   }
 
-  @TestVisible
-  private class ScopeComputation {
-    public Set<Id> changedProductIds = new Set<Id>();
-    public Set<Id> rootProductIds = new Set<Id>();
-    public Set<Id> exportProductIds = new Set<Id>();
+  public static Boolean usesParentHierarchy(CatalogJobConfig__mdt jobConfig) {
+    ICatalogJsonBuilder builder = CatalogProductIdentityResolver.getBuilder(
+      jobConfig
+    );
+    return builder instanceof CatalogJsonBuilderGrouping ||
+      builder instanceof CatalogJsonBuilderVariant ||
+      builder instanceof CatalogJsonBuilderGroupingWithVariants;
   }
 
-  @TestVisible
-  private static ScopeComputation computeScope(
-    CatalogJobConfig__mdt jobConfig,
-    Datetime lowerExclusive,
-    Datetime upperInclusive
+  public static Boolean usesProductGroupRoots(
+    CatalogJobConfig__mdt jobConfig
   ) {
-    ScopeComputation computation = new ScopeComputation();
-
-    if (
-      jobConfig == null ||
-      lowerExclusive == null ||
-      upperInclusive == null ||
-      lowerExclusive.getTime() >= upperInclusive.getTime()
-    ) {
-      return computation;
-    }
-
-    computation.changedProductIds = collectChangedProductIds(
-      jobConfig,
-      lowerExclusive,
-      upperInclusive
-    );
-    if (computation.changedProductIds.isEmpty()) {
-      return computation;
-    }
-
-    computation.rootProductIds = resolveRootProductIds(
-      jobConfig,
-      computation.changedProductIds
-    );
-    if (computation.rootProductIds.isEmpty()) {
-      return computation;
-    }
-
-    Set<Id> expandedProductIds = expandExportProductIds(
-      jobConfig,
-      computation.rootProductIds
-    );
-    if (expandedProductIds.isEmpty()) {
-      return computation;
-    }
-
-    computation.exportProductIds = new Set<Id>();
-    for (
-      Product2 product : CatalogJobScopeUtil.queryProductsByIds(
-        jobConfig,
-        expandedProductIds,
-        new List<String>{ 'Id' }
-      )
-    ) {
-      computation.exportProductIds.add(product.Id);
-    }
-
-    return computation;
+    return CatalogProductIdentityResolver.getBuilder(jobConfig) instanceof CatalogJsonBuilderGroupingWithVariants;
   }
 
-  @TestVisible
-  private static Set<Id> collectChangedProductIds(
-    CatalogJobConfig__mdt jobConfig,
-    Datetime lowerExclusive,
-    Datetime upperInclusive
-  ) {
-    Set<Id> changedProductIds = new Set<Id>();
-
-    for (Product2 product : [
-      SELECT Id
-      FROM Product2
-      WHERE SystemModstamp > :lowerExclusive AND SystemModstamp <= :upperInclusive
-    ]) {
-      changedProductIds.add(product.Id);
-    }
-
-    for (PricebookEntry pricebookEntry : [
-      SELECT Product2Id
-      FROM PricebookEntry
-      WHERE Product2Id != NULL
-      AND SystemModstamp > :lowerExclusive
-      AND SystemModstamp <= :upperInclusive
-    ]) {
-      changedProductIds.add(pricebookEntry.Product2Id);
-    }
-
-    for (ProductCategoryProduct categoryProduct : [
-      SELECT ProductId
-      FROM ProductCategoryProduct
-      WHERE ProductId != NULL
-      AND SystemModstamp > :lowerExclusive
-      AND SystemModstamp <= :upperInclusive
-    ]) {
-      changedProductIds.add(categoryProduct.ProductId);
-    }
-
-    Set<Id> impactedCategoryIds = collectImpactedCategoryIds(
-      jobConfig,
-      lowerExclusive,
-      upperInclusive
-    );
-    if (!impactedCategoryIds.isEmpty()) {
-      for (ProductCategoryProduct categoryProduct : [
-        SELECT ProductId
-        FROM ProductCategoryProduct
-        WHERE ProductId != NULL AND ProductCategoryId IN :impactedCategoryIds
-      ]) {
-        changedProductIds.add(categoryProduct.ProductId);
-      }
-    }
-
-    return changedProductIds;
-  }
-
-  @TestVisible
-  private static Set<Id> collectImpactedCategoryIds(
-    CatalogJobConfig__mdt jobConfig,
-    Datetime lowerExclusive,
-    Datetime upperInclusive
-  ) {
-    Set<Id> changedCategoryIds = new Set<Id>();
-    String catalogId = jobConfig == null ? null : jobConfig.CatalogId__c;
-
-    if (String.isBlank(catalogId)) {
-      for (ProductCategory category : [
-        SELECT Id
-        FROM ProductCategory
-        WHERE SystemModstamp > :lowerExclusive AND SystemModstamp <= :upperInclusive
-      ]) {
-        changedCategoryIds.add(category.Id);
-      }
-    } else {
-      for (ProductCategory category : [
-        SELECT Id
-        FROM ProductCategory
-        WHERE CatalogId = :catalogId
-        AND SystemModstamp > :lowerExclusive
-        AND SystemModstamp <= :upperInclusive
-      ]) {
-        changedCategoryIds.add(category.Id);
-      }
-    }
-
-    if (changedCategoryIds.isEmpty()) {
-      return changedCategoryIds;
-    }
-
-    Set<Id> impactedCategoryIds = new Set<Id>();
-    impactedCategoryIds.addAll(changedCategoryIds);
-
-    Set<Id> frontier = new Set<Id>();
-    frontier.addAll(changedCategoryIds);
-
-    Integer guard = 0;
-    while (!frontier.isEmpty() && guard++ < MAX_HIERARCHY_DEPTH) {
-      Set<Id> childIds = new Set<Id>();
-
-      if (String.isBlank(catalogId)) {
-        for (ProductCategory category : [
-          SELECT Id
-          FROM ProductCategory
-          WHERE ParentCategoryId IN :frontier
-        ]) {
-          if (impactedCategoryIds.add(category.Id)) {
-            childIds.add(category.Id);
-          }
-        }
-      } else {
-        for (ProductCategory category : [
-          SELECT Id
-          FROM ProductCategory
-          WHERE CatalogId = :catalogId AND ParentCategoryId IN :frontier
-        ]) {
-          if (impactedCategoryIds.add(category.Id)) {
-            childIds.add(category.Id);
-          }
-        }
-      }
-
-      frontier = childIds;
-    }
-
-    return impactedCategoryIds;
-  }
-
-  @TestVisible
-  private static Set<Id> resolveRootProductIds(
+  /**
+   * Resolves roots for one bounded stage scope. The stage batch is capped at
+   * 500 products, so its optional relationship walk cannot materialize an
+   * unbounded delta window in one transaction.
+   */
+  public static Set<Id> resolveRootProductIds(
     CatalogJobConfig__mdt jobConfig,
     Set<Id> changedProductIds
   ) {
     Set<Id> rootIds = new Set<Id>();
-
     if (changedProductIds == null || changedProductIds.isEmpty()) {
       return rootIds;
     }
 
-    ICatalogJsonBuilder builder = CatalogProductIdentityResolver.getBuilder(
-      jobConfig
-    );
-    Boolean usesParentHierarchy =
-      builder instanceof CatalogJsonBuilderGrouping ||
-      builder instanceof CatalogJsonBuilderVariant ||
-      builder instanceof CatalogJsonBuilderGroupingWithVariants;
-    Boolean usesProductGroupRoots =
-      builder instanceof CatalogJsonBuilderGroupingWithVariants;
-
-    if (!usesParentHierarchy && !usesProductGroupRoots) {
+    Boolean hasParentHierarchy = usesParentHierarchy(jobConfig);
+    Boolean hasProductGroupRoots = usesProductGroupRoots(jobConfig);
+    if (!hasParentHierarchy && !hasProductGroupRoots) {
       rootIds.addAll(changedProductIds);
       return rootIds;
     }
 
     Map<Id, Product2> relationshipProductsById = loadRelationshipProducts(
       changedProductIds,
-      usesProductGroupRoots
+      hasProductGroupRoots
     );
-
     for (Id changedProductId : changedProductIds) {
       rootIds.add(
         resolveRootProductId(
           changedProductId,
           relationshipProductsById,
-          usesProductGroupRoots
+          hasProductGroupRoots
         )
       );
     }
-
     return rootIds;
-  }
-
-  @TestVisible
-  private static Set<Id> expandExportProductIds(
-    CatalogJobConfig__mdt jobConfig,
-    Set<Id> rootProductIds
-  ) {
-    Set<Id> expandedProductIds = new Set<Id>();
-
-    if (rootProductIds == null || rootProductIds.isEmpty()) {
-      return expandedProductIds;
-    }
-
-    expandedProductIds.addAll(rootProductIds);
-
-    ICatalogJsonBuilder builder = CatalogProductIdentityResolver.getBuilder(
-      jobConfig
-    );
-    if (builder instanceof CatalogJsonBuilderGroupingWithVariants) {
-      expandedProductIds.addAll(loadProductsByGroup(rootProductIds));
-      expandedProductIds.addAll(loadProductsByParent(expandedProductIds));
-      return expandedProductIds;
-    }
-
-    if (
-      builder instanceof CatalogJsonBuilderGrouping ||
-      builder instanceof CatalogJsonBuilderVariant
-    ) {
-      expandedProductIds.addAll(loadProductsByParent(rootProductIds));
-    }
-
-    return expandedProductIds;
   }
 
   private static Map<Id, Product2> loadRelationshipProducts(
@@ -305,26 +89,20 @@ public with sharing class CatalogDeltaScopeResolver {
     Boolean includeGroupField
   ) {
     Map<Id, Product2> productsById = new Map<Id, Product2>();
-    Set<Id> frontier = new Set<Id>();
-    frontier.addAll(seedProductIds);
+    Set<Id> frontier = new Set<Id>(seedProductIds);
 
     Integer guard = 0;
     while (!frontier.isEmpty() && guard++ < MAX_HIERARCHY_DEPTH) {
       Set<Id> nextFrontier = new Set<Id>();
-
       for (Product2 product : queryRelationshipProducts(frontier, includeGroupField)) {
         productsById.put(product.Id, product);
 
-        Id parentProductId = SafeFieldUtil.safeGetId(product, 'Parent_Product__c');
-        if (
-          parentProductId != null &&
-          !productsById.containsKey(parentProductId)
-        ) {
-          nextFrontier.add(parentProductId);
-        }
-
+        Id productGroupId;
         if (includeGroupField) {
-          Id productGroupId = SafeFieldUtil.safeGetId(product, 'Product_Group__c');
+          productGroupId = SafeFieldUtil.safeGetId(
+            product,
+            'Product_Group__c'
+          );
           if (
             productGroupId != null &&
             !productsById.containsKey(productGroupId)
@@ -332,11 +110,25 @@ public with sharing class CatalogDeltaScopeResolver {
             nextFrontier.add(productGroupId);
           }
         }
-      }
 
+        // GroupingWithVariants resolves a configured Product Group before its
+        // parent chain. Follow only the relationship that can become the root
+        // so each level contains no more records than the bounded seed scope.
+        if (productGroupId == null) {
+          Id parentProductId = SafeFieldUtil.safeGetId(
+            product,
+            'Parent_Product__c'
+          );
+          if (
+            parentProductId != null &&
+            !productsById.containsKey(parentProductId)
+          ) {
+            nextFrontier.add(parentProductId);
+          }
+        }
+      }
       frontier = nextFrontier;
     }
-
     return productsById;
   }
 
@@ -354,7 +146,6 @@ public with sharing class CatalogDeltaScopeResolver {
     if (includeGroupField) {
       addProductFieldIfPresent(fields, 'Product_Group__c');
     }
-
     return Database.query(
       'SELECT ' +
         String.join(fields, ', ') +
@@ -369,7 +160,6 @@ public with sharing class CatalogDeltaScopeResolver {
   ) {
     Id currentProductId = productId;
     Integer guard = 0;
-
     while (currentProductId != null && guard++ < MAX_HIERARCHY_DEPTH) {
       Product2 currentProduct = productsById.get(currentProductId);
       if (currentProduct == null) {
@@ -393,86 +183,9 @@ public with sharing class CatalogDeltaScopeResolver {
       if (parentProductId == null) {
         return currentProductId;
       }
-
       currentProductId = parentProductId;
     }
-
     return currentProductId == null ? productId : currentProductId;
-  }
-
-  private static Set<Id> loadProductsByParent(Set<Id> parentProductIds) {
-    Set<Id> expandedProductIds = new Set<Id>();
-
-    if (
-      parentProductIds == null ||
-      parentProductIds.isEmpty() ||
-      !PRODUCT_FIELDS.containsKey('Parent_Product__c')
-    ) {
-      return expandedProductIds;
-    }
-
-    Set<Id> frontier = new Set<Id>();
-    frontier.addAll(parentProductIds);
-
-    Integer guard = 0;
-    while (!frontier.isEmpty() && guard++ < MAX_HIERARCHY_DEPTH) {
-      Set<Id> childIds = new Set<Id>();
-      for (
-        Product2 childProduct : queryProductsByLookupField(
-          frontier,
-          'Parent_Product__c'
-        )
-      ) {
-        if (expandedProductIds.add(childProduct.Id)) {
-          childIds.add(childProduct.Id);
-        }
-      }
-
-      frontier = childIds;
-    }
-
-    return expandedProductIds;
-  }
-
-  private static Set<Id> loadProductsByGroup(Set<Id> groupProductIds) {
-    Set<Id> groupedProductIds = new Set<Id>();
-
-    if (
-      groupProductIds == null ||
-      groupProductIds.isEmpty() ||
-      !PRODUCT_FIELDS.containsKey('Product_Group__c')
-    ) {
-      return groupedProductIds;
-    }
-
-    for (
-      Product2 groupedProduct : queryProductsByLookupField(
-        groupProductIds,
-        'Product_Group__c'
-      )
-    ) {
-      groupedProductIds.add(groupedProduct.Id);
-    }
-
-    return groupedProductIds;
-  }
-
-  private static List<Product2> queryProductsByLookupField(
-    Set<Id> referencedProductIds,
-    String lookupFieldName
-  ) {
-    if (
-      referencedProductIds == null ||
-      referencedProductIds.isEmpty() ||
-      String.isBlank(lookupFieldName) ||
-      !PRODUCT_FIELDS.containsKey(lookupFieldName)
-    ) {
-      return new List<Product2>();
-    }
-
-    return Database.query(
-      'SELECT Id FROM Product2 WHERE ' + lookupFieldName + ' IN :referencedProductIds'
-    );
   }
 
   private static void addProductFieldIfPresent(

@@ -5,6 +5,10 @@ private class CatalogSyncStateServiceTest {
     CatalogSyncStateService.clearTestOverrides();
   }
 
+  private static String formatTestDatetime(Datetime value) {
+    return value == null ? null : value.formatGmt('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
+  }
+
   private static CatalogJobConfig__mdt createConfig(
     String developerName,
     String syncMode,
@@ -287,9 +291,11 @@ private class CatalogSyncStateServiceTest {
       startedAt
     );
 
+    Datetime completionWindowStart = System.now();
     Test.startTest();
     CatalogSyncStateService.recordSuccessfulFullSync(config, cutoff);
     Test.stopTest();
+    Datetime completionWindowEnd = System.now();
 
     Catalog_Sync_State__c stateRecord = [
       SELECT RecentProductRunsJson__c
@@ -302,8 +308,122 @@ private class CatalogSyncStateServiceTest {
     ];
 
     System.assert(stateRecord.RecentProductRunsJson__c.contains('Completed'));
+    List<Object> recentRuns = (List<Object>) JSON.deserializeUntyped(
+      stateRecord.RecentProductRunsJson__c
+    );
+    Map<String, Object> recentRun = (Map<String, Object>) recentRuns[0];
+    Datetime completedAt = (Datetime) JSON.deserialize(
+      JSON.serialize(recentRun.get('completedAt')),
+      Datetime.class
+    );
     System.assert(
-      stateRecord.RecentProductRunsJson__c.contains('2026-04-02T09:45:00Z')
+      completedAt >= completionWindowStart.addSeconds(-1) &&
+      completedAt <= completionWindowEnd.addSeconds(1),
+      'Recent-run completion must use the actual completion time, not the watermark cutoff.'
+    );
+  }
+
+  @IsTest
+  static void testGetSnapshotsByDeveloperName_preservesHistoryAcrossTargetChanges() {
+    CatalogJobConfig__mdt oldConfig = createConfig(
+      'FULL_CONFIG',
+      CatalogSyncMode.FULL,
+      null
+    );
+    oldConfig.AdditionalProductFields__c = 'Description';
+    CatalogJobConfig__mdt currentConfig = createConfig(
+      'FULL_CONFIG',
+      CatalogSyncMode.FULL,
+      null
+    );
+    currentConfig.AdditionalProductFields__c = 'Description,Family';
+
+    Datetime oldStartedAt = Datetime.newInstanceGmt(2026, 4, 1, 9, 0, 0);
+    Datetime oldCompletedAt = oldStartedAt.addHours(5);
+    Catalog_Sync_State__c oldState = createState(
+      oldConfig,
+      oldStartedAt,
+      oldStartedAt,
+      CatalogSyncMode.FULL,
+      oldConfig.DeveloperName
+    );
+    oldState.RecentProductRunsJson__c = JSON.serialize(
+      new List<Object>{
+        new Map<String, Object>{
+          'jobId' => '707000000000001AAA',
+          'runMode' => CatalogSyncMode.FULL,
+          'configDeveloperName' => oldConfig.DeveloperName,
+          'status' => 'Completed',
+          'startedAt' => formatTestDatetime(oldStartedAt),
+          'completedAt' => formatTestDatetime(oldCompletedAt)
+        }
+      }
+    );
+
+    Datetime currentStartedAt = Datetime.newInstanceGmt(2026, 4, 2, 9, 0, 0);
+    Catalog_Sync_State__c currentState = createState(
+      currentConfig,
+      null,
+      null,
+      null,
+      null,
+      '707000000000002AAA',
+      CatalogSyncMode.FULL,
+      currentConfig.DeveloperName,
+      currentStartedAt
+    );
+    currentState.BaselineFullConfigDeveloperName__c = currentConfig.DeveloperName;
+    currentState.RecentProductRunsJson__c = JSON.serialize(
+      new List<Object>{
+        new Map<String, Object>{
+          'jobId' => '707000000000002AAA',
+          'runMode' => CatalogSyncMode.FULL,
+          'configDeveloperName' => currentConfig.DeveloperName,
+          'status' => 'Processing',
+          'startedAt' => formatTestDatetime(currentStartedAt)
+        }
+      }
+    );
+
+    CatalogSyncStateService.testStatesByTargetKey = new Map<String, Catalog_Sync_State__c>{
+      oldState.ResolvedTargetKey__c => oldState,
+      currentState.ResolvedTargetKey__c => currentState
+    };
+    CatalogSyncStateService.testAsyncJobStatusesById = new Map<String, String>{
+      '707000000000001AAA' => 'Completed',
+      '707000000000002AAA' => 'Processing'
+    };
+    CatalogSyncStateService.testAsyncJobCreatedDatesById = new Map<String, Datetime>{
+      '707000000000001AAA' => oldStartedAt,
+      '707000000000002AAA' => currentStartedAt
+    };
+    CatalogSyncStateService.testAsyncJobCompletedDatesById = new Map<String, Datetime>{
+      '707000000000001AAA' => oldCompletedAt
+    };
+
+    CatalogSyncStateService.Snapshot snapshot = CatalogSyncStateService.getSnapshotsByDeveloperName(
+        new List<CatalogJobConfig__mdt>{ currentConfig }
+      )
+      .get(currentConfig.DeveloperName);
+    Map<String, CatalogSyncStateService.RecentProductRun> runsByJobId = new Map<String, CatalogSyncStateService.RecentProductRun>();
+    for (CatalogSyncStateService.RecentProductRun recentRun : snapshot.recentProductRuns) {
+      runsByJobId.put(recentRun.jobId, recentRun);
+    }
+
+    System.assertEquals(
+      true,
+      snapshot.currentProductIsActive,
+      'Readiness and active status must still come from the current target.'
+    );
+    System.assertEquals(
+      2,
+      runsByJobId.size(),
+      'Live Runs history must include the same config from both target states.'
+    );
+    System.assertEquals(
+      formatTestDatetime(oldCompletedAt),
+      runsByJobId.get('707000000000001AAA').completedAt,
+      'The previous target full run must remain visible with its actual completion time.'
     );
   }
 
@@ -625,6 +745,128 @@ private class CatalogSyncStateServiceTest {
       '2026-04-02T09:45:00Z',
       snapshot.recentProductRuns[0].completedAt
     );
+  }
+
+  @IsTest
+  static void testGetSnapshotsByDeveloperName_enrichesRecentDeltaRunsFromPipeline() {
+    CatalogJobConfig__mdt fullConfig = createConfig(
+      'FULL_CONFIG',
+      CatalogSyncMode.FULL,
+      null
+    );
+    CatalogJobConfig__mdt deltaConfig = createConfig(
+      'DELTA_CONFIG',
+      CatalogSyncMode.DELTA,
+      'FULL_CONFIG'
+    );
+    Datetime baseline = Datetime.newInstanceGmt(2026, 4, 1, 10, 0, 0);
+    Catalog_Sync_State__c stateRecord = createState(
+      deltaConfig,
+      baseline,
+      baseline,
+      CatalogSyncMode.FULL,
+      'FULL_CONFIG'
+    );
+
+    Catalog_Delta_Run__c exportedRun = new Catalog_Delta_Run__c(
+      ResolvedTargetKey__c = CatalogSyncStateService.buildResolvedTargetKey(
+        deltaConfig
+      ),
+      ConfigDeveloperName__c = deltaConfig.DeveloperName,
+      BaselineTimestamp__c = baseline,
+      CutoffTimestamp__c = baseline.addHours(1),
+      Status__c = CatalogDeltaRunService.STATUS_SUCCEEDED,
+      Stage__c = CatalogDeltaStageBatch.EXPORT_PRODUCTS,
+      CurrentAsyncJobId__c = '707000000000003AAA',
+      CleanupStatus__c = CatalogDeltaRunService.CLEANUP_COMPLETED,
+      ImpactedProductCount__c = 1,
+      RootProductCount__c = 1,
+      ExportProductCount__c = 1,
+      CompletedAt__c = baseline.addHours(1)
+    );
+    Catalog_Delta_Run__c noChangeRun = new Catalog_Delta_Run__c(
+      ResolvedTargetKey__c = exportedRun.ResolvedTargetKey__c,
+      ConfigDeveloperName__c = deltaConfig.DeveloperName,
+      BaselineTimestamp__c = baseline.addHours(1),
+      CutoffTimestamp__c = baseline.addHours(2),
+      Status__c = CatalogDeltaRunService.STATUS_SUCCEEDED,
+      Stage__c = CatalogDeltaStageBatch.EXPORT_PRODUCTS,
+      CurrentAsyncJobId__c = '707000000000004AAA',
+      CleanupStatus__c = CatalogDeltaRunService.CLEANUP_COMPLETED,
+      ImpactedProductCount__c = 0,
+      RootProductCount__c = 0,
+      ExportProductCount__c = 0,
+      CompletedAt__c = baseline.addHours(2)
+    );
+    insert new List<Catalog_Delta_Run__c>{ exportedRun, noChangeRun };
+
+    stateRecord.RecentProductRunsJson__c = JSON.serialize(
+      new List<Object>{
+        new Map<String, Object>{
+          'jobId' => '707000000000001AAA',
+          'runId' => exportedRun.Id,
+          'runMode' => CatalogSyncMode.DELTA,
+          'configDeveloperName' => deltaConfig.DeveloperName,
+          'status' => 'Completed'
+        },
+        new Map<String, Object>{
+          'jobId' => '707000000000002AAA',
+          'runId' => noChangeRun.Id,
+          'runMode' => CatalogSyncMode.DELTA,
+          'configDeveloperName' => deltaConfig.DeveloperName,
+          'status' => 'Completed'
+        }
+      }
+    );
+
+    CatalogSyncStateService.testConfigsByDeveloperName = new Map<String, CatalogJobConfig__mdt>{
+      fullConfig.DeveloperName => fullConfig
+    };
+    CatalogSyncStateService.testStatesByTargetKey = new Map<String, Catalog_Sync_State__c>{
+      stateRecord.ResolvedTargetKey__c => stateRecord
+    };
+
+    CatalogSyncStateService.Snapshot snapshot = CatalogSyncStateService.getSnapshotsByDeveloperName(
+        new List<CatalogJobConfig__mdt>{ deltaConfig }
+      )
+      .get(deltaConfig.DeveloperName);
+    Map<String, CatalogSyncStateService.RecentProductRun> recentRunsById = new Map<String, CatalogSyncStateService.RecentProductRun>();
+    for (CatalogSyncStateService.RecentProductRun recentRun : snapshot.recentProductRuns) {
+      recentRunsById.put(recentRun.runId, recentRun);
+    }
+
+    CatalogSyncStateService.RecentProductRun exportedSnapshot = recentRunsById.get(
+      String.valueOf(exportedRun.Id)
+    );
+    System.assertEquals(true, exportedSnapshot.hasPipelineSnapshot);
+    System.assertEquals(true, exportedSnapshot.isTerminal);
+    System.assertEquals('Completed', exportedSnapshot.status);
+    System.assertEquals(
+      'Exporting changed products',
+      exportedSnapshot.stageLabel
+    );
+    System.assertEquals(
+      '1 impacted product • 1 changed root • 1 product exported',
+      exportedSnapshot.scopeSummary
+    );
+    System.assertEquals(1, exportedSnapshot.impactedProductCount);
+    System.assertEquals(1, exportedSnapshot.changedRootProductCount);
+    System.assertEquals(1, exportedSnapshot.exportProductCount);
+    System.assertEquals(
+      '707000000000003AAA',
+      exportedSnapshot.currentJobId
+    );
+
+    CatalogSyncStateService.RecentProductRun noChangeSnapshot = recentRunsById.get(
+      String.valueOf(noChangeRun.Id)
+    );
+    System.assertEquals(true, noChangeSnapshot.hasPipelineSnapshot);
+    System.assertEquals(
+      'No changed products since last sync',
+      noChangeSnapshot.scopeSummary
+    );
+    System.assertEquals(0, noChangeSnapshot.impactedProductCount);
+    System.assertEquals(0, noChangeSnapshot.exportProductCount);
   }
 
   @IsTest

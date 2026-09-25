@@ -1,11 +1,14 @@
 global with sharing class DeltaProductCatalogExportBatch implements Database.Batchable<SObject>, Database.Stateful, Database.AllowsCallouts {
   @TestVisible
   private static CatalogJobConfig__mdt testJobConfigOverride;
-  private final CatalogJobConfig__mdt jobConfig;
+  private CatalogJobConfig__mdt jobConfig;
   private final List<String> extraFieldNames = new List<String>();
-  private final Id stdPricebookId;
-  private final Set<Id> targetPricebookIds;
-  private final Map<Id, String> labelsByPricebookId;
+  private Id stdPricebookId;
+  private Set<Id> targetPricebookIds;
+  private Map<Id, String> labelsByPricebookId;
+  private Id runId;
+  private Boolean bootstrapMode = true;
+  private Integer exportedProductCount = 0;
 
   public Datetime baselineTimestamp;
   public Datetime runCutoff;
@@ -74,6 +77,69 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
     );
   }
 
+  public DeltaProductCatalogExportBatch(
+    Id runId,
+    CatalogJobConfig__mdt jobConfig
+  ) {
+    if (runId == null) {
+      throw new CatalogJobException('Catalog delta run ID is required.');
+    }
+    if (jobConfig == null || !CatalogSyncMode.isDelta(jobConfig)) {
+      throw new CatalogJobConfigException(
+        'DeltaProductCatalogExportBatch requires SyncMode__c = Delta.'
+      );
+    }
+
+    Catalog_Delta_Run__c run = CatalogDeltaRunService.loadRun(runId);
+    CatalogJobConfig__mdt resolvedConfig = hydrateJobConfig(jobConfig);
+    this.runId = runId;
+    this.jobConfig = resolvedConfig;
+    this.bootstrapMode = false;
+    this.stdPricebookId = String.isBlank(run.StandardPricebookId__c)
+      ? null
+      : (Id) run.StandardPricebookId__c;
+    this.targetPricebookIds = CatalogDeltaRunService.getResolvedPricebookIds(run);
+    this.labelsByPricebookId = CatalogDeltaRunService.getPricebookLabels(run);
+    this.baselineTimestamp = run.BaselineTimestamp__c;
+    this.runCutoff = run.CutoffTimestamp__c;
+    extraFieldNames.addAll(
+      CatalogProductExportSupport.parseExtraFieldNames(
+        resolvedConfig.AdditionalProductFields__c
+      )
+    );
+  }
+
+  /**
+   * Reloads the config through the shared selector so the export stage never
+   * depends on the SELECT list used by whichever class launched the run. A
+   * partially queried config reaching execute() previously failed the export
+   * stage with "SObject row was retrieved via SOQL without querying the
+   * requested field". Falls back to the supplied config when no matching
+   * custom metadata record exists, which keeps in-memory test configs usable.
+   */
+  @TestVisible
+  private static CatalogJobConfig__mdt hydrateJobConfig(
+    CatalogJobConfig__mdt jobConfig
+  ) {
+    if (jobConfig == null) {
+      return null;
+    }
+
+    if (
+      Test.isRunningTest() &&
+      testJobConfigOverride != null &&
+      testJobConfigOverride.DeveloperName == jobConfig.DeveloperName
+    ) {
+      return testJobConfigOverride;
+    }
+
+    CatalogJobConfig__mdt reloadedConfig = CatalogJobConfigSelector.findByDeveloperName(
+      jobConfig.DeveloperName
+    );
+
+    return reloadedConfig == null ? jobConfig : reloadedConfig;
+  }
+
   private static CatalogJobConfig__mdt loadJobConfig(
     String jobConfigDeveloperName
   ) {
@@ -85,40 +151,9 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
       return testJobConfigOverride;
     }
 
-    List<CatalogJobConfig__mdt> configs = [
-      SELECT
-        DeveloperName,
-        Label,
-        CoveoOrgId__c,
-        SourceId__c,
-        WebStoreId__c,
-        WebStoreIds__c,
-        PricebookIds__c,
-        Locale__c,
-        IsActive__c,
-        ProductFilter__c,
-        AdditionalProductFields__c,
-        BuilderType__c,
-        CatalogId__c,
-        BatchSize__c,
-        EnablePayloadLogging__c,
-        EnableBuyerGroupAvailability__c,
-        BuyerGroupAvailabilityMode__c,
-        SyncMode__c,
-        BaselineFullConfigDeveloperName__c
-      FROM CatalogJobConfig__mdt
-      WHERE DeveloperName = :jobConfigDeveloperName
-      LIMIT 1
-    ];
-
-    if (configs.isEmpty()) {
-      throw new CatalogJobException(
-        'No CatalogJobConfig__mdt record found with DeveloperName: ' +
-        jobConfigDeveloperName
-      );
-    }
-
-    return configs[0];
+    return CatalogJobConfigSelector.requireByDeveloperName(
+      jobConfigDeveloperName
+    );
   }
 
   public Integer getBatchSize() {
@@ -129,32 +164,32 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
   }
 
   global Database.QueryLocator start(Database.BatchableContext bc) {
-    if (baselineTimestamp == null) {
-      CatalogSyncStateService.DeltaReadiness readiness = CatalogSyncStateService.requireDeltaReadiness(
-        jobConfig
+    if (bootstrapMode == true) {
+      return Database.getQueryLocator(
+        'SELECT Id FROM Product2 WHERE Id = NULL'
       );
-      baselineTimestamp = readiness.stateRecord.LastSuccessfulSyncAt__c;
     }
 
-    if (runCutoff == null) {
-      runCutoff = System.now();
+    Catalog_Delta_Run__c run = CatalogDeltaRunService.loadRun(runId);
+    if (
+      run.Status__c != CatalogDeltaRunService.STATUS_RUNNING ||
+      run.Stage__c != CatalogDeltaStageBatch.EXPORT_PRODUCTS
+    ) {
+      return Database.getQueryLocator(
+        'SELECT Id FROM Product2 WHERE Id = NULL'
+      );
     }
 
-    Set<Id> exportProductIds = CatalogDeltaScopeResolver.resolveExportProductIds(
+    return CatalogJobScopeUtil.buildProductQueryLocatorForDeltaRun(
       jobConfig,
-      baselineTimestamp,
-      runCutoff
-    );
-
-    return CatalogJobScopeUtil.buildProductQueryLocatorForIds(
-      jobConfig,
-      exportProductIds,
+      runId,
       CatalogProductExportSupport.getRequiredProductFields(jobConfig),
       extraFieldNames
     );
   }
 
   global void execute(Database.BatchableContext bc, List<Product2> scope) {
+    exportedProductCount += scope == null ? 0 : scope.size();
     Map<Id, Map<String, Decimal>> pricesByProduct = CatalogProductExportSupport.loadPricesByProduct(
       scope,
       stdPricebookId,
@@ -183,12 +218,32 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
 
   global void finish(Database.BatchableContext bc) {
     if (!batchCompletedWithoutErrors(bc)) {
+      if (bootstrapMode != true && runId != null) {
+        CatalogDeltaRunService.failRun(
+          runId,
+          'Delta product export failed. Review the Async Apex job for details.'
+        );
+      }
       return;
     }
 
-    CatalogSyncStateService.recordSuccessfulDeltaSync(
+    if (bootstrapMode == true) {
+      if (baselineTimestamp == null) {
+        CatalogDeltaRunService.launch(jobConfig);
+      } else {
+        CatalogDeltaRunService.launch(
+          jobConfig,
+          baselineTimestamp,
+          runCutoff == null ? System.now() : runCutoff
+        );
+      }
+      return;
+    }
+
+    CatalogDeltaRunService.completeRun(
+      runId,
       jobConfig,
-      runCutoff == null ? System.now() : runCutoff
+      exportedProductCount
     );
   }
 
@@ -208,7 +263,8 @@ global with sharing class DeltaProductCatalogExportBatch implements Database.Bat
     ];
 
     return !jobs.isEmpty() &&
-      jobs[0].Status == 'Completed' &&
-      jobs[0].NumberOfErrors == 0;
+      jobs[0].NumberOfErrors == 0 &&
+      jobs[0].Status != 'Failed' &&
+      jobs[0].Status != 'Aborted';
   }
 }

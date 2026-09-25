@@ -56,39 +56,9 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   private static CatalogJobConfig__mdt loadJobConfig(
     String jobConfigDeveloperName
   ) {
-    List<CatalogJobConfig__mdt> configs = [
-      SELECT
-        DeveloperName,
-        Label,
-        CoveoOrgId__c,
-        SourceId__c,
-        WebStoreId__c,
-        WebStoreIds__c,
-        PricebookIds__c,
-        Locale__c,
-        IsActive__c,
-        ProductFilter__c,
-        AdditionalProductFields__c,
-        BuilderType__c,
-        CatalogId__c,
-        BatchSize__c,
-        EnablePayloadLogging__c,
-        EnableBuyerGroupAvailability__c,
-        BuyerGroupAvailabilityMode__c,
-        SyncMode__c,
-        BaselineFullConfigDeveloperName__c
-      FROM CatalogJobConfig__mdt
-      WHERE DeveloperName = :jobConfigDeveloperName
-      LIMIT 1
-    ];
-
-    if (configs.isEmpty()) {
-      throw new CatalogJobException(
-        'No CatalogJobConfig__mdt record found with DeveloperName: ' +
-        jobConfigDeveloperName
-      );
-    }
-    return configs[0];
+    return CatalogJobConfigSelector.requireByDeveloperName(
+      jobConfigDeveloperName
+    );
   }
 
   @TestVisible
@@ -129,6 +99,9 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
   }
 
   global Database.QueryLocator start(Database.BatchableContext bc) {
+    if (bc != null) {
+      CatalogDeltaRunService.claimFullRun(jobConfig, bc.getJobId());
+    }
     runCutoff = System.now();
     List<String> fields = CatalogProductExportSupport.getRequiredProductFields(
       jobConfig
@@ -212,7 +185,8 @@ global with sharing class ProductCatalogExportBatch implements Database.Batchabl
 
     CatalogSyncStateService.recordSuccessfulFullSync(
       jobConfig,
-      runCutoff == null ? System.now() : runCutoff
+      runCutoff == null ? System.now() : runCutoff,
+      bc == null ? null : bc.getJobId()
     );
 
     // Payload logs are inserted asynchronously via CoveoPayloadLogQueueable

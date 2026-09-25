@@ -11,8 +11,10 @@ import runAllActive from "@salesforce/apex/CatalogJobRunner.runAllActive";
 import runAllActiveAvailability from "@salesforce/apex/CatalogJobRunner.runAllActiveAvailability";
 import runAllActiveBoth from "@salesforce/apex/CatalogJobRunner.runAllActiveBoth";
 import getRunSnapshots from "@salesforce/apex/CatalogJobRunner.getRunSnapshots";
+import getDeltaRunSnapshots from "@salesforce/apex/CatalogJobRunner.getDeltaRunSnapshots";
 import abortCurrentProductRun from "@salesforce/apex/CatalogJobRunner.abortCurrentProductRun";
 import abortRunJob from "@salesforce/apex/CatalogJobRunner.abortRunJob";
+import abortDeltaRun from "@salesforce/apex/CatalogJobRunner.abortDeltaRun";
 
 const POLL_INTERVAL_MS = 4000;
 const CONFIG_REFRESH_INTERVAL_MS = 15000;
@@ -873,13 +875,18 @@ export default class CatalogJobConsole extends NavigationMixin(
 
   async handleAbortStage(event) {
     const jobId = event.currentTarget?.dataset?.jobId;
+    const runId = event.currentTarget?.dataset?.runId;
     const jobLabel = event.currentTarget?.dataset?.jobLabel || "job";
-    if (!jobId) {
+    if (!jobId && !runId) {
       return;
     }
 
     try {
-      await abortRunJob({ jobId });
+      if (runId) {
+        await abortDeltaRun({ runId });
+      } else {
+        await abortRunJob({ jobId });
+      }
       this.addActivity(`Abort requested for ${jobLabel}`);
       this.showToast("Abort requested", `Stopping ${jobLabel}`, "success");
       await this.pollRunSnapshots();
@@ -1021,7 +1028,8 @@ export default class CatalogJobConsole extends NavigationMixin(
         `${launch.label}: ${this.describeLaunchMode(
           launch.mode,
           launch.jobs
-        )} started`
+        )} started`,
+        launch.launchedAt
       );
     });
 
@@ -1045,6 +1053,8 @@ export default class CatalogJobConsole extends NavigationMixin(
       launchedAt: launch.launchedAt,
       jobs: (launch.jobs || []).map((job) => ({
         jobId: job.jobId,
+        runId: job.runId || "",
+        trackingType: job.trackingType || "AsyncApexJob",
         channel: job.channel,
         label: job.label,
         impactedProductCount: job.impactedProductCount,
@@ -1071,7 +1081,7 @@ export default class CatalogJobConsole extends NavigationMixin(
     const configByDeveloperName = new Map(
       this.configs.map((config) => [config.developerName, config])
     );
-    const trackedRunsByJobId = new Map();
+    const trackedRunsByKey = new Map();
 
     this.configs.forEach((config) => {
       (config.recentProductRuns || []).forEach((recentRun) => {
@@ -1082,37 +1092,96 @@ export default class CatalogJobConsole extends NavigationMixin(
         const ownerConfig =
           configByDeveloperName.get(recentRun.configDeveloperName) || config;
 
-        trackedRunsByJobId.set(recentRun.jobId, {
+        const trackingKey = recentRun.runId
+          ? `run:${recentRun.runId}`
+          : `job:${recentRun.jobId}`;
+        if (trackedRunsByKey.has(trackingKey)) {
+          return;
+        }
+        trackedRunsByKey.set(trackingKey, {
           config: ownerConfig,
           recentRun
         });
       });
     });
 
-    if (!trackedRunsByJobId.size) {
+    if (!trackedRunsByKey.size) {
       return;
     }
 
-    const knownJobIds = new Set();
+    const authoritativeDeltaRunsById = new Map();
+    const authoritativeDeltaRunsByInitialJobId = new Map();
+    trackedRunsByKey.forEach(({ config, recentRun }) => {
+      if (
+        recentRun?.runId &&
+        recentRun?.hasPipelineSnapshot === true &&
+        recentRun?.isTerminal === true
+      ) {
+        const trackedRun = { config, recentRun };
+        authoritativeDeltaRunsById.set(recentRun.runId, trackedRun);
+        if (recentRun.jobId) {
+          authoritativeDeltaRunsByInitialJobId.set(
+            recentRun.jobId,
+            trackedRun
+          );
+        }
+      }
+    });
+
+    let mergedAuthoritativeDeltaRun = false;
+    if (authoritativeDeltaRunsById.size) {
+      this.runSessions = this.runSessions.map((runSession) => {
+        const nextJobs = (runSession.jobs || []).map((job) => {
+          const trackedRun = job.runId
+            ? authoritativeDeltaRunsById.get(job.runId)
+            : authoritativeDeltaRunsByInitialJobId.get(job.jobId);
+          if (!trackedRun) {
+            return job;
+          }
+
+          mergedAuthoritativeDeltaRun = true;
+          const authoritativeJob = this.createTrackedProductRunSession(
+            trackedRun.config,
+            trackedRun.recentRun
+          ).jobs[0];
+          return {
+            ...job,
+            ...authoritativeJob
+          };
+        });
+
+        return this.decorateRunSession({
+          ...runSession,
+          jobs: nextJobs
+        });
+      });
+    }
+
+    const knownTrackingKeys = new Set();
     this.runSessions.forEach((runSession) => {
       (runSession.jobs || []).forEach((job) => {
-        if (job.jobId) {
-          knownJobIds.add(job.jobId);
+        if (job.runId || job.jobId) {
+          knownTrackingKeys.add(
+            job.runId ? `run:${job.runId}` : `job:${job.jobId}`
+          );
         }
       });
     });
 
     const nextRuns = [];
-    trackedRunsByJobId.forEach(({ config, recentRun }, jobId) => {
-      if (knownJobIds.has(jobId)) {
+    trackedRunsByKey.forEach(({ config, recentRun }, trackingKey) => {
+      if (knownTrackingKeys.has(trackingKey)) {
         return;
       }
 
-      knownJobIds.add(jobId);
+      knownTrackingKeys.add(trackingKey);
       nextRuns.push(this.createTrackedProductRunSession(config, recentRun));
     });
 
     if (!nextRuns.length) {
+      if (mergedAuthoritativeDeltaRun) {
+        this.persistRunState();
+      }
       return;
     }
 
@@ -1125,7 +1194,8 @@ export default class CatalogJobConsole extends NavigationMixin(
       this.addActivity(
         `${runSession.label}: tracking active Salesforce product job${
           trackedJobId ? ` ${trackedJobId}` : ""
-        }`
+        }`,
+        runSession.launchedAt
       );
     });
 
@@ -1148,13 +1218,25 @@ export default class CatalogJobConsole extends NavigationMixin(
       config.currentProductStartedAt ||
       new Date().toISOString();
     const jobId = recentRun?.jobId || config.currentProductJobId;
-    const status =
-      recentRun?.status || config.currentProductJobStatus || "Queued";
+    const runId =
+      runMode === SYNC_MODE_DELTA
+        ? recentRun?.runId ||
+          (jobId === config.currentProductJobId
+            ? config.currentProductRunId || ""
+            : "")
+        : "";
+    const hasPipelineSnapshot =
+      !!runId && recentRun?.hasPipelineSnapshot === true;
+    const status = hasPipelineSnapshot
+      ? recentRun.status
+      : recentRun?.status || config.currentProductJobStatus || "Queued";
     const completedAt = recentRun?.completedAt || null;
-    const isTerminal = recentRun?.isTerminal === true;
+    const isTerminal = runId
+      ? hasPipelineSnapshot && recentRun?.isTerminal === true
+      : recentRun?.isTerminal === true;
 
     return {
-      runKey: `tracked-${jobId}`,
+      runKey: runId ? `tracked-run-${runId}` : `tracked-${jobId}`,
       developerName:
         recentRun?.configDeveloperName ||
         config.currentProductConfigDeveloperName ||
@@ -1167,21 +1249,36 @@ export default class CatalogJobConsole extends NavigationMixin(
       launchedAt,
       jobs: [
         {
-          jobId,
+          jobId: recentRun?.currentJobId || jobId,
+          runId,
+          trackingType: runId ? "DeltaPipeline" : "AsyncApexJob",
           channel: "products",
           label:
-            runMode === SYNC_MODE_DELTA
+            hasPipelineSnapshot && recentRun?.stageLabel
+              ? recentRun.stageLabel
+              : runMode === SYNC_MODE_DELTA
               ? "Delta Product Sync"
               : "Full Product Sync",
-          impactedProductCount: undefined,
-          changedRootProductCount: undefined,
-          exportProductCount: undefined,
-          scopeSummary: "",
+          stageLabel: recentRun?.stageLabel || "",
+          impactedProductCount: hasPipelineSnapshot
+            ? recentRun.impactedProductCount
+            : undefined,
+          changedRootProductCount: hasPipelineSnapshot
+            ? recentRun.changedRootProductCount
+            : undefined,
+          exportProductCount: hasPipelineSnapshot
+            ? recentRun.exportProductCount
+            : undefined,
+          scopeSummary: hasPipelineSnapshot
+            ? recentRun.scopeSummary || ""
+            : "",
           status,
           jobItemsProcessed: 0,
           totalJobItems: 0,
           numberOfErrors: 0,
-          extendedStatus: "",
+          extendedStatus: hasPipelineSnapshot
+            ? recentRun.extendedStatus || ""
+            : "",
           isTerminal,
           createdDate: launchedAt,
           completedDate: completedAt
@@ -1192,14 +1289,23 @@ export default class CatalogJobConsole extends NavigationMixin(
 
   async pollRunSnapshots() {
     const pendingJobIds = this.getIncompleteJobIds();
-    if (!pendingJobIds.length || this.isPolling) {
+    const pendingRunIds = this.getIncompleteRunIds();
+    if ((!pendingJobIds.length && !pendingRunIds.length) || this.isPolling) {
       return;
     }
 
     this.isPolling = true;
 
     try {
-      const snapshots = await getRunSnapshots({ jobIds: pendingJobIds });
+      const [jobSnapshots, deltaSnapshots] = await Promise.all([
+        pendingJobIds.length
+          ? getRunSnapshots({ jobIds: pendingJobIds })
+          : Promise.resolve([]),
+        pendingRunIds.length
+          ? getDeltaRunSnapshots({ runIds: pendingRunIds })
+          : Promise.resolve([])
+      ]);
+      const snapshots = [...(jobSnapshots || []), ...(deltaSnapshots || [])];
       if (snapshots?.length) {
         this.mergeSnapshots(snapshots);
         await this.refreshConfigs();
@@ -1209,33 +1315,52 @@ export default class CatalogJobConsole extends NavigationMixin(
       console.error("getRunSnapshots error", error);
     } finally {
       this.isPolling = false;
-      if (!this.getIncompleteJobIds().length) {
+      if (
+        !this.getIncompleteJobIds().length &&
+        !this.getIncompleteRunIds().length
+      ) {
         this.stopPolling();
       }
     }
   }
 
   mergeSnapshots(snapshots) {
-    const snapshotByJobId = new Map(
-      snapshots.map((snapshot) => [snapshot.jobId, snapshot])
+    const snapshotByTrackingKey = new Map(
+      snapshots.map((snapshot) => [
+        snapshot.runId
+          ? `run:${snapshot.runId}`
+          : `job:${snapshot.jobId}`,
+        snapshot
+      ])
     );
 
     const nextRuns = this.runSessions.map((runSession) => {
       const nextJobs = runSession.jobs.map((job) => {
-        const snapshot = snapshotByJobId.get(job.jobId);
+        const snapshot = snapshotByTrackingKey.get(
+          job.runId ? `run:${job.runId}` : `job:${job.jobId}`
+        );
         if (!snapshot) {
           return job;
         }
 
         if (job.status !== snapshot.status) {
           this.addActivity(
-            `${runSession.label}: ${this.describeStageChange(job.channel, snapshot.status)}`
+            `${runSession.label}: ${this.describeStageChange(
+              job.channel,
+              snapshot.status,
+              snapshot.stageLabel
+            )}`,
+            snapshot.isTerminal && snapshot.completedDate
+              ? snapshot.completedDate
+              : snapshot.createdDate
           );
         }
 
         return {
           ...job,
           ...snapshot,
+          label: snapshot.stageLabel || job.label,
+          trackingKey: snapshot.runId || snapshot.jobId,
           impactedProductCount:
             snapshot.impactedProductCount ?? job.impactedProductCount,
           changedRootProductCount:
@@ -1257,7 +1382,10 @@ export default class CatalogJobConsole extends NavigationMixin(
   }
 
   startPollingIfNeeded() {
-    if (!this.getIncompleteJobIds().length || this.pollTimerId) {
+    if (
+      (!this.getIncompleteJobIds().length && !this.getIncompleteRunIds().length) ||
+      this.pollTimerId
+    ) {
       return;
     }
 
@@ -1315,7 +1443,7 @@ export default class CatalogJobConsole extends NavigationMixin(
   getIncompleteJobIds() {
     return this.runSessions.reduce((jobIds, runSession) => {
       runSession.jobs.forEach((job) => {
-        if (!job.isTerminal && job.jobId) {
+        if (!job.isTerminal && job.jobId && !job.runId) {
           jobIds.push(job.jobId);
         }
       });
@@ -1323,12 +1451,31 @@ export default class CatalogJobConsole extends NavigationMixin(
     }, []);
   }
 
-  addActivity(message) {
+  getIncompleteRunIds() {
+    return this.runSessions.reduce((runIds, runSession) => {
+      runSession.jobs.forEach((job) => {
+        if (!job.isTerminal && job.runId) {
+          runIds.push(job.runId);
+        }
+      });
+      return runIds;
+    }, []);
+  }
+
+  addActivity(message, eventTimestamp = null) {
+    const timestamp = eventTimestamp || new Date().toISOString();
+    if (
+      this.activityFeed.some(
+        (entry) => entry.message === message && entry.timestamp === timestamp
+      )
+    ) {
+      return;
+    }
     const entry = {
       key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       message,
-      timestamp: new Date().toISOString(),
-      timestampLabel: this.formatTimestamp(new Date().toISOString())
+      timestamp,
+      timestampLabel: this.formatTimestamp(timestamp)
     };
 
     this.activityFeed = [entry, ...this.activityFeed].slice(
@@ -1382,7 +1529,9 @@ export default class CatalogJobConsole extends NavigationMixin(
 
       if (storedActivity) {
         const parsedActivity = JSON.parse(storedActivity);
-        this.activityFeed = Array.isArray(parsedActivity) ? parsedActivity : [];
+        this.activityFeed = Array.isArray(parsedActivity)
+          ? this.dedupeActivityEntries(parsedActivity)
+          : [];
       }
 
       if (storedSelectedConfig) {
@@ -1683,6 +1832,7 @@ export default class CatalogJobConsole extends NavigationMixin(
 
     return {
       ...job,
+      trackingKey: job.runId || job.jobId,
       status,
       progressPercent,
       statusLabel: this.describeStageStatusBadge(status),
@@ -1820,7 +1970,13 @@ export default class CatalogJobConsole extends NavigationMixin(
     }
 
     if (status === "Processing") {
-      return "Preparing batch metrics";
+      return job.runId
+        ? job.stageLabel || "Discovering delta changes"
+        : "Preparing batch metrics";
+    }
+
+    if (job.runId && !job.isTerminal) {
+      return job.stageLabel || "Preparing delta pipeline";
     }
 
     return "Waiting for batch metrics";
@@ -1907,11 +2063,11 @@ export default class CatalogJobConsole extends NavigationMixin(
     }
   }
 
-  describeStageChange(channel, status) {
-    let subject = "Syncing products";
-    if (channel === "availability") {
+  describeStageChange(channel, status, stageLabel = null) {
+    let subject = stageLabel || "Syncing products";
+    if (!stageLabel && channel === "availability") {
       subject = "Syncing availability";
-    } else if (channel === "access") {
+    } else if (!stageLabel && channel === "access") {
       subject = "Syncing embedded access";
     }
 
@@ -1927,6 +2083,18 @@ export default class CatalogJobConsole extends NavigationMixin(
       default:
         return `${subject} queued`;
     }
+  }
+
+  dedupeActivityEntries(entries) {
+    const includedEntries = new Set();
+    return entries.filter((entry) => {
+      const dedupeKey = `${entry?.timestamp || ""}|${entry?.message || ""}`;
+      if (includedEntries.has(dedupeKey)) {
+        return false;
+      }
+      includedEntries.add(dedupeKey);
+      return true;
+    });
   }
 
   describeStageStatusBadge(status) {

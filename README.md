@@ -284,6 +284,22 @@ Delta jobs are protected by runtime sync state:
 - A successful full sync must exist before a delta job can run.
 - Delta jobs use the last successful sync watermark for the resolved target.
 - Delta jobs skip `deleteOlderThan` and only refresh changed product families.
+- Delta discovery runs as a persisted, multi-stage Batch Apex pipeline. Product,
+  scoped Pricebook Entry, category assignment, and category hierarchy changes
+  are scanned with `Database.QueryLocator`, so a delta window can contain more
+  than 50,000 source rows without materializing the complete scope in one Apex
+  transaction.
+- Candidate products and categories are deduplicated in transient
+  `Catalog_Delta_Work_Item__c` records. A final run-scoped QueryLocator applies
+  the configured active-product, catalog, and `ProductFilter__c` scope before
+  export, and cleanup removes the transient records after a terminal run.
+- `Catalog_Delta_Run__c` retains the immutable baseline and cutoff, current
+  pipeline stage, progressive metrics, and terminal result. The watermark only
+  advances after the export stage completes successfully; failed and canceled
+  runs remain retry-safe.
+- Full and delta launches for the same resolved target are serialized. A later
+  scheduled launch is skipped or rejected while another product run owns that
+  target.
 
 ### ⏰ Native Scheduling
 
@@ -376,6 +392,9 @@ salesforce-coveo-commerce-etl/
 │   ├── main/default/
 │   │   ├── classes/
 │   │   │   ├── ProductCatalogExportBatch.cls
+│   │   │   ├── CatalogDeltaRunService.cls
+│   │   │   ├── CatalogDeltaStageBatch.cls
+│   │   │   ├── CatalogDeltaCleanupBatch.cls
 │   │   │   ├── CatalogJsonBuilderCommerce.cls
 │   │   │   ├── CatalogJsonBuilderDefault.cls
 │   │   │   ├── CatalogJsonBuilderGrouping.cls

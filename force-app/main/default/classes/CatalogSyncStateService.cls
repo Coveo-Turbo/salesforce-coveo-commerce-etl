@@ -1,5 +1,6 @@
 public with sharing class CatalogSyncStateService {
   private static final Integer MAX_RECENT_PRODUCT_RUNS = 8;
+  private static final Integer MAX_HISTORICAL_SYNC_STATES = 100;
 
   @TestVisible
   private static Map<String, CatalogJobConfig__mdt> testConfigsByDeveloperName;
@@ -21,6 +22,7 @@ public with sharing class CatalogSyncStateService {
     public String lastRunMode { get; set; }
     public String lastSuccessfulConfigDeveloperName { get; set; }
     public String currentProductJobId { get; set; }
+    public String currentProductRunId { get; set; }
     public String currentProductJobStatus { get; set; }
     public String currentProductRunMode { get; set; }
     public String currentProductConfigDeveloperName { get; set; }
@@ -35,6 +37,8 @@ public with sharing class CatalogSyncStateService {
     @AuraEnabled
     public String jobId { get; set; }
     @AuraEnabled
+    public String runId { get; set; }
+    @AuraEnabled
     public String runMode { get; set; }
     @AuraEnabled
     public String configDeveloperName { get; set; }
@@ -46,6 +50,22 @@ public with sharing class CatalogSyncStateService {
     public String completedAt { get; set; }
     @AuraEnabled
     public Boolean isTerminal { get; set; }
+    @AuraEnabled
+    public Boolean hasPipelineSnapshot { get; set; }
+    @AuraEnabled
+    public String currentJobId { get; set; }
+    @AuraEnabled
+    public String stageLabel { get; set; }
+    @AuraEnabled
+    public String scopeSummary { get; set; }
+    @AuraEnabled
+    public String extendedStatus { get; set; }
+    @AuraEnabled
+    public Integer impactedProductCount { get; set; }
+    @AuraEnabled
+    public Integer changedRootProductCount { get; set; }
+    @AuraEnabled
+    public Integer exportProductCount { get; set; }
   }
 
   public class DeltaReadiness {
@@ -66,6 +86,7 @@ public with sharing class CatalogSyncStateService {
 
   private class StoredRecentProductRun {
     public String jobId { get; set; }
+    public String runId { get; set; }
     public String runMode { get; set; }
     public String configDeveloperName { get; set; }
     public String status { get; set; }
@@ -178,8 +199,19 @@ public with sharing class CatalogSyncStateService {
     Map<String, Catalog_Sync_State__c> statesByTargetKey = loadStatesByTargetKey(
       stateKeys
     );
+    Set<String> configDeveloperNames = new Set<String>();
+    for (CatalogJobConfig__mdt config : configs) {
+      if (String.isNotBlank(config.DeveloperName)) {
+        configDeveloperNames.add(config.DeveloperName);
+      }
+    }
+    List<Catalog_Sync_State__c> historyStateRecords = loadHistoryStatesByConfigNames(
+      configDeveloperNames,
+      statesByTargetKey
+    );
     Set<String> trackedProductJobIds = new Set<String>();
-    for (Catalog_Sync_State__c stateRecord : statesByTargetKey.values()) {
+    Set<Id> trackedDeltaRunIds = new Set<Id>();
+    for (Catalog_Sync_State__c stateRecord : historyStateRecords) {
       if (String.isNotBlank(stateRecord.CurrentProductJobId__c)) {
         trackedProductJobIds.add(stateRecord.CurrentProductJobId__c);
       }
@@ -192,10 +224,21 @@ public with sharing class CatalogSyncStateService {
         if (String.isNotBlank(storedRun.jobId)) {
           trackedProductJobIds.add(storedRun.jobId);
         }
+        if (String.isNotBlank(storedRun.runId)) {
+          try {
+            trackedDeltaRunIds.add((Id) storedRun.runId);
+          } catch (Exception e) {
+            // Ignore stale or malformed historical IDs. The existing Async
+            // Apex history remains available as a fallback.
+          }
+        }
       }
     }
     Map<String, TrackedAsyncJob> trackedJobsById = loadTrackedJobsById(
       trackedProductJobIds
+    );
+    Map<Id, Catalog_Delta_Run__c> trackedDeltaRunsById = loadDeltaRunsById(
+      trackedDeltaRunIds
     );
 
     for (CatalogJobConfig__mdt config : configs) {
@@ -223,7 +266,9 @@ public with sharing class CatalogSyncStateService {
         trackedJobsById.get(
           stateRecord == null ? null : stateRecord.CurrentProductJobId__c
         ),
-        trackedJobsById
+        trackedJobsById,
+        trackedDeltaRunsById,
+        historyStateRecords
       );
       snapshotsByDeveloperName.put(config.DeveloperName, snapshot);
     }
@@ -319,23 +364,45 @@ public with sharing class CatalogSyncStateService {
     CatalogJobConfig__mdt config,
     Datetime cutoff
   ) {
+    recordSuccessfulFullSync(config, cutoff, null);
+  }
+
+  public static void recordSuccessfulFullSync(
+    CatalogJobConfig__mdt config,
+    Datetime cutoff,
+    Id expectedJobId
+  ) {
     String targetKey = buildResolvedTargetKey(config);
-    Catalog_Sync_State__c stateRecord = loadStateByTargetKey(targetKey);
+    Catalog_Sync_State__c stateRecord = expectedJobId == null
+      ? loadStateByTargetKey(targetKey)
+      : loadStateByTargetKeyForUpdate(targetKey);
     if (stateRecord == null) {
       stateRecord = new Catalog_Sync_State__c();
+    }
+    if (
+      expectedJobId != null &&
+      String.isNotBlank(stateRecord.CurrentProductJobId__c) &&
+      stateRecord.CurrentProductJobId__c != String.valueOf(expectedJobId)
+    ) {
+      return;
     }
 
     stateRecord.ResolvedTargetKey__c = targetKey;
     stateRecord.BaselineFullConfigDeveloperName__c = config.DeveloperName;
     stateRecord.LastSuccessfulFullSyncAt__c = cutoff;
-    stateRecord.LastSuccessfulSyncAt__c = cutoff;
+    if (
+      stateRecord.LastSuccessfulSyncAt__c == null ||
+      (cutoff != null && cutoff > stateRecord.LastSuccessfulSyncAt__c)
+    ) {
+      stateRecord.LastSuccessfulSyncAt__c = cutoff;
+    }
     stateRecord.LastRunMode__c = CatalogSyncMode.FULL;
     stateRecord.LastSuccessfulConfigDeveloperName__c = config.DeveloperName;
     markCurrentRecentProductRunCompleted(
       stateRecord,
       CatalogSyncMode.FULL,
       config.DeveloperName,
-      cutoff
+      System.now()
     );
     upsert stateRecord ResolvedTargetKey__c;
   }
@@ -354,14 +421,19 @@ public with sharing class CatalogSyncStateService {
     if (String.isNotBlank(config.BaselineFullConfigDeveloperName__c)) {
       stateRecord.BaselineFullConfigDeveloperName__c = config.BaselineFullConfigDeveloperName__c.trim();
     }
-    stateRecord.LastSuccessfulSyncAt__c = cutoff;
+    if (
+      stateRecord.LastSuccessfulSyncAt__c == null ||
+      (cutoff != null && cutoff > stateRecord.LastSuccessfulSyncAt__c)
+    ) {
+      stateRecord.LastSuccessfulSyncAt__c = cutoff;
+    }
     stateRecord.LastRunMode__c = CatalogSyncMode.DELTA;
     stateRecord.LastSuccessfulConfigDeveloperName__c = config.DeveloperName;
     markCurrentRecentProductRunCompleted(
       stateRecord,
       CatalogSyncMode.DELTA,
       config.DeveloperName,
-      cutoff
+      System.now()
     );
     upsert stateRecord ResolvedTargetKey__c;
   }
@@ -390,6 +462,9 @@ public with sharing class CatalogSyncStateService {
     }
 
     stateRecord.CurrentProductJobId__c = String.valueOf(jobId);
+    if (CatalogSyncMode.resolve(runMode) == CatalogSyncMode.FULL) {
+      stateRecord.CurrentProductRun__c = null;
+    }
     stateRecord.CurrentProductRunMode__c = CatalogSyncMode.resolve(runMode);
     stateRecord.CurrentProductConfigDeveloperName__c = config.DeveloperName;
     stateRecord.CurrentProductStartedAt__c = startedAt == null
@@ -403,6 +478,100 @@ public with sharing class CatalogSyncStateService {
       startedAt
     );
 
+    upsert stateRecord ResolvedTargetKey__c;
+  }
+
+  public static void recordStartedDeltaPipeline(
+    CatalogJobConfig__mdt config,
+    Id runId,
+    Id jobId,
+    Datetime startedAt
+  ) {
+    recordStartedProductSync(
+      config,
+      CatalogSyncMode.DELTA,
+      jobId,
+      startedAt
+    );
+    Catalog_Sync_State__c stateRecord = loadStateByTargetKey(
+      buildResolvedTargetKey(config)
+    );
+    stateRecord.CurrentProductRun__c = runId;
+    stateRecord.RecentProductRunsJson__c = attachRunIdToRecentProductRun(
+      stateRecord,
+      String.valueOf(jobId),
+      String.valueOf(runId)
+    );
+    upsert stateRecord ResolvedTargetKey__c;
+  }
+
+  public static void recordDeltaPipelineStage(
+    String targetKey,
+    Id runId,
+    Id jobId
+  ) {
+    Catalog_Sync_State__c stateRecord = loadStateByTargetKeyForUpdate(targetKey);
+    if (stateRecord == null) {
+      throw new CatalogJobException(
+        'Catalog sync state disappeared while the delta pipeline was active.'
+      );
+    }
+    if (
+      stateRecord.CurrentProductRun__c != null &&
+      stateRecord.CurrentProductRun__c != runId
+    ) {
+      throw new CatalogJobException(
+        'Another product run owns this resolved export target.'
+      );
+    }
+    stateRecord.CurrentProductRun__c = runId;
+    stateRecord.CurrentProductJobId__c = String.valueOf(jobId);
+    stateRecord.CurrentProductRunMode__c = CatalogSyncMode.DELTA;
+    upsert stateRecord ResolvedTargetKey__c;
+  }
+
+  public static void recordSuccessfulDeltaPipeline(
+    CatalogJobConfig__mdt config,
+    Id runId,
+    String initialJobId,
+    Datetime cutoff
+  ) {
+    String targetKey = buildResolvedTargetKey(config);
+    Catalog_Sync_State__c stateRecord = loadStateByTargetKeyForUpdate(targetKey);
+    if (stateRecord == null) {
+      stateRecord = new Catalog_Sync_State__c(
+        ResolvedTargetKey__c = targetKey
+      );
+    }
+    if (
+      stateRecord.CurrentProductRun__c != null &&
+      stateRecord.CurrentProductRun__c != runId
+    ) {
+      throw new CatalogJobException(
+        'Another product run owns this resolved export target.'
+      );
+    }
+    stateRecord.CurrentProductRun__c = runId;
+    if (String.isNotBlank(initialJobId)) {
+      stateRecord.CurrentProductJobId__c = initialJobId;
+    }
+    if (String.isNotBlank(config.BaselineFullConfigDeveloperName__c)) {
+      stateRecord.BaselineFullConfigDeveloperName__c = config.BaselineFullConfigDeveloperName__c.trim();
+    }
+    if (
+      stateRecord.LastSuccessfulSyncAt__c == null ||
+      (cutoff != null && cutoff > stateRecord.LastSuccessfulSyncAt__c)
+    ) {
+      stateRecord.LastSuccessfulSyncAt__c = cutoff;
+    }
+    stateRecord.LastRunMode__c = CatalogSyncMode.DELTA;
+    stateRecord.LastSuccessfulConfigDeveloperName__c = config.DeveloperName;
+    markCurrentRecentProductRunCompleted(
+      stateRecord,
+      CatalogSyncMode.DELTA,
+      config.DeveloperName,
+      System.now()
+    );
     upsert stateRecord ResolvedTargetKey__c;
   }
 
@@ -422,7 +591,9 @@ public with sharing class CatalogSyncStateService {
     String baselineTargetKey,
     Catalog_Sync_State__c stateRecord,
     TrackedAsyncJob trackedJob,
-    Map<String, TrackedAsyncJob> trackedJobsById
+    Map<String, TrackedAsyncJob> trackedJobsById,
+    Map<Id, Catalog_Delta_Run__c> trackedDeltaRunsById,
+    List<Catalog_Sync_State__c> historyStateRecords
   ) {
     Snapshot snapshot = new Snapshot();
     snapshot.resolvedTargetKey = targetKey;
@@ -444,6 +615,10 @@ public with sharing class CatalogSyncStateService {
     snapshot.lastSuccessfulConfigDeveloperName = stateRecord == null
       ? null
       : stateRecord.LastSuccessfulConfigDeveloperName__c;
+    snapshot.currentProductRunId = stateRecord == null ||
+        stateRecord.CurrentProductRun__c == null
+      ? null
+      : String.valueOf(stateRecord.CurrentProductRun__c);
     if (trackedJob != null && trackedJob.isTerminal != true) {
       snapshot.currentProductJobId = trackedJob.jobId;
       snapshot.currentProductJobStatus = trackedJob.status;
@@ -459,8 +634,10 @@ public with sharing class CatalogSyncStateService {
       snapshot.currentProductIsActive = false;
     }
     snapshot.recentProductRuns = buildRecentProductRuns(
-      stateRecord,
-      trackedJobsById
+      historyStateRecords,
+      config.DeveloperName,
+      trackedJobsById,
+      trackedDeltaRunsById
     );
 
     if (!CatalogSyncMode.isDelta(config)) {
@@ -527,16 +704,17 @@ public with sharing class CatalogSyncStateService {
 
     if (
       trackedJob != null &&
-      trackedJob.isTerminal != true &&
-      stateRecord.CurrentProductRunMode__c == CatalogSyncMode.FULL
+      trackedJob.isTerminal != true
     ) {
-      String activeFullConfigDeveloperName = String.isBlank(
+      String activeConfigDeveloperName = String.isBlank(
           stateRecord.CurrentProductConfigDeveloperName__c
         )
         ? baselineConfig.DeveloperName
         : stateRecord.CurrentProductConfigDeveloperName__c;
-      return 'Baseline full sync "' +
-        activeFullConfigDeveloperName +
+      return (stateRecord.CurrentProductRunMode__c == CatalogSyncMode.FULL
+          ? 'Baseline full sync "'
+          : 'Delta sync "') +
+        activeConfigDeveloperName +
         '" is currently running. Wait for it to complete before running delta sync "' +
         config.DeveloperName +
         '".';
@@ -566,32 +744,9 @@ public with sharing class CatalogSyncStateService {
       return configsByDeveloperName;
     }
 
-    for (CatalogJobConfig__mdt config : [
-      SELECT
-        DeveloperName,
-        Label,
-        CoveoOrgId__c,
-        SourceId__c,
-        AvailabilitySourceId__c,
-        WebStoreId__c,
-        WebStoreIds__c,
-        PricebookIds__c,
-        Locale__c,
-        IsActive__c,
-        ProductFilter__c,
-        AdditionalProductFields__c,
-        BuilderType__c,
-        CatalogId__c,
-        BatchSize__c,
-        EnableBuyerGroupAvailability__c,
-        BuyerGroupAvailabilityMode__c,
-        SyncMode__c,
-        BaselineFullConfigDeveloperName__c
-      FROM CatalogJobConfig__mdt
-      WHERE DeveloperName IN :developerNames
-    ]) {
-      configsByDeveloperName.put(config.DeveloperName, config);
-    }
+    configsByDeveloperName.putAll(
+      CatalogJobConfigSelector.getByDeveloperNames(developerNames)
+    );
 
     return configsByDeveloperName;
   }
@@ -623,6 +778,7 @@ public with sharing class CatalogSyncStateService {
         ResolvedTargetKey__c,
         BaselineFullConfigDeveloperName__c,
         CurrentProductJobId__c,
+        CurrentProductRun__c,
         CurrentProductRunMode__c,
         CurrentProductConfigDeveloperName__c,
         CurrentProductStartedAt__c,
@@ -640,6 +796,62 @@ public with sharing class CatalogSyncStateService {
     return statesByTargetKey;
   }
 
+  private static List<Catalog_Sync_State__c> loadHistoryStatesByConfigNames(
+    Set<String> configDeveloperNames,
+    Map<String, Catalog_Sync_State__c> currentStatesByTargetKey
+  ) {
+    List<Catalog_Sync_State__c> historyStates = new List<Catalog_Sync_State__c>();
+    Set<String> includedTargetKeys = new Set<String>();
+
+    if (configDeveloperNames == null || configDeveloperNames.isEmpty()) {
+      return currentStatesByTargetKey == null
+        ? historyStates
+        : currentStatesByTargetKey.values();
+    }
+
+    if (Test.isRunningTest() && testStatesByTargetKey != null) {
+      return testStatesByTargetKey.values();
+    }
+
+    for (Catalog_Sync_State__c stateRecord : [
+      SELECT
+        Id,
+        ResolvedTargetKey__c,
+        BaselineFullConfigDeveloperName__c,
+        CurrentProductJobId__c,
+        CurrentProductRun__c,
+        CurrentProductRunMode__c,
+        CurrentProductConfigDeveloperName__c,
+        CurrentProductStartedAt__c,
+        LastSuccessfulFullSyncAt__c,
+        LastSuccessfulSyncAt__c,
+        LastRunMode__c,
+        LastSuccessfulConfigDeveloperName__c,
+        RecentProductRunsJson__c,
+        LastModifiedDate
+      FROM Catalog_Sync_State__c
+      WHERE
+        BaselineFullConfigDeveloperName__c IN :configDeveloperNames
+        OR CurrentProductConfigDeveloperName__c IN :configDeveloperNames
+        OR LastSuccessfulConfigDeveloperName__c IN :configDeveloperNames
+      ORDER BY LastModifiedDate DESC
+      LIMIT :MAX_HISTORICAL_SYNC_STATES
+    ]) {
+      historyStates.add(stateRecord);
+      includedTargetKeys.add(stateRecord.ResolvedTargetKey__c);
+    }
+
+    if (currentStatesByTargetKey != null) {
+      for (Catalog_Sync_State__c currentState : currentStatesByTargetKey.values()) {
+        if (!includedTargetKeys.contains(currentState.ResolvedTargetKey__c)) {
+          historyStates.add(currentState);
+        }
+      }
+    }
+
+    return historyStates;
+  }
+
   private static Catalog_Sync_State__c loadStateByTargetKey(String targetKey) {
     if (String.isBlank(targetKey)) {
       return null;
@@ -655,6 +867,7 @@ public with sharing class CatalogSyncStateService {
         ResolvedTargetKey__c,
         BaselineFullConfigDeveloperName__c,
         CurrentProductJobId__c,
+        CurrentProductRun__c,
         CurrentProductRunMode__c,
         CurrentProductConfigDeveloperName__c,
         CurrentProductStartedAt__c,
@@ -668,6 +881,35 @@ public with sharing class CatalogSyncStateService {
       LIMIT 1
     ];
 
+    return stateRecords.isEmpty() ? null : stateRecords[0];
+  }
+
+  private static Catalog_Sync_State__c loadStateByTargetKeyForUpdate(
+    String targetKey
+  ) {
+    if (String.isBlank(targetKey)) {
+      return null;
+    }
+    List<Catalog_Sync_State__c> stateRecords = [
+      SELECT
+        Id,
+        ResolvedTargetKey__c,
+        BaselineFullConfigDeveloperName__c,
+        CurrentProductJobId__c,
+        CurrentProductRun__c,
+        CurrentProductRunMode__c,
+        CurrentProductConfigDeveloperName__c,
+        CurrentProductStartedAt__c,
+        LastSuccessfulFullSyncAt__c,
+        LastSuccessfulSyncAt__c,
+        LastRunMode__c,
+        LastSuccessfulConfigDeveloperName__c,
+        RecentProductRunsJson__c
+      FROM Catalog_Sync_State__c
+      WHERE ResolvedTargetKey__c = :targetKey
+      LIMIT 1
+      FOR UPDATE
+    ];
     return stateRecords.isEmpty() ? null : stateRecords[0];
   }
 
@@ -736,6 +978,36 @@ public with sharing class CatalogSyncStateService {
     return jobsById;
   }
 
+  private static Map<Id, Catalog_Delta_Run__c> loadDeltaRunsById(
+    Set<Id> runIds
+  ) {
+    Map<Id, Catalog_Delta_Run__c> runsById = new Map<Id, Catalog_Delta_Run__c>();
+
+    if (runIds == null || runIds.isEmpty()) {
+      return runsById;
+    }
+
+    for (Catalog_Delta_Run__c run : [
+      SELECT
+        Id,
+        Status__c,
+        Stage__c,
+        CurrentAsyncJobId__c,
+        ErrorMessage__c,
+        ImpactedProductCount__c,
+        RootProductCount__c,
+        ExportProductCount__c,
+        CreatedDate,
+        CompletedAt__c
+      FROM Catalog_Delta_Run__c
+      WHERE Id IN :runIds
+    ]) {
+      runsById.put(run.Id, run);
+    }
+
+    return runsById;
+  }
+
   private static Boolean isTerminalAsyncJobStatus(String status) {
     return status == 'Completed' || status == 'Aborted' || status == 'Failed';
   }
@@ -782,6 +1054,9 @@ public with sharing class CatalogSyncStateService {
 
     StoredRecentProductRun recentRun = new StoredRecentProductRun();
     recentRun.jobId = stateRecord.CurrentProductJobId__c;
+    recentRun.runId = stateRecord.CurrentProductRun__c == null
+      ? null
+      : String.valueOf(stateRecord.CurrentProductRun__c);
     recentRun.runMode = CatalogSyncMode.resolve(runMode);
     recentRun.configDeveloperName = configDeveloperName;
     recentRun.status = 'Completed';
@@ -800,16 +1075,44 @@ public with sharing class CatalogSyncStateService {
   }
 
   private static List<RecentProductRun> buildRecentProductRuns(
-    Catalog_Sync_State__c stateRecord,
-    Map<String, TrackedAsyncJob> trackedJobsById
+    List<Catalog_Sync_State__c> historyStateRecords,
+    String configDeveloperName,
+    Map<String, TrackedAsyncJob> trackedJobsById,
+    Map<Id, Catalog_Delta_Run__c> trackedDeltaRunsById
   ) {
     List<RecentProductRun> recentProductRuns = new List<RecentProductRun>();
+    List<StoredRecentProductRun> storedRunsForConfig = new List<StoredRecentProductRun>();
+    Set<String> includedJobIds = new Set<String>();
 
-    for (
-      StoredRecentProductRun storedRun : extractStoredRecentProductRuns(
-        stateRecord
-      )
-    ) {
+    if (historyStateRecords != null) {
+      for (Catalog_Sync_State__c historyState : historyStateRecords) {
+        for (
+          StoredRecentProductRun storedRun : extractStoredRecentProductRuns(
+            historyState
+          )
+        ) {
+          if (
+            storedRun.configDeveloperName != configDeveloperName ||
+            String.isBlank(storedRun.jobId) ||
+            includedJobIds.contains(storedRun.jobId)
+          ) {
+            continue;
+          }
+
+          storedRunsForConfig.add(storedRun);
+          includedJobIds.add(storedRun.jobId);
+          if (storedRunsForConfig.size() >= MAX_RECENT_PRODUCT_RUNS) {
+            break;
+          }
+        }
+
+        if (storedRunsForConfig.size() >= MAX_RECENT_PRODUCT_RUNS) {
+          break;
+        }
+      }
+    }
+
+    for (StoredRecentProductRun storedRun : storedRunsForConfig) {
       if (String.isBlank(storedRun.jobId)) {
         continue;
       }
@@ -819,6 +1122,7 @@ public with sharing class CatalogSyncStateService {
         : trackedJobsById.get(storedRun.jobId);
       RecentProductRun recentRun = new RecentProductRun();
       recentRun.jobId = storedRun.jobId;
+      recentRun.runId = storedRun.runId;
       recentRun.runMode = CatalogSyncMode.resolve(storedRun.runMode);
       recentRun.configDeveloperName = normalizeStoredRecentProductRunValue(
         storedRun.configDeveloperName
@@ -837,10 +1141,73 @@ public with sharing class CatalogSyncStateService {
       recentRun.isTerminal = trackedJob != null
         ? trackedJob.isTerminal
         : isTerminalAsyncJobStatus(recentRun.status);
+
+      Catalog_Delta_Run__c deltaRun;
+      if (String.isNotBlank(storedRun.runId)) {
+        try {
+          deltaRun = trackedDeltaRunsById == null
+            ? null
+            : trackedDeltaRunsById.get((Id) storedRun.runId);
+        } catch (Exception e) {
+          deltaRun = null;
+        }
+      }
+
+      if (deltaRun != null) {
+        recentRun.hasPipelineSnapshot = true;
+        recentRun.currentJobId = deltaRun.CurrentAsyncJobId__c;
+        recentRun.status = resolveDeltaRunDisplayStatus(deltaRun.Status__c);
+        recentRun.startedAt = formatDatetime(deltaRun.CreatedDate);
+        recentRun.completedAt = formatDatetime(deltaRun.CompletedAt__c);
+        recentRun.isTerminal = CatalogDeltaRunService.isTerminalStatus(
+          deltaRun.Status__c
+        );
+        recentRun.stageLabel = CatalogDeltaRunService.describeStage(
+          deltaRun.Stage__c
+        );
+        recentRun.scopeSummary = CatalogDeltaRunService.describeScopeSummary(
+          deltaRun
+        );
+        recentRun.extendedStatus = deltaRun.ErrorMessage__c;
+        recentRun.impactedProductCount = decimalToInteger(
+          deltaRun.ImpactedProductCount__c
+        );
+        recentRun.changedRootProductCount = decimalToInteger(
+          deltaRun.RootProductCount__c
+        );
+        recentRun.exportProductCount = decimalToInteger(
+          deltaRun.ExportProductCount__c
+        );
+      } else {
+        recentRun.hasPipelineSnapshot = false;
+      }
       recentProductRuns.add(recentRun);
     }
 
     return recentProductRuns;
+  }
+
+  private static String resolveDeltaRunDisplayStatus(String status) {
+    if (status == CatalogDeltaRunService.STATUS_SUCCEEDED) {
+      return 'Completed';
+    }
+    if (status == CatalogDeltaRunService.STATUS_FAILED) {
+      return 'Failed';
+    }
+    if (status == CatalogDeltaRunService.STATUS_CANCELED) {
+      return 'Aborted';
+    }
+    if (
+      status == CatalogDeltaRunService.STATUS_RUNNING ||
+      status == CatalogDeltaRunService.STATUS_CANCEL_REQUESTED
+    ) {
+      return 'Processing';
+    }
+    return 'Queued';
+  }
+
+  private static Integer decimalToInteger(Decimal value) {
+    return value == null ? 0 : value.intValue();
   }
 
   private static String defaultRecentProductRunStatus(
@@ -868,6 +1235,9 @@ public with sharing class CatalogSyncStateService {
 
     StoredRecentProductRun currentRun = new StoredRecentProductRun();
     currentRun.jobId = stateRecord.CurrentProductJobId__c;
+    currentRun.runId = stateRecord.CurrentProductRun__c == null
+      ? null
+      : String.valueOf(stateRecord.CurrentProductRun__c);
     currentRun.runMode = stateRecord.CurrentProductRunMode__c;
     currentRun.configDeveloperName = stateRecord.CurrentProductConfigDeveloperName__c;
     currentRun.startedAt = formatDatetime(
@@ -897,6 +1267,9 @@ public with sharing class CatalogSyncStateService {
         StoredRecentProductRun recentRun = new StoredRecentProductRun();
         recentRun.jobId = normalizeStoredRecentProductRunValue(
           rawFields.get('jobId')
+        );
+        recentRun.runId = normalizeStoredRecentProductRunValue(
+          rawFields.get('runId')
         );
         recentRun.runMode = normalizeStoredRecentProductRunValue(
           rawFields.get('runMode')
@@ -1014,6 +1387,10 @@ public with sharing class CatalogSyncStateService {
       preferredRun == null ? null : preferredRun.jobId,
       fallbackRun == null ? null : fallbackRun.jobId
     );
+    mergedRun.runId = firstNonBlank(
+      preferredRun == null ? null : preferredRun.runId,
+      fallbackRun == null ? null : fallbackRun.runId
+    );
     mergedRun.runMode = CatalogSyncMode.resolve(
       firstNonBlank(
         preferredRun == null ? null : preferredRun.runMode,
@@ -1045,6 +1422,22 @@ public with sharing class CatalogSyncStateService {
     return recentRuns == null || recentRuns.isEmpty()
       ? null
       : JSON.serialize(recentRuns);
+  }
+
+  private static String attachRunIdToRecentProductRun(
+    Catalog_Sync_State__c stateRecord,
+    String jobId,
+    String runId
+  ) {
+    List<StoredRecentProductRun> recentRuns = extractStoredRecentProductRuns(
+      stateRecord
+    );
+    for (StoredRecentProductRun recentRun : recentRuns) {
+      if (recentRun.jobId == jobId) {
+        recentRun.runId = runId;
+      }
+    }
+    return serializeRecentProductRuns(recentRuns);
   }
 
   private static String firstNonBlank(

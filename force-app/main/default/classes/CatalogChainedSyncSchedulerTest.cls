@@ -3,7 +3,37 @@ private class CatalogChainedSyncSchedulerTest {
   @TestSetup
   static void clearTestState() {
     CatalogSyncChainQueueable.skipLaunchInTests = false;
+    CatalogSyncChainQueueable.simulateOverlapInTests = false;
+    CatalogSyncChainQueueable.lastAvailabilityRecoveryConfigDeveloperName = null;
     CatalogChainedSyncScheduler.skipQueueableExecutionInTests = false;
+  }
+
+  @IsTest
+  static void queueableTreatsProductOverlapAsExpectedSkip() {
+    CatalogSyncChainQueueable.simulateOverlapInTests = true;
+    CatalogSyncChainQueueable queueable = new CatalogSyncChainQueueable(
+      new List<String>{ 'OVERLAPPED_DELTA' },
+      CatalogSyncMode.DELTA,
+      true,
+      true
+    );
+
+    queueable.execute(null);
+
+    System.assertEquals(
+      'OVERLAPPED_DELTA',
+      CatalogSyncChainQueueable.lastSkippedConfigDeveloperName
+    );
+    System.assert(
+      CatalogSyncChainQueueable.lastSkippedReason.contains(
+        'already owns this export target'
+      )
+    );
+    System.assertEquals(
+      'OVERLAPPED_DELTA',
+      CatalogSyncChainQueueable.lastAvailabilityRecoveryConfigDeveloperName,
+      'Product overlap must not silently drop requested availability work.'
+    );
   }
 
   @IsTest

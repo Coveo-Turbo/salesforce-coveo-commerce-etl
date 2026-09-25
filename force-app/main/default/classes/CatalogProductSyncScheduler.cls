@@ -106,22 +106,21 @@ global with sharing class CatalogProductSyncScheduler implements Schedulable {
         return;
       }
 
-      DeltaProductCatalogExportBatch deltaBatch = new DeltaProductCatalogExportBatch(
-        jobConfigDeveloperName
+      CatalogDeltaRunService.LaunchResult launchResult = CatalogDeltaRunService.launchOrSkipIfActive(
+        config
       );
-      Id deltaJobId = Database.executeBatch(
-        deltaBatch,
-        deltaBatch.getBatchSize()
-      );
-      CatalogSyncStateService.recordStartedProductSync(
-        config,
-        CatalogSyncMode.DELTA,
-        deltaJobId,
-        System.now()
-      );
+      if (launchResult == null) {
+        recordOverlapSkip(jobConfigDeveloperName, scheduledMode);
+      }
       return;
     }
 
+    try {
+      CatalogDeltaRunService.assertNoActiveDeltaRun(config);
+    } catch (CatalogJobOverlapException e) {
+      recordOverlapSkip(jobConfigDeveloperName, scheduledMode);
+      return;
+    }
     ProductCatalogExportBatch fullBatch = new ProductCatalogExportBatch(
       jobConfigDeveloperName
     );
@@ -132,6 +131,15 @@ global with sharing class CatalogProductSyncScheduler implements Schedulable {
       fullJobId,
       System.now()
     );
+  }
+
+  private static void recordOverlapSkip(
+    String configDeveloperName,
+    String syncMode
+  ) {
+    lastSkippedConfigDeveloperName = configDeveloperName;
+    lastSkippedSyncMode = syncMode;
+    lastSkippedReason = 'Another product sync already owns this export target.';
   }
 
   public static String scheduleFullSync(
@@ -405,41 +413,7 @@ global with sharing class CatalogProductSyncScheduler implements Schedulable {
       return testJobConfigOverride;
     }
 
-    List<CatalogJobConfig__mdt> configs = [
-      SELECT
-        DeveloperName,
-        Label,
-        CoveoOrgId__c,
-        SourceId__c,
-        AvailabilitySourceId__c,
-        WebStoreId__c,
-        WebStoreIds__c,
-        PricebookIds__c,
-        Locale__c,
-        IsActive__c,
-        ProductFilter__c,
-        AdditionalProductFields__c,
-        BuilderType__c,
-        CatalogId__c,
-        BatchSize__c,
-        EnablePayloadLogging__c,
-        EnableBuyerGroupAvailability__c,
-        BuyerGroupAvailabilityMode__c,
-        SyncMode__c,
-        BaselineFullConfigDeveloperName__c
-      FROM CatalogJobConfig__mdt
-      WHERE DeveloperName = :developerName
-      LIMIT 1
-    ];
-
-    if (configs.isEmpty()) {
-      throw new CatalogJobException(
-        'No CatalogJobConfig__mdt record found with DeveloperName: ' +
-        developerName
-      );
-    }
-
-    return configs[0];
+    return CatalogJobConfigSelector.requireByDeveloperName(developerName);
   }
 
   private static ScheduleSnapshot buildScheduleSnapshot(

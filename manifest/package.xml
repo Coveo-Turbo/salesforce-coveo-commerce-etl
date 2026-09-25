@@ -5,9 +5,14 @@
     <name>ApexClass</name>
   </types>
 
-  <!-- Custom Metadata TYPE definition (the __mdt object) -->
+  <!-- Package data model and Custom Metadata Type definitions -->
   <types>
     <members>CatalogJsonBuilderMapping__mdt</members>
+    <members>CatalogJobConfig__mdt</members>
+    <members>Catalog_Sync_State__c</members>
+    <members>Catalog_Delta_Run__c</members>
+    <members>Catalog_Delta_Work_Item__c</members>
+    <members>Coveo_Payload_Log__c</members>
     <name>CustomObject</name>
   </types>
 
@@ -16,13 +21,6 @@
     <members>CatalogJsonBuilderMapping.Default</members>
     <members>CatalogJsonBuilderMapping.Active</members>
     <name>CustomMetadata</name>
-  </types>
-
-  <!-- Data model for sample category tree + junction -->
-  <types>
-    <members>Category__c</members>
-    <members>ProductCategory__c</members>
-    <name>CustomObject</name>
   </types>
 
   <types>
